@@ -9,11 +9,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies first (layer caching)
-COPY pyproject.toml .
+COPY backend/pyproject.toml .
 RUN pip install --no-cache-dir ".[ml]"
 
 # Copy application code
-COPY . .
+COPY backend/ .
 
 EXPOSE 8000
 

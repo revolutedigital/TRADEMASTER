@@ -1,0 +1,144 @@
+{
+  "dashboard": {
+    "title": "TradeMaster - Trading Platform",
+    "uid": "trademaster-main",
+    "timezone": "utc",
+    "refresh": "10s",
+    "panels": [
+      {
+        "title": "API Request Rate",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "expr": "rate(http_requests_total[5m])",
+            "legendFormat": "{{method}} {{path}}"
+          }
+        ]
+      },
+      {
+        "title": "API Response Time (p95)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "p95"
+          }
+        ]
+      },
+      {
+        "title": "Trading Signals Generated",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 8 },
+        "targets": [
+          {
+            "expr": "increase(trading_signals_total[1h])",
+            "legendFormat": "Signals/hour"
+          }
+        ]
+      },
+      {
+        "title": "Orders Executed",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 6, "y": 8 },
+        "targets": [
+          {
+            "expr": "increase(orders_executed_total[1h])",
+            "legendFormat": "Orders/hour"
+          }
+        ]
+      },
+      {
+        "title": "Circuit Breaker State",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 12, "y": 8 },
+        "targets": [
+          {
+            "expr": "circuit_breaker_state",
+            "legendFormat": "State"
+          }
+        ]
+      },
+      {
+        "title": "Portfolio Equity",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 18, "y": 8 },
+        "targets": [
+          {
+            "expr": "portfolio_total_equity",
+            "legendFormat": "Equity"
+          }
+        ]
+      },
+      {
+        "title": "ML Model Inference Time",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(ml_inference_duration_seconds_bucket[5m]))",
+            "legendFormat": "p95 inference"
+          }
+        ]
+      },
+      {
+        "title": "WebSocket Connections",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+        "targets": [
+          {
+            "expr": "websocket_active_connections",
+            "legendFormat": "Active connections"
+          }
+        ]
+      },
+      {
+        "title": "Binance API Rate Limit Usage",
+        "type": "gauge",
+        "gridPos": { "h": 8, "w": 8, "x": 0, "y": 20 },
+        "targets": [
+          {
+            "expr": "binance_rate_limit_usage_ratio",
+            "legendFormat": "Usage %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "max": 1,
+            "thresholds": {
+              "steps": [
+                { "color": "green", "value": 0 },
+                { "color": "yellow", "value": 0.6 },
+                { "color": "red", "value": 0.8 }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "Daily P&L",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 8, "x": 8, "y": 20 },
+        "targets": [
+          {
+            "expr": "portfolio_daily_pnl",
+            "legendFormat": "Daily P&L"
+          }
+        ]
+      },
+      {
+        "title": "Drawdown",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 8, "x": 16, "y": 20 },
+        "targets": [
+          {
+            "expr": "portfolio_drawdown",
+            "legendFormat": "Drawdown %"
+          }
+        ]
+      }
+    ]
+  }
+}

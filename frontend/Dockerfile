@@ -9,6 +9,13 @@ RUN npm install --frozen-lockfile 2>/dev/null || npm install
 # Build
 FROM base AS builder
 WORKDIR /app
+
+# Next.js bakes NEXT_PUBLIC_ vars at build time
+ARG NEXT_PUBLIC_API_URL=https://backendtrademaster.up.railway.app
+ARG NEXT_PUBLIC_WS_URL=wss://backendtrademaster.up.railway.app
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY frontend/ .
 RUN npm run build

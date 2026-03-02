@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
@@ -15,6 +16,7 @@ from app.dependencies import (
     get_trading_engine,
     require_auth,
 )
+from app.models.market import OHLCV
 from app.models.trade import Order
 from app.models.portfolio import Position
 from app.repositories.order_repo import OrderRepository

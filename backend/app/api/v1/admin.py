@@ -3,7 +3,7 @@ import time
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, require_auth
+from app.dependencies import get_db, require_auth
 from app.core.feature_flags import feature_flags
 from app.core.logging import get_logger
 

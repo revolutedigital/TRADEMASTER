@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, require_auth
+from app.dependencies import get_db, require_auth
 from app.models.journal import JournalEntry
 
 router = APIRouter(prefix="/journal", tags=["journal"])

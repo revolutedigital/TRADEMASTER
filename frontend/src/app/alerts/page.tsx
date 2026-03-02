@@ -17,7 +17,7 @@ export default function AlertsPage() {
   const [alerts, setAlerts] = useState<PriceAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ symbol: "BTCUSDT", condition: "above" as const, target_price: "" });
+  const [form, setForm] = useState<{ symbol: string; condition: "above" | "below"; target_price: string }>({ symbol: "BTCUSDT", condition: "above", target_price: "" });
 
   const fetchAlerts = useCallback(async () => {
     try {

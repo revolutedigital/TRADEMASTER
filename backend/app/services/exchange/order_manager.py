@@ -2,10 +2,14 @@
 
 Supports both live (Binance) and paper trading modes.
 Paper mode simulates fills with realistic slippage and commission.
+
+All financial calculations use Decimal for precision — IEEE 754 float
+rounding errors are unacceptable in a trading system.
 """
 
 import random
 from datetime import datetime, timezone
+from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,9 +22,9 @@ from app.services.exchange.binance_client import binance_client
 
 logger = get_logger(__name__)
 
-# Paper trading simulation parameters
-PAPER_COMMISSION_RATE = 0.001  # 0.1% taker fee (Binance standard)
-PAPER_SLIPPAGE_BPS = 5  # 5 basis points (0.05%) slippage
+# Paper trading simulation parameters (Decimal for precision)
+PAPER_COMMISSION_RATE = Decimal("0.001")  # 0.1% taker fee (Binance standard)
+PAPER_SLIPPAGE_BPS = 5  # 5 basis points max (0.05%) slippage
 
 
 class OrderManager:
@@ -47,10 +51,16 @@ class OrderManager:
         quantity: float,
         signal_id: int | None = None,
     ) -> Order:
-        """Simulate a market order with realistic slippage and fees."""
-        # Get current price from Binance (read-only, no trade execution)
+        """Simulate a market order with realistic slippage and fees.
+
+        All price/commission arithmetic uses Decimal to avoid float rounding
+        errors that can accumulate over many trades.
+        """
+        qty = Decimal(str(quantity))
+
+        # Get current price from Binance (already returns Decimal)
         try:
-            current_price = float(await binance_client.get_ticker_price(symbol))
+            current_price = await binance_client.get_ticker_price(symbol)
         except Exception:
             # Fallback: get from DB
             from sqlalchemy import select
@@ -64,16 +74,21 @@ class OrderManager:
             candle = result.scalar_one_or_none()
             if not candle:
                 raise OrderExecutionError(f"No price data for {symbol}")
-            current_price = float(candle.close)
+            current_price = Decimal(str(candle.close))
 
-        # Apply slippage (adverse direction)
-        slippage_pct = random.uniform(0, PAPER_SLIPPAGE_BPS) / 10000
+        # Apply slippage (adverse direction) using Decimal
+        slippage_bps = Decimal(str(random.uniform(0, PAPER_SLIPPAGE_BPS)))
+        slippage_pct = slippage_bps / Decimal("10000")
         if side == "BUY":
-            fill_price = current_price * (1 + slippage_pct)
+            fill_price = current_price * (Decimal("1") + slippage_pct)
         else:
-            fill_price = current_price * (1 - slippage_pct)
+            fill_price = current_price * (Decimal("1") - slippage_pct)
 
-        commission = fill_price * quantity * PAPER_COMMISSION_RATE
+        # Round to 2 decimal places (USDT precision)
+        fill_price = fill_price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        commission = (fill_price * qty * PAPER_COMMISSION_RATE).quantize(
+            Decimal("0.0001"), rounding=ROUND_HALF_UP
+        )
 
         order = Order(
             exchange_order_id=f"PAPER-{int(datetime.now(timezone.utc).timestamp() * 1000)}",
@@ -81,11 +96,11 @@ class OrderManager:
             side=side,
             order_type=OrderType.MARKET,
             status=OrderStatus.FILLED,
-            quantity=quantity,
-            price=fill_price,
-            filled_quantity=quantity,
-            avg_fill_price=fill_price,
-            commission=commission,
+            quantity=float(qty),
+            price=float(fill_price),
+            filled_quantity=float(qty),
+            avg_fill_price=float(fill_price),
+            commission=float(commission),
             signal_id=signal_id,
             notes="Paper trade (simulated with slippage)",
         )
@@ -100,9 +115,9 @@ class OrderManager:
                 "exchange_order_id": order.exchange_order_id,
                 "symbol": symbol,
                 "side": side,
-                "quantity": quantity,
-                "avg_price": fill_price,
-                "commission": commission,
+                "quantity": float(qty),
+                "avg_price": float(fill_price),
+                "commission": float(commission),
                 "paper_mode": True,
             },
         ))
@@ -112,10 +127,10 @@ class OrderManager:
             order_id=order.id,
             symbol=symbol,
             side=side,
-            filled_qty=quantity,
-            fill_price=round(fill_price, 2),
-            slippage_bps=round(slippage_pct * 10000, 2),
-            commission=round(commission, 4),
+            filled_qty=float(qty),
+            fill_price=float(fill_price),
+            slippage_bps=float(slippage_bps),
+            commission=float(commission),
         )
         return order
 

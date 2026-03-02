@@ -1,4 +1,4 @@
-.PHONY: run stop build migrate seed test lint clean
+.PHONY: run stop build migrate seed test lint clean mutation-test
 
 # ---- Development ----
 
@@ -49,6 +49,12 @@ test-unit:  ## Run unit tests only
 test-cov:  ## Run tests with coverage
 	cd backend && pytest tests/ --cov=app --cov-report=html
 
+mutation-test:  ## Run mutation testing with mutmut
+	cd backend && mutmut run --paths-to-mutate=app/ --tests-dir=tests/ || true
+	cd backend && mutmut results
+	cd backend && mutmut html
+	@echo "Mutation testing report generated at backend/html/"
+
 # ---- Code Quality ----
 
 lint:  ## Run linter
@@ -59,6 +65,29 @@ lint-fix:  ## Auto-fix lint issues
 
 format:  ## Format code
 	cd backend && ruff format app/ tests/
+
+# ---- Deploy ----
+
+deploy:  ## Deploy to Railway (backend + frontend)
+	railway up -s backend --detach
+	railway up -s frontend --detach
+
+# ---- Security ----
+
+security-scan:  ## Run security scanning (pip-audit + npm audit)
+	cd backend && pip-audit -r requirements.txt || true
+	cd frontend && npm audit --audit-level=critical
+
+# ---- Database Backup ----
+
+db-backup:  ## Backup database to local file
+	@mkdir -p backups
+	pg_dump $(DATABASE_URL) > backups/trademaster_$$(date +%Y%m%d_%H%M%S).sql
+	@echo "Backup created in backups/"
+
+db-restore:  ## Restore database from backup (usage: make db-restore FILE=backups/file.sql)
+	psql $(DATABASE_URL) < $(FILE)
+	@echo "Database restored from $(FILE)"
 
 # ---- Utilities ----
 

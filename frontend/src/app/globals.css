@@ -17,6 +17,16 @@
   --color-hold: #6366f1;
 }
 
+/* Light mode overrides */
+html.light {
+  --color-background: #f8f9fc;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f0f1f5;
+  --color-border: #d4d6e0;
+  --color-text: #1a1a2e;
+  --color-text-muted: #6b6b80;
+}
+
 body {
   background: var(--color-background);
   color: var(--color-text);

@@ -43,7 +43,7 @@ export default function SignalsPage() {
       </div>
 
       {/* Signal Legend */}
-      <Card className="flex items-center gap-6 p-3">
+      <Card className="flex flex-wrap items-center gap-4 sm:gap-6 p-3">
         <span className="text-xs text-[var(--color-text-muted)]">Signal Strength:</span>
         <div className="flex items-center gap-1">
           <div className="h-3 w-3 rounded-sm bg-green-500" />
@@ -66,6 +66,7 @@ export default function SignalsPage() {
           <Badge variant="primary">{signals.length} signals</Badge>
         </CardHeader>
 
+        <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -118,6 +119,7 @@ export default function SignalsPage() {
             )}
           </TableBody>
         </Table>
+        </div>
       </Card>
     </div>
   );

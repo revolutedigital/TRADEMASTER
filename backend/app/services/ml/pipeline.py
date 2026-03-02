@@ -8,6 +8,7 @@ import pandas as pd
 
 from app.core.events import Event, EventType, event_bus
 from app.core.logging import get_logger
+from app.core.metrics import metrics
 from app.services.ml.features import feature_engineer
 from app.services.ml.models.base import ModelPrediction
 from app.services.ml.models.ensemble import EnsembleModel
@@ -151,6 +152,11 @@ class MLPipeline:
                 "model": "ensemble",
             },
         ))
+
+        # 5. Emit ML production metrics
+        metrics.ml_prediction_confidence.observe(prediction.confidence)
+        metrics.ml_signal_distribution.inc(labels={"signal_type": prediction.action_label})
+        metrics.signals_generated.inc()
 
         logger.info(
             "prediction_generated",

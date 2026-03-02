@@ -137,6 +137,17 @@ class MetricsRegistry:
         self.ml_inference_duration = Histogram(
             "ml_inference_duration_seconds", "ML inference duration"
         )
+        self.ml_prediction_confidence = Histogram(
+            "ml_prediction_confidence",
+            "Model confidence distribution",
+            buckets=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+        )
+        self.ml_signal_distribution = Counter(
+            "ml_signal_distribution", "Signal type counts (BUY/HOLD/SELL)"
+        )
+        self.ml_model_accuracy_live = Gauge(
+            "ml_model_accuracy_live", "Live model accuracy (rolling 100 predictions)"
+        )
 
         # WebSocket
         self.ws_connections = Gauge(
@@ -146,6 +157,13 @@ class MetricsRegistry:
         # Binance
         self.binance_rate_usage = Gauge(
             "binance_rate_limit_usage_ratio", "Binance API rate limit usage ratio"
+        )
+
+        # Exchange API latency
+        self.exchange_api_latency = Histogram(
+            "exchange_api_latency_seconds",
+            "Exchange API call latency in seconds",
+            buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
         )
 
     def collect(self) -> str:
@@ -161,8 +179,12 @@ class MetricsRegistry:
             self.drawdown,
             self.circuit_breaker_state,
             self.ml_inference_duration,
+            self.ml_prediction_confidence,
+            self.ml_signal_distribution,
+            self.ml_model_accuracy_live,
             self.ws_connections,
             self.binance_rate_usage,
+            self.exchange_api_latency,
         ]
         return "\n\n".join(m.to_prometheus() for m in metrics) + "\n"
 

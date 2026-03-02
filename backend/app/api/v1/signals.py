@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db
+from app.dependencies import get_db, require_auth
 from app.models.signal import PredictionSignal
 
 router = APIRouter()
@@ -15,6 +15,7 @@ async def get_signal_history(
     symbol: str | None = None,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
+    _user: dict = Depends(require_auth),
 ):
     """Get recent prediction signals."""
     query = (

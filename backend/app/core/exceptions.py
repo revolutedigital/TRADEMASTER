@@ -1,3 +1,10 @@
+"""TradeMaster exception hierarchy.
+
+Organized by domain with support for retryable errors, context info,
+and proper HTTP status mapping.
+"""
+
+
 class TradeMasterError(Exception):
     """Base exception for all TradeMaster errors."""
 
@@ -6,6 +13,43 @@ class TradeMasterError(Exception):
         self.code = code
         super().__init__(self.message)
 
+    def __str__(self) -> str:
+        return f"[{self.code}] {self.message}" if self.message else self.code
+
+
+class RetriableError(TradeMasterError):
+    """Base for errors that should trigger retry logic."""
+
+    def __init__(self, message: str = "", code: str = "RETRIABLE_ERROR", max_retries: int = 3):
+        super().__init__(message, code)
+        self.max_retries = max_retries
+
+
+# --- Validation Errors ---
+
+
+class ValidationError(TradeMasterError):
+    """Business rule validation failures."""
+
+    def __init__(self, message: str = "Validation failed", code: str = "VALIDATION_ERROR", field: str | None = None):
+        super().__init__(message, code)
+        self.field = field
+
+
+class NotFoundError(TradeMasterError):
+    """Resource not found."""
+
+    def __init__(self, message: str = "Resource not found", code: str = "NOT_FOUND", resource: str | None = None):
+        super().__init__(message, code)
+        self.resource = resource
+
+
+class ConfigurationError(TradeMasterError):
+    """Configuration/setup errors that prevent normal operation."""
+
+    def __init__(self, message: str = "Configuration error"):
+        super().__init__(message, "CONFIGURATION_ERROR")
+
 
 # --- Exchange Errors ---
 
@@ -13,18 +57,32 @@ class TradeMasterError(Exception):
 class ExchangeError(TradeMasterError):
     """Base exception for exchange-related errors."""
 
-    def __init__(self, message: str = "", code: str = "EXCHANGE_ERROR"):
+    def __init__(
+        self,
+        message: str = "",
+        code: str = "EXCHANGE_ERROR",
+        exchange_response: dict | None = None,
+        retry_after: int | None = None,
+    ):
         super().__init__(message, code)
+        self.exchange_response = exchange_response
+        self.retry_after = retry_after
 
 
-class ExchangeConnectionError(ExchangeError):
+class ExchangeConnectionError(ExchangeError, RetriableError):
     def __init__(self, message: str = "Failed to connect to exchange"):
-        super().__init__(message, "EXCHANGE_CONNECTION_ERROR")
+        TradeMasterError.__init__(self, message, "EXCHANGE_CONNECTION_ERROR")
+        self.max_retries = 5
+        self.exchange_response = None
+        self.retry_after = None
 
 
-class ExchangeRateLimitError(ExchangeError):
-    def __init__(self, message: str = "Exchange rate limit exceeded"):
-        super().__init__(message, "EXCHANGE_RATE_LIMIT")
+class ExchangeRateLimitError(ExchangeError, RetriableError):
+    def __init__(self, message: str = "Exchange rate limit exceeded", retry_after: int | None = None):
+        TradeMasterError.__init__(self, message, "EXCHANGE_RATE_LIMIT")
+        self.retry_after = retry_after
+        self.exchange_response = None
+        self.max_retries = 3
 
 
 class OrderExecutionError(ExchangeError):
@@ -82,7 +140,7 @@ class PredictionError(MLError):
         super().__init__(message, "PREDICTION_ERROR")
 
 
-# --- Data Errors ---
+# --- Data / Repository Errors ---
 
 
 class DataError(TradeMasterError):
@@ -95,3 +153,38 @@ class DataError(TradeMasterError):
 class DataNotFoundError(DataError):
     def __init__(self, message: str = "Data not found"):
         super().__init__(message, "DATA_NOT_FOUND")
+
+
+class RepositoryError(DataError):
+    """Database/repository layer errors."""
+
+    def __init__(self, message: str = "Repository operation failed"):
+        super().__init__(message, "REPOSITORY_ERROR")
+
+
+class DataIntegrityError(DataError):
+    """Data integrity constraint violation."""
+
+    def __init__(self, message: str = "Data integrity error"):
+        super().__init__(message, "DATA_INTEGRITY_ERROR")
+
+
+# --- HTTP status mapping for global exception handler ---
+
+EXCEPTION_STATUS_MAP: dict[type[TradeMasterError], int] = {
+    ValidationError: 422,
+    NotFoundError: 404,
+    ConfigurationError: 500,
+    ExchangeRateLimitError: 429,
+    InsufficientBalanceError: 400,
+    OrderExecutionError: 502,
+    ExchangeConnectionError: 503,
+    RiskLimitExceededError: 400,
+    DrawdownCircuitBreakerError: 403,
+    InvalidSignalError: 400,
+    ModelNotLoadedError: 503,
+    PredictionError: 500,
+    DataNotFoundError: 404,
+    RepositoryError: 500,
+    DataIntegrityError: 409,
+}

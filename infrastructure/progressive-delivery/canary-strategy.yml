@@ -1,0 +1,71 @@
+# TradeMaster Progressive Delivery Strategy
+# Combines feature flags, canary releases, and A/B deployments
+
+progressive_delivery:
+  strategy: canary_with_analysis
+  
+  stages:
+    - name: canary_5pct
+      traffic_weight: 5
+      duration: 5m
+      analysis:
+        metrics:
+          - name: error_rate
+            threshold: 0.01  # Max 1% error rate
+            query: "rate(http_requests_total{status=~'5..'}[5m]) / rate(http_requests_total[5m])"
+          - name: latency_p95
+            threshold: 500  # Max 500ms p95
+            query: "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))"
+          - name: trading_success_rate
+            threshold: 0.99  # Min 99% order success
+            query: "rate(orders_executed_total{status='filled'}[5m]) / rate(orders_executed_total[5m])"
+            
+    - name: canary_25pct
+      traffic_weight: 25
+      duration: 10m
+      analysis:
+        metrics:
+          - name: error_rate
+            threshold: 0.005
+          - name: latency_p95
+            threshold: 400
+          - name: pnl_impact
+            threshold: -0.001  # Max 0.1% PnL degradation
+            query: "sum(portfolio_daily_pnl{version='canary'}) / sum(portfolio_total_equity{version='canary'})"
+            
+    - name: canary_50pct
+      traffic_weight: 50
+      duration: 15m
+      analysis:
+        metrics:
+          - name: error_rate
+            threshold: 0.005
+          - name: latency_p95
+            threshold: 400
+            
+    - name: full_rollout
+      traffic_weight: 100
+      duration: 0m
+
+  rollback:
+    automatic: true
+    conditions:
+      - "error_rate > 0.02"  # 2% errors trigger immediate rollback
+      - "latency_p95 > 1000"  # 1s p95 triggers rollback
+      - "circuit_breaker_state > 1"  # Circuit breaker activated
+    cooldown: 30m  # Wait before retrying after rollback
+    max_retries: 2
+
+  feature_flags_integration:
+    provider: "app.core.feature_flags.FeatureFlags"
+    strategy: percentage_rollout
+    flags:
+      - name: multi_exchange
+        canary_pct: 5
+        production_pct: 0
+      - name: sentiment_analysis
+        canary_pct: 100
+        production_pct: 50
+      - name: twap_execution
+        canary_pct: 100
+        production_pct: 10

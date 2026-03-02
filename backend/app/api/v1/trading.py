@@ -4,14 +4,22 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.dependencies import get_db, require_auth
+from app.dependencies import (
+    get_db,
+    get_order_repository,
+    get_position_repository,
+    get_market_repository,
+    get_trading_engine,
+    require_auth,
+)
 from app.models.trade import Order
 from app.models.portfolio import Position
-from app.models.market import OHLCV
+from app.repositories.order_repo import OrderRepository
+from app.repositories.position_repo import PositionRepository
+from app.repositories.market_repo import MarketDataRepository
 from app.schemas.trading import OrderResponse
 
 logger = get_logger(__name__)
@@ -34,15 +42,18 @@ async def get_orders(
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
     _user: dict = Depends(require_auth),
+    repo: OrderRepository = Depends(get_order_repository),
 ):
     """Get recent orders. Requires authentication."""
-    query = select(Order).order_by(Order.created_at.desc()).limit(limit)
-    if symbol:
-        query = query.where(Order.symbol == symbol.upper())
-    if status:
-        query = query.where(Order.status == status.upper())
-    result = await db.execute(query)
-    return list(result.scalars().all())
+    if status and status.upper() in ("PENDING", "SUBMITTED", "PARTIALLY_FILLED"):
+        orders = await repo.get_open_orders(db, symbol)
+    elif status and status.upper() == "FILLED":
+        orders = await repo.get_filled_orders(db, symbol, limit)
+    elif symbol:
+        orders = await repo.get_orders_by_symbol(db, symbol.upper(), limit)
+    else:
+        orders = await repo.list_all(db, limit)
+    return orders
 
 
 @router.post("/paper-order")
@@ -294,40 +305,46 @@ async def close_position_manually(
 
 
 @router.post("/engine/start")
-async def start_engine(_user: dict = Depends(require_auth)):
+async def start_engine(
+    _user: dict = Depends(require_auth),
+    engine=Depends(get_trading_engine),
+):
     """Start the trading engine. Requires authentication."""
-    from app.services.trading_engine import trading_engine
-    if trading_engine._running:
+    if engine._running:
         return {"status": "already_running"}
 
     import asyncio
-    asyncio.create_task(trading_engine.start(), name="trading_engine")
+    asyncio.create_task(engine.start(), name="trading_engine")
     return {"status": "started"}
 
 
 @router.post("/engine/stop")
-async def stop_engine(_user: dict = Depends(require_auth)):
+async def stop_engine(
+    _user: dict = Depends(require_auth),
+    engine=Depends(get_trading_engine),
+):
     """Pause the trading engine. Requires authentication."""
-    from app.services.trading_engine import trading_engine
-    if not trading_engine._running:
+    if not engine._running:
         return {"status": "already_stopped"}
 
-    await trading_engine.stop()
+    await engine.stop()
     return {"status": "stopped"}
 
 
 @router.get("/engine/status")
 async def engine_status(_user: dict = Depends(require_auth)):
     """Get trading engine status. Requires authentication."""
-    from app.services.trading_engine import trading_engine
+    from app.dependencies import get_trading_engine, get_circuit_breaker
     from app.services.scheduler import scheduler
     from app.services.exchange.binance_ws import binance_ws_manager
-    from app.services.risk.drawdown import circuit_breaker
+
+    engine = get_trading_engine()
+    cb = get_circuit_breaker()
 
     return {
-        "engine_running": trading_engine._running,
+        "engine_running": engine._running,
         "websocket_streams": len(binance_ws_manager._tasks),
         "websocket_active": binance_ws_manager._running,
-        "circuit_breaker": circuit_breaker.get_status(),
+        "circuit_breaker": cb.get_status(),
         "scheduled_tasks": scheduler.get_status(),
     }

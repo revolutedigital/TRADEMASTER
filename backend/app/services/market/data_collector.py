@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.models.market import OHLCV
 from app.services.exchange.binance_client import binance_client
+from app.services.market.data_validator import data_validator
 
 logger = get_logger(__name__)
 
@@ -94,6 +95,23 @@ class MarketDataCollector:
         """
         if not data.get("is_closed"):
             return None
+
+        # Validate before insertion
+        validation = data_validator.validate_ohlcv(data)
+        if not validation.is_valid:
+            logger.warning(
+                "kline_validation_failed",
+                symbol=symbol,
+                interval=interval,
+                errors=validation.errors,
+            )
+            return None
+        if validation.warnings:
+            logger.info(
+                "kline_validation_warnings",
+                symbol=symbol,
+                warnings=validation.warnings,
+            )
 
         candle = OHLCV(
             symbol=symbol,

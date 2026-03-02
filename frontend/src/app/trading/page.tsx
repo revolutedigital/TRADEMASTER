@@ -14,6 +14,7 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
+import { ExportButton } from "@/components/ui/export-button";
 import { formatCurrency, timeAgo } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import type { TimeInterval } from "@/lib/types";
@@ -35,9 +36,10 @@ export default function TradingPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">Trading Terminal</h1>
         <div className="flex items-center gap-2">
+          <ExportButton endpoint="/api/v1/export/trades" filename="trades.csv" label="Export Trades" />
           <Badge
             variant={
               riskStatus?.circuit_breaker_state === "NORMAL"
@@ -95,7 +97,7 @@ export default function TradingPage() {
       </Card>
 
       {/* Bottom panels */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Active Positions */}
         <Card>
           <CardHeader>
@@ -103,6 +105,7 @@ export default function TradingPage() {
             <Badge variant="primary">{positions.length}</Badge>
           </CardHeader>
 
+          <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -158,6 +161,7 @@ export default function TradingPage() {
               )}
             </TableBody>
           </Table>
+          </div>
         </Card>
 
         {/* Recent Orders */}
@@ -167,6 +171,7 @@ export default function TradingPage() {
             <Badge>{orders.length}</Badge>
           </CardHeader>
 
+          <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -219,6 +224,7 @@ export default function TradingPage() {
               )}
             </TableBody>
           </Table>
+          </div>
         </Card>
       </div>
     </div>

@@ -20,6 +20,18 @@ router = APIRouter()
 _init_status = {"seeding": False, "training": False, "error": None}
 
 
+@router.get("/.well-known/security.txt")
+async def security_txt():
+    """Security contact information per RFC 9116."""
+    return PlainTextResponse(
+        "Contact: security@trademaster.app\n"
+        "Expires: 2027-01-01T00:00:00.000Z\n"
+        "Preferred-Languages: en, pt\n"
+        "Policy: https://trademaster.app/security-policy\n"
+        "Canonical: https://trademaster.app/.well-known/security.txt\n"
+    )
+
+
 @router.get("/health")
 async def health_check():
     from app.services.exchange.binance_client import binance_client
@@ -33,8 +45,74 @@ async def health_check():
     }
 
 
+@router.get("/health/detailed")
+async def health_detailed():
+    """Detailed health check covering database, redis, binance, and ML models."""
+    from app.services.exchange.binance_client import binance_client
+
+    checks: dict[str, dict] = {}
+    overall_healthy = True
+
+    # Database check
+    try:
+        from app.models.base import async_session_factory
+        from sqlalchemy import text
+        async with async_session_factory() as db:
+            result = await db.execute(text("SELECT 1"))
+            result.scalar()
+        checks["database"] = {"status": "healthy", "latency_ms": None}
+    except Exception as e:
+        checks["database"] = {"status": "unhealthy", "error": str(e)}
+        overall_healthy = False
+
+    # Redis check
+    try:
+        from app.core.cache import redis_client
+        if redis_client:
+            pong = await redis_client.ping()
+            checks["redis"] = {"status": "healthy" if pong else "unhealthy"}
+        else:
+            checks["redis"] = {"status": "not_configured"}
+    except Exception as e:
+        checks["redis"] = {"status": "unhealthy", "error": str(e)}
+        overall_healthy = False
+
+    # Binance check
+    try:
+        connected = binance_client._client is not None
+        checks["binance"] = {
+            "status": "healthy" if connected else "disconnected",
+            "testnet": settings.binance_testnet,
+        }
+        if not connected:
+            overall_healthy = False
+    except Exception as e:
+        checks["binance"] = {"status": "unhealthy", "error": str(e)}
+        overall_healthy = False
+
+    # ML models check
+    try:
+        from app.services.ml.pipeline import ml_pipeline
+        loaded_models = getattr(ml_pipeline, "_models", {})
+        n_loaded = len(loaded_models) if isinstance(loaded_models, dict) else 0
+        checks["ml_models"] = {
+            "status": "healthy" if n_loaded > 0 else "no_models_loaded",
+            "models_loaded": n_loaded,
+        }
+    except Exception as e:
+        checks["ml_models"] = {"status": "unhealthy", "error": str(e)}
+
+    return {
+        "status": "healthy" if overall_healthy else "degraded",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "version": "0.1.0",
+        "env": settings.app_env,
+        "checks": checks,
+    }
+
+
 @router.get("/status")
-async def system_status():
+async def system_status(_user: dict = Depends(require_auth)):
     from app.services.exchange.binance_client import binance_client
     from app.services.trading_engine import trading_engine
 
@@ -77,7 +155,7 @@ async def start_all_services(_user: dict = Depends(require_auth)):
 
 
 @router.get("/metrics", response_class=PlainTextResponse)
-async def prometheus_metrics():
+async def prometheus_metrics(_user: dict = Depends(require_auth)):
     """Prometheus-compatible metrics endpoint."""
     return metrics.collect()
 

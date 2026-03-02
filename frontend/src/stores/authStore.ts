@@ -9,7 +9,14 @@ interface AuthState {
   error: string | null;
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
-  restoreSession: () => void;
+  restoreSession: () => Promise<void>;
+  refreshToken: () => Promise<boolean>;
+}
+
+export function getCsrfToken(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(/csrf_token=([^;]+)/);
+  return match ? match[1] : null;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -25,6 +32,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
+        credentials: "include",
       });
 
       if (!res.ok) {
@@ -34,10 +42,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
 
       const data = await res.json();
-      const token = data.access_token;
-
-      localStorage.setItem("tm_token", token);
-      set({ token, isAuthenticated: true, isLoading: false, error: null });
+      // Token kept in memory only; httpOnly cookies handle API auth
+      // In-memory token used for WebSocket auth (WS can't send cookies)
+      set({ token: data.access_token, isAuthenticated: true, isLoading: false, error: null });
       return true;
     } catch {
       set({ isLoading: false, error: "Connection failed" });
@@ -45,15 +52,50 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
-  logout: () => {
-    localStorage.removeItem("tm_token");
+  logout: async () => {
+    try {
+      await fetch(`${API_URL}/api/v1/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Ignore network errors on logout
+    }
     set({ token: null, isAuthenticated: false, error: null });
   },
 
-  restoreSession: () => {
-    const token = localStorage.getItem("tm_token");
-    if (token) {
-      set({ token, isAuthenticated: true });
+  restoreSession: async () => {
+    // Try refreshing via httpOnly cookie to restore session on page load
+    try {
+      const res = await fetch(`${API_URL}/api/v1/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        set({ token: data.access_token, isAuthenticated: true });
+        return;
+      }
+    } catch {
+      // No valid session
     }
+    set({ token: null, isAuthenticated: false });
+  },
+
+  refreshToken: async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/v1/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        set({ token: data.access_token, isAuthenticated: true });
+        return true;
+      }
+    } catch {
+      // Ignore
+    }
+    return false;
   },
 }));

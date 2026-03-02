@@ -1,0 +1,47 @@
+# Service Level Objectives (SLO) for TradeMaster
+# Used with Prometheus/Grafana for burn-rate alerting
+
+slos:
+  - name: API Availability
+    target: 99.9%
+    window: 30d
+    indicator: |
+      rate(http_requests_total{status!~"5.."}[5m]) / rate(http_requests_total[5m])
+    burn_rate_alerts:
+      - severity: critical
+        window: 1h
+        threshold: 14.4  # 2% budget consumed in 1h
+      - severity: warning
+        window: 6h
+        threshold: 6     # 5% budget consumed in 6h
+
+  - name: API Latency p95
+    target: 500ms
+    window: 30d
+    indicator: |
+      histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))
+    burn_rate_alerts:
+      - severity: critical
+        window: 1h
+        threshold: 14.4
+      - severity: warning
+        window: 6h
+        threshold: 6
+
+  - name: Trading Execution Success
+    target: 99.5%
+    window: 7d
+    indicator: |
+      rate(orders_executed_total[1h]) / (rate(orders_executed_total[1h]) + rate(orders_failed_total[1h]))
+
+  - name: ML Inference Latency p99
+    target: 2s
+    window: 30d
+    indicator: |
+      histogram_quantile(0.99, rate(ml_inference_duration_seconds_bucket[5m]))
+
+  - name: WebSocket Uptime
+    target: 99.9%
+    window: 30d
+    indicator: |
+      avg_over_time(websocket_active_connections[5m]) > 0

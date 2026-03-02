@@ -1,0 +1,32 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: trademaster
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: https://github.com/revolutedigital/TRADEMASTER
+  ref:
+    branch: main
+  secretRef:
+    name: github-credentials
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: trademaster
+  namespace: flux-system
+spec:
+  interval: 5m
+  path: ./infrastructure/k8s
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: trademaster
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: trademaster-backend
+      namespace: trademaster
+  timeout: 3m
+  retryInterval: 1m

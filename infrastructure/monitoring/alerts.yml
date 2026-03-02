@@ -1,0 +1,56 @@
+groups:
+  - name: trademaster_alerts
+    rules:
+      - alert: HighAPILatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API latency (p95 > 2s)"
+          description: "95th percentile latency is {{ $value }}s"
+
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate (>5%)"
+          description: "Error rate is {{ $value | humanizePercentage }}"
+
+      - alert: CircuitBreakerActivated
+        expr: trademaster_circuit_breaker_state != 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Trading circuit breaker activated"
+          description: "Circuit breaker state: {{ $value }}"
+
+      - alert: ModelInferenceFailure
+        expr: rate(trademaster_ml_prediction_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ML model inference failures detected"
+          description: "Prediction error rate: {{ $value }}/s"
+
+      - alert: DatabaseConnectionPoolExhausted
+        expr: trademaster_db_pool_size - trademaster_db_pool_available < 2
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "Only {{ $value }} connections available"
+
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes > 1e9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage (>1GB)"
+          description: "Process using {{ $value | humanize }}B"

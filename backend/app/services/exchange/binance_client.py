@@ -28,6 +28,7 @@ from app.core.exceptions import (
 )
 from app.core.logging import get_logger
 from app.core.rate_limiter import BinanceRateLimiter
+from app.core.resilience import ServiceCircuitBreaker
 
 logger = get_logger(__name__)
 
@@ -42,14 +43,33 @@ INTERVAL_MAP = {
 
 
 class BinanceClientWrapper:
-    """Async wrapper around python-binance with rate limiting and circuit breaker."""
+    """Async wrapper around python-binance with rate limiting and circuit breaker.
 
-    def __init__(self) -> None:
+    Uses the shared ``ServiceCircuitBreaker`` from ``app.core.resilience`` for
+    circuit-breaking logic, ensuring a single consistent implementation across
+    the codebase (CLOSED → OPEN → HALF_OPEN state machine).
+
+    **Rate-limiter note:** The ``BinanceRateLimiter`` tracks request weights and
+    order counts using time-based sliding windows.  Ideally we would also
+    read the ``X-MBX-USED-WEIGHT-*`` and ``X-MBX-ORDER-COUNT-*`` response
+    headers returned by Binance to stay perfectly in sync.  However, the
+    ``python-binance`` library processes HTTP responses internally and does
+    **not** expose the raw response headers through its async API.  As a
+    mitigation we use conservative weight estimates per endpoint and a 20%
+    safety margin in the rate-limiter configuration.  If exact header-based
+    tracking becomes necessary, a custom ``aiohttp`` session can be injected
+    via ``AsyncClient``'s ``session`` parameter.
+    """
+
+    def __init__(
+        self,
+        circuit_breaker: ServiceCircuitBreaker | None = None,
+    ) -> None:
         self._client: AsyncClient | None = None
         self._rate_limiter = BinanceRateLimiter()
-        self._consecutive_errors: int = 0
-        self._circuit_open: bool = False
-        self._circuit_open_until: float = 0
+        self._circuit_breaker = circuit_breaker or ServiceCircuitBreaker(
+            failure_threshold=3, recovery_timeout=60.0, half_open_max_calls=2,
+        )
 
     async def connect(self) -> None:
         """Initialize the async Binance client."""
@@ -64,7 +84,7 @@ class BinanceClientWrapper:
                 self._client.API_URL = "https://testnet.binance.vision/api"
             # Verify connection
             await self._client.get_server_time()
-            self._consecutive_errors = 0
+            self._circuit_breaker.reset()
             logger.info(
                 "binance_connected",
                 testnet=settings.binance_testnet,
@@ -80,37 +100,12 @@ class BinanceClientWrapper:
             self._client = None
             logger.info("binance_disconnected")
 
-    def _check_circuit_breaker(self) -> None:
-        """Check if circuit breaker is open."""
-        if self._circuit_open:
-            import time
-
-            if time.monotonic() < self._circuit_open_until:
-                raise ExchangeConnectionError(
-                    "Circuit breaker open - too many consecutive errors"
-                )
-            self._circuit_open = False
-            self._consecutive_errors = 0
-            logger.info("circuit_breaker_reset")
-
-    def _record_error(self) -> None:
-        import time
-
-        self._consecutive_errors += 1
-        if self._consecutive_errors >= 3:
-            self._circuit_open = True
-            self._circuit_open_until = time.monotonic() + 60  # 60s cooldown
-            logger.warning(
-                "circuit_breaker_triggered",
-                consecutive_errors=self._consecutive_errors,
-            )
-
-    def _record_success(self) -> None:
-        self._consecutive_errors = 0
-
     async def _execute(self, coro, weight: int = 1) -> Any:
         """Execute a Binance API call with rate limiting and error handling."""
-        self._check_circuit_breaker()
+        if not self._circuit_breaker.is_available:
+            raise ExchangeConnectionError(
+                f"Circuit breaker {self._circuit_breaker.state} - too many consecutive errors"
+            )
 
         if not self._rate_limiter.can_make_request(weight):
             raise ExchangeRateLimitError()
@@ -120,18 +115,18 @@ class BinanceClientWrapper:
 
         try:
             result = await coro
-            self._record_success()
+            self._circuit_breaker.record_success()
             return result
         except BinanceAPIException as e:
             if e.code == -1003:  # Rate limit
-                self._record_error()
+                self._circuit_breaker.record_failure()
                 raise ExchangeRateLimitError(f"Binance rate limit: {e.message}") from e
             if e.code == -2010:  # Insufficient balance
                 raise InsufficientBalanceError(e.message) from e
-            self._record_error()
+            self._circuit_breaker.record_failure()
             raise OrderExecutionError(f"Binance API error [{e.code}]: {e.message}") from e
         except Exception as e:
-            self._record_error()
+            self._circuit_breaker.record_failure()
             raise ExchangeConnectionError(f"Binance request failed: {e}") from e
 
     # --- Market Data ---

@@ -155,4 +155,40 @@ class RiskManager:
         )
 
 
+    def get_position_risk(self, position) -> dict:
+        """Calculate risk metrics for a single position."""
+        entry = float(position.entry_price)
+        current = float(position.current_price) if position.current_price else entry
+        quantity = float(position.quantity)
+        side = position.side
+
+        if side == "LONG":
+            unrealized_pnl = (current - entry) * quantity
+        else:
+            unrealized_pnl = (entry - current) * quantity
+
+        notional = current * quantity
+        distance_to_stop = 0.0
+        distance_to_target = 0.0
+
+        if position.stop_loss_price:
+            sl = float(position.stop_loss_price)
+            distance_to_stop = abs(current - sl) / current if current > 0 else 0
+
+        if position.take_profit_price:
+            tp = float(position.take_profit_price)
+            distance_to_target = abs(tp - current) / current if current > 0 else 0
+
+        risk_reward = distance_to_target / distance_to_stop if distance_to_stop > 0 else 0
+
+        return {
+            "unrealized_pnl": round(unrealized_pnl, 2),
+            "unrealized_pnl_pct": round(unrealized_pnl / (entry * quantity), 4) if entry * quantity > 0 else 0,
+            "notional_value": round(notional, 2),
+            "risk_reward_ratio": round(risk_reward, 2),
+            "distance_to_stop_pct": round(distance_to_stop, 4),
+            "distance_to_target_pct": round(distance_to_target, 4),
+        }
+
+
 risk_manager = RiskManager()

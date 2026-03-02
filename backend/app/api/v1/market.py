@@ -95,3 +95,33 @@ async def get_tickers(db: AsyncSession = Depends(get_db)):
         tickers.append(ticker)
 
     return tickers
+
+
+@router.get("/depth/{symbol}")
+async def get_order_book_depth(symbol: str, limit: int = Query(default=25, ge=5, le=100)):
+    """Get order book depth (bids and asks) for a symbol."""
+    try:
+        from app.services.exchange.binance_client import binance_client
+        depth = await binance_client.get_order_book(symbol.upper(), limit=limit)
+        return depth
+    except Exception as e:
+        logger.warning("depth_fetch_failed", symbol=symbol, error=str(e))
+        return {"bids": [], "asks": [], "symbol": symbol.upper()}
+
+
+@router.get("/sentiment")
+async def get_market_sentiment():
+    """Get market sentiment indicators."""
+    try:
+        from app.services.ml.sentiment import sentiment_analyzer
+        result = await sentiment_analyzer.get_composite_sentiment()
+        return result
+    except Exception as e:
+        logger.warning("sentiment_fetch_failed", error=str(e))
+        return {
+            "fear_greed_index": 50,
+            "fear_greed_label": "Neutral",
+            "funding_rates": {},
+            "long_short_ratio": {},
+            "open_interest": {},
+        }

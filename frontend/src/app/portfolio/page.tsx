@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { formatCurrency, formatPercent, timeAgo } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { ExportButton } from "@/components/ui/export-button";
 import {
   DollarSign,
   TrendingUp,
@@ -28,10 +29,13 @@ export default function PortfolioPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Portfolio</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Portfolio</h1>
+        <ExportButton endpoint="/api/v1/export/portfolio" filename="portfolio.csv" />
+      </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <StatCard
           label="Total Equity"
           value={formatCurrency(summary?.total_equity ?? 10000)}
@@ -79,7 +83,7 @@ export default function PortfolioPage() {
           </Badge>
         </CardHeader>
 
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="flex items-center gap-3 rounded-lg bg-[var(--color-background)] p-3">
             <Shield className="h-5 w-5 text-[var(--color-text-muted)]" />
             <div>
@@ -131,6 +135,7 @@ export default function PortfolioPage() {
           <Badge variant="primary">{positions.length}</Badge>
         </CardHeader>
 
+        <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -184,6 +189,7 @@ export default function PortfolioPage() {
             )}
           </TableBody>
         </Table>
+        </div>
       </Card>
     </div>
   );

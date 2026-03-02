@@ -1,0 +1,94 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "error": "Something went wrong",
+    "retry": "Try Again",
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "export": "Export",
+    "apply": "Apply",
+    "reset": "Reset"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "trading": "Trading",
+    "portfolio": "Portfolio",
+    "signals": "Signals",
+    "backtest": "Backtest",
+    "settings": "Settings",
+    "apiDocs": "API Docs",
+    "tradeHistory": "Trade History",
+    "strategyBuilder": "Strategy Builder"
+  },
+  "auth": {
+    "signIn": "Sign In",
+    "signOut": "Sign Out",
+    "username": "Username",
+    "password": "Password",
+    "loginFailed": "Login failed",
+    "sessionExpired": "Session expired"
+  },
+  "dashboard": {
+    "totalEquity": "Total Equity",
+    "dailyPnl": "Daily P&L",
+    "openPositions": "Open Positions",
+    "winRate": "Win Rate",
+    "priceChart": "Price Chart",
+    "recentSignals": "Recent Signals"
+  },
+  "trading": {
+    "paperOrder": "Paper Order",
+    "symbol": "Symbol",
+    "side": "Side",
+    "buy": "Buy",
+    "sell": "Sell",
+    "quantity": "Quantity",
+    "stopLoss": "Stop Loss",
+    "takeProfit": "Take Profit",
+    "execute": "Execute Order",
+    "engineStatus": "Engine Status",
+    "startEngine": "Start Engine",
+    "stopEngine": "Stop Engine"
+  },
+  "portfolio": {
+    "summary": "Portfolio Summary",
+    "positions": "Positions",
+    "totalExposure": "Total Exposure",
+    "availableBalance": "Available Balance",
+    "unrealizedPnl": "Unrealized P&L",
+    "realizedPnl": "Realized P&L",
+    "riskStatus": "Risk Status"
+  },
+  "signals": {
+    "history": "Signal History",
+    "action": "Action",
+    "confidence": "Confidence",
+    "strength": "Strength",
+    "source": "Source"
+  },
+  "backtest": {
+    "runBacktest": "Run Backtest",
+    "configuration": "Configuration",
+    "results": "Results",
+    "initialCapital": "Initial Capital",
+    "signalThreshold": "Signal Threshold",
+    "totalReturn": "Total Return",
+    "sharpeRatio": "Sharpe Ratio",
+    "maxDrawdown": "Max Drawdown",
+    "profitFactor": "Profit Factor",
+    "equityCurve": "Equity Curve"
+  },
+  "settings": {
+    "riskManagement": "Risk Management",
+    "tradingConfig": "Trading Configuration",
+    "apiDocumentation": "API Documentation"
+  },
+  "risk": {
+    "normal": "Normal",
+    "reduced": "Reduced",
+    "paused": "Paused",
+    "halted": "Halted",
+    "circuitBreaker": "Circuit Breaker"
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "common": {
+    "loading": "Carregando...",
+    "error": "Algo deu errado",
+    "retry": "Tentar Novamente",
+    "save": "Salvar",
+    "cancel": "Cancelar",
+    "close": "Fechar",
+    "export": "Exportar",
+    "apply": "Aplicar",
+    "reset": "Resetar"
+  },
+  "nav": {
+    "dashboard": "Painel",
+    "trading": "Trading",
+    "portfolio": "Portfolio",
+    "signals": "Sinais",
+    "backtest": "Backtest",
+    "settings": "Configuracoes",
+    "apiDocs": "Documentacao API",
+    "tradeHistory": "Historico de Trades",
+    "strategyBuilder": "Construtor de Estrategias"
+  },
+  "auth": {
+    "signIn": "Entrar",
+    "signOut": "Sair",
+    "username": "Usuario",
+    "password": "Senha",
+    "loginFailed": "Falha no login",
+    "sessionExpired": "Sessao expirada"
+  },
+  "dashboard": {
+    "totalEquity": "Patrimonio Total",
+    "dailyPnl": "P&L Diario",
+    "openPositions": "Posicoes Abertas",
+    "winRate": "Taxa de Acerto",
+    "priceChart": "Grafico de Precos",
+    "recentSignals": "Sinais Recentes"
+  },
+  "trading": {
+    "paperOrder": "Ordem Simulada",
+    "symbol": "Simbolo",
+    "side": "Lado",
+    "buy": "Comprar",
+    "sell": "Vender",
+    "quantity": "Quantidade",
+    "stopLoss": "Stop Loss",
+    "takeProfit": "Take Profit",
+    "execute": "Executar Ordem",
+    "engineStatus": "Status do Motor",
+    "startEngine": "Iniciar Motor",
+    "stopEngine": "Parar Motor"
+  },
+  "portfolio": {
+    "summary": "Resumo do Portfolio",
+    "positions": "Posicoes",
+    "totalExposure": "Exposicao Total",
+    "availableBalance": "Saldo Disponivel",
+    "unrealizedPnl": "P&L Nao Realizado",
+    "realizedPnl": "P&L Realizado",
+    "riskStatus": "Status de Risco"
+  },
+  "signals": {
+    "history": "Historico de Sinais",
+    "action": "Acao",
+    "confidence": "Confianca",
+    "strength": "Forca",
+    "source": "Fonte"
+  },
+  "backtest": {
+    "runBacktest": "Rodar Backtest",
+    "configuration": "Configuracao",
+    "results": "Resultados",
+    "initialCapital": "Capital Inicial",
+    "signalThreshold": "Limiar de Sinal",
+    "totalReturn": "Retorno Total",
+    "sharpeRatio": "Indice Sharpe",
+    "maxDrawdown": "Drawdown Maximo",
+    "profitFactor": "Fator de Lucro",
+    "equityCurve": "Curva de Patrimonio"
+  },
+  "settings": {
+    "riskManagement": "Gestao de Risco",
+    "tradingConfig": "Configuracao de Trading",
+    "apiDocumentation": "Documentacao da API"
+  },
+  "risk": {
+    "normal": "Normal",
+    "reduced": "Reduzido",
+    "paused": "Pausado",
+    "halted": "Parado",
+    "circuitBreaker": "Disjuntor"
+  }
+}

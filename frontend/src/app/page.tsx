@@ -17,6 +17,8 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { LivePrice } from "@/components/ui/live-price";
+import { OnboardingWizard } from "@/components/onboarding/wizard";
+import { useOnboardingStore } from "@/stores/onboardingStore";
 import { formatCurrency, formatPercent, timeAgo, apiFetch } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import type { TimeInterval } from "@/lib/types";
@@ -46,6 +48,7 @@ export default function DashboardPage() {
   } = useMarketData();
 
   const { positions, signals, summary, riskStatus, fetchPositions, fetchSummary } = usePortfolio();
+  const onboardingCompleted = useOnboardingStore((s) => s.completed);
 
   const [engineRunning, setEngineRunning] = useState(false);
   const [engineLoading, setEngineLoading] = useState(false);
@@ -128,8 +131,11 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* Onboarding Wizard for new users */}
+      {!onboardingCompleted && <OnboardingWizard />}
+
       {/* Trading Controls */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-semibold">Dashboard</h1>
           <Badge variant={engineRunning ? "success" : "default"}>
@@ -172,7 +178,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           label="Total Equity"
           value={formatCurrency(summary?.total_equity ?? 10000)}
@@ -203,7 +209,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Chart + Trading Panel */}
-      <div className="grid grid-cols-[1fr_300px] gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
         {/* Chart */}
         <Card>
           <CardHeader>
@@ -237,7 +243,7 @@ export default function DashboardPage() {
           <CandlestickChart data={currentKlines} height={400} />
 
           {currentPrice && (
-            <div className="mt-3 flex items-center justify-between border-t border-[var(--color-border)] px-4 pt-3 pb-3">
+            <div className="mt-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-t border-[var(--color-border)] px-4 pt-3 pb-3">
               <div className="flex items-center gap-4 text-sm">
                 <span className="text-[var(--color-text-muted)]">Price</span>
                 <LivePrice price={currentPrice.price} className="font-semibold text-base" />
@@ -371,7 +377,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Bottom panels */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Open Positions */}
         <Card>
           <CardHeader>

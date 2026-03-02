@@ -44,6 +44,8 @@ dev = [
     "httpx>=0.28.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
+    "pip-audit>=2.7.0",
+    "fakeredis[lua]>=2.25.0",
 ]
 ml = [
     "stable-baselines3>=2.4.0",
@@ -73,6 +75,7 @@ ignore = ["S101"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
+addopts = "--cov=app --cov-report=html --cov-report=xml --cov-fail-under=80"
 
 [tool.mypy]
 python_version = "3.12"

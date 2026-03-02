@@ -1,0 +1,63 @@
+# TradeMaster Cost Optimization Dashboard Configuration
+# Tracks cost per request, per feature, per service
+
+cost_tracking:
+  enabled: true
+  currency: USD
+  
+  services:
+    backend:
+      provider: railway
+      tier: pro
+      monthly_base: 20.00
+      per_request_cost: 0.000001  # ~$1 per million requests
+      
+    database:
+      provider: railway
+      type: postgres
+      monthly_base: 10.00
+      per_gb_storage: 0.50
+      
+    redis:
+      provider: railway
+      monthly_base: 5.00
+      
+    frontend:
+      provider: vercel
+      tier: pro
+      monthly_base: 20.00
+      per_gb_bandwidth: 0.15
+
+  alerts:
+    - name: daily_cost_spike
+      condition: "daily_cost > avg_daily_cost * 1.5"
+      severity: warning
+      notification: slack
+      
+    - name: monthly_budget_80pct
+      condition: "monthly_cost > monthly_budget * 0.8"
+      severity: warning
+      notification: email
+      
+    - name: monthly_budget_exceeded
+      condition: "monthly_cost > monthly_budget"
+      severity: critical
+      notification: pagerduty
+
+  budget:
+    monthly: 100.00
+    quarterly: 280.00
+    annual: 1000.00
+
+  optimization_rules:
+    - name: idle_service_detection
+      description: "Alert if service has < 10 requests in 24h"
+      action: scale_down
+      
+    - name: oversized_queries
+      description: "Alert if DB query takes > 5s"
+      action: notify
+      
+    - name: cache_hit_ratio
+      description: "Alert if Redis cache hit ratio < 80%"
+      action: review_cache_strategy

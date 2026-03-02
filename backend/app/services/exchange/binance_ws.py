@@ -68,6 +68,7 @@ class BinanceWebSocketManager:
             try:
                 stream_name = f"{symbol}@kline_{interval}"
                 async with self._bsm.kline_socket(symbol, interval=interval) as stream:
+                    self._reconnect_count = 0  # Reset on successful connection
                     logger.info("ws_kline_connected", symbol=symbol, interval=interval)
                     while self._running:
                         msg = await asyncio.wait_for(stream.recv(), timeout=60)
@@ -94,6 +95,7 @@ class BinanceWebSocketManager:
         while self._running:
             try:
                 async with self._bsm.trade_socket(symbol) as stream:
+                    self._reconnect_count = 0  # Reset on successful connection
                     logger.info("ws_trade_connected", symbol=symbol)
                     while self._running:
                         msg = await asyncio.wait_for(stream.recv(), timeout=60)

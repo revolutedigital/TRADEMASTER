@@ -7,12 +7,20 @@ from collections.abc import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from fastapi.responses import JSONResponse
+from starlette.requests import Request as StarletteRequest
+
 from app.config import settings
 from app.core.events import event_bus
+from app.core.exceptions import TradeMasterError, EXCEPTION_STATUS_MAP
 from app.core.logging import get_logger, setup_logging
 from app.core.metrics import metrics
+from app.core.idempotency import IdempotencyMiddleware
+from app.core.tracing import setup_tracing
 from app.api.v1.router import api_router
 from app.api.websocket.streams import router as ws_router
+from app.core.rasp import RASPMiddleware
+from app.core.honeypot import honeypot_router
 
 logger = get_logger(__name__)
 
@@ -32,18 +40,33 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         symbols=settings.symbols_list,
     )
 
-    # --- Phase 0: Ensure database tables exist ---
+    # --- Phase 0: Run Alembic migrations (falls back to create_all) ---
     try:
-        from app.models.base import engine, Base
-        import app.models.market  # noqa: F401
-        import app.models.trade  # noqa: F401
-        import app.models.portfolio  # noqa: F401
-        import app.models.signal  # noqa: F401
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("database_tables_created")
+        from alembic.config import Config
+        from alembic import command
+        alembic_cfg = Config("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
+        logger.info("database_migrations_applied")
     except Exception as e:
-        logger.warning("database_tables_failed", error=str(e))
+        logger.warning("alembic_migration_failed", error=str(e))
+        # Fallback: create tables directly (for development / first-time setup)
+        try:
+            from app.models.base import engine, Base
+            import app.models.market  # noqa: F401
+            import app.models.trade  # noqa: F401
+            import app.models.portfolio  # noqa: F401
+            import app.models.signal  # noqa: F401
+            import app.models.audit  # noqa: F401
+            import app.models.api_key  # noqa: F401
+            import app.models.alert  # noqa: F401
+            import app.models.journal  # noqa: F401
+            import app.models.lineage  # noqa: F401
+            import app.models.user  # noqa: F401
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("database_tables_created_fallback")
+        except Exception as e2:
+            logger.warning("database_tables_failed", error=str(e2))
 
     # --- Phase 1: Connect infrastructure ---
     redis_ok = False
@@ -142,8 +165,28 @@ async def _start_background_services() -> None:
         except Exception:
             pass
 
+    # Order reconciliation every 300 seconds
+    async def reconcile_orders():
+        from app.core.resilience import reconciler
+        from app.models.base import async_session
+        from app.repositories.position_repo import PositionRepository
+        try:
+            async with async_session() as session:
+                repo = PositionRepository()
+                open_positions = await repo.get_open(session)
+                # Gather local open order IDs
+                local_orders = [
+                    {"exchange_order_id": str(p.exchange_order_id), "status": "OPEN"}
+                    for p in open_positions if hasattr(p, "exchange_order_id") and p.exchange_order_id
+                ]
+                exchange_orders = await bc.get_open_orders()
+                await reconciler.reconcile_orders(local_orders, exchange_orders)
+        except Exception as e:
+            logger.warning("order_reconciliation_failed", error=str(e))
+
     scheduler.add_task("position_check", check_positions, interval_seconds=5, run_immediately=True)
     scheduler.add_task("metrics_update", update_metrics, interval_seconds=15, run_immediately=True)
+    scheduler.add_task("order_reconciliation", reconcile_orders, interval_seconds=300, run_immediately=False)
     scheduler.start_all()
 
     logger.info("all_background_services_started")
@@ -185,20 +228,57 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
     )
 
-    # CORS - restricted to frontend origin(s)
+    # Idempotency middleware (safe POST retries)
+    app.add_middleware(IdempotencyMiddleware)
+
+    # Request logging middleware
+    from app.core.logging import RequestLoggingMiddleware
+    app.add_middleware(RequestLoggingMiddleware)
+
+    # CSRF validation middleware (must be before security headers)
+    from app.core.security import CSRFMiddleware
+    app.add_middleware(CSRFMiddleware)
+
+    # Security headers middleware
+    from app.core.security import SecurityHeadersMiddleware
+    app.add_middleware(SecurityHeadersMiddleware)
+
+    # CORS - restricted to frontend origin(s) with specific methods/headers
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
     )
+
+    # RASP - Runtime Application Self-Protection (SQLi, XSS, path traversal detection)
+    app.add_middleware(RASPMiddleware)
+
+    # Global exception handler: maps domain exceptions to proper HTTP responses
+    @app.exception_handler(TradeMasterError)
+    async def trademaster_exception_handler(_request: StarletteRequest, exc: TradeMasterError) -> JSONResponse:
+        status_code = EXCEPTION_STATUS_MAP.get(type(exc), 500)
+        return JSONResponse(
+            status_code=status_code,
+            content={"error": exc.code, "message": exc.message},
+        )
 
     # API routes
     app.include_router(api_router, prefix="/api/v1")
 
+    # API v2 routes
+    from app.api.v2.router import v2_router
+    app.include_router(v2_router, prefix="/api/v2", tags=["v2"])
+
     # WebSocket routes
     app.include_router(ws_router)
+
+    # Honeypot endpoints (hidden from OpenAPI docs, trap attacker probing)
+    app.include_router(honeypot_router)
+
+    # OpenTelemetry tracing (if available)
+    setup_tracing(app)
 
     return app
 

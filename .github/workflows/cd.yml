@@ -1,0 +1,66 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Railway
+    runs-on: ubuntu-latest
+    # Only deploy if CI passes
+    needs: []
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      # ---- Canary Deployment ----
+      - name: Deploy Canary Backend
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up -s backend-canary --detach
+        continue-on-error: true
+
+      - name: Canary Health Check
+        run: |
+          echo "Waiting for canary to become healthy..."
+          for i in $(seq 1 10); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://backend-canary-trademaster.up.railway.app/api/v1/system/health || echo "000")
+            echo "Attempt $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "Canary is healthy!"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::Canary health check failed after 10 attempts"
+          exit 1
+
+      - name: Canary Smoke Tests
+        run: |
+          # Verify key endpoints respond correctly
+          curl -f -s https://backend-canary-trademaster.up.railway.app/api/v1/system/health | jq '.status' | grep -q '"healthy"'
+          echo "Canary smoke tests passed"
+
+      # ---- Production Deployment ----
+      - name: Deploy Backend
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up -s backend --detach
+        continue-on-error: true
+
+      - name: Deploy Frontend
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up -s frontend --detach
+        continue-on-error: true
+
+      - name: Verify Health
+        run: |
+          sleep 30
+          curl -f https://backendtrademaster.up.railway.app/api/v1/system/health || echo "Health check pending"

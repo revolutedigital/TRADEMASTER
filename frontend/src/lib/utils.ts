@@ -48,6 +48,12 @@ export function timeAgo(date: Date | string): string {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+function getCsrfToken(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(/csrf_token=([^;]+)/);
+  return match ? match[1] : null;
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   // Add cache-busting param for GET requests to prevent Next.js/browser caching
   const separator = path.includes("?") ? "&" : "?";
@@ -55,23 +61,44 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     ? `${API_URL}${path}`
     : `${API_URL}${path}${separator}_t=${Date.now()}`;
 
-  // Inject JWT token from localStorage
-  const token = typeof window !== "undefined" ? localStorage.getItem("tm_token") : null;
+  // Include CSRF token for mutating requests
+  const isMutating = init?.method && ["POST", "PUT", "DELETE", "PATCH"].includes(init.method);
+  const csrfToken = isMutating ? getCsrfToken() : null;
 
   const res = await fetch(url, {
     ...init,
     cache: "no-store",
+    credentials: "include",  // httpOnly cookies handle auth
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
       ...init?.headers,
     },
   });
 
-  // Handle authentication errors
+  // Handle authentication errors - try refresh before giving up
   if (res.status === 401) {
     if (typeof window !== "undefined") {
-      localStorage.removeItem("tm_token");
+      const refreshRes = await fetch(`${API_URL}/api/v1/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+      }).catch(() => null);
+
+      if (refreshRes?.ok) {
+        // Retry original request (cookies auto-included)
+        const retryRes = await fetch(url, {
+          ...init,
+          cache: "no-store",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+            ...init?.headers,
+          },
+        });
+        if (retryRes.ok) return retryRes.json();
+      }
+
       window.location.reload();
     }
     throw new Error("Session expired");

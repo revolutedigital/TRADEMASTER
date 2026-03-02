@@ -1,14 +1,37 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
 import { EquityChart } from "@/components/charts/equity-chart";
-import { formatCurrency, formatPercent, apiFetch } from "@/lib/utils";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+import { formatCurrency, formatPercent, apiFetch, timeAgo } from "@/lib/utils";
 import type { BacktestResult } from "@/lib/types";
-import { FlaskConical, Play, Loader2 } from "lucide-react";
+import { FlaskConical, Play, Loader2, History } from "lucide-react";
+
+interface BacktestHistoryItem {
+  id: number;
+  symbol: string;
+  interval: string;
+  initial_capital: number;
+  signal_threshold: number;
+  total_trades: number;
+  win_rate: number;
+  total_return_pct: number;
+  sharpe_ratio: number;
+  max_drawdown_pct: number;
+  profit_factor: number;
+  created_at: string;
+}
 
 export default function BacktestPage() {
   const [symbol, setSymbol] = useState("BTCUSDT");
@@ -18,6 +41,17 @@ export default function BacktestPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<BacktestHistoryItem[]>([]);
+
+  const fetchHistory = () => {
+    apiFetch<BacktestHistoryItem[]>("/api/v1/backtest/history?limit=10")
+      .then(setHistory)
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchHistory();
+  }, []);
 
   const runBacktest = async () => {
     setLoading(true);
@@ -33,6 +67,7 @@ export default function BacktestPage() {
         }),
       });
       setResult(data);
+      fetchHistory(); // Refresh history after run
     } catch (err) {
       setError(err instanceof Error ? err.message : "Backtest failed");
     } finally {
@@ -53,7 +88,7 @@ export default function BacktestPage() {
           <CardTitle>Backtest Configuration</CardTitle>
         </CardHeader>
 
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Symbol */}
           <div>
             <label className="mb-1 block text-xs text-[var(--color-text-muted)]">Symbol</label>
@@ -136,7 +171,7 @@ export default function BacktestPage() {
       {result && (
         <>
           {/* Metrics */}
-          <div className="grid grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
             <StatCard
               label="Total Return"
               value={formatCurrency(result.total_return)}
@@ -181,6 +216,62 @@ export default function BacktestPage() {
             />
           </Card>
         </>
+      )}
+
+      {/* History */}
+      {history.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <div className="flex items-center gap-2">
+                <History className="h-4 w-4" />
+                Backtest History
+              </div>
+            </CardTitle>
+            <Badge>{history.length}</Badge>
+          </CardHeader>
+
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Symbol</TableHead>
+                  <TableHead>Interval</TableHead>
+                  <TableHead>Capital</TableHead>
+                  <TableHead>Trades</TableHead>
+                  <TableHead>Return</TableHead>
+                  <TableHead>Sharpe</TableHead>
+                  <TableHead>Win Rate</TableHead>
+                  <TableHead>Max DD</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {history.map((h) => (
+                  <TableRow key={h.id}>
+                    <TableCell className="text-xs text-[var(--color-text-muted)]">
+                      {timeAgo(h.created_at)}
+                    </TableCell>
+                    <TableCell className="font-medium">{h.symbol}</TableCell>
+                    <TableCell className="text-xs">{h.interval}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {formatCurrency(h.initial_capital)}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">{h.total_trades}</TableCell>
+                    <TableCell className={`font-mono text-xs ${h.total_return_pct >= 0 ? "text-green-400" : "text-red-400"}`}>
+                      {formatPercent(h.total_return_pct)}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">{h.sharpe_ratio.toFixed(2)}</TableCell>
+                    <TableCell className="font-mono text-xs">{formatPercent(h.win_rate)}</TableCell>
+                    <TableCell className="font-mono text-xs text-red-400">
+                      {formatPercent(h.max_drawdown_pct)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </Card>
       )}
     </div>
   );

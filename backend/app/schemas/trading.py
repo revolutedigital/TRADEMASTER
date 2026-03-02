@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class OrderResponse(BaseModel):
@@ -62,12 +62,12 @@ class SignalResponse(BaseModel):
 
 
 class BacktestRequest(BaseModel):
-    symbol: str = "BTCUSDT"
-    interval: str = "1h"
-    initial_capital: float = 10000.0
-    signal_threshold: float = 0.3
-    atr_stop_multiplier: float = 2.0
-    risk_reward_ratio: float = 2.0
+    symbol: str = Field(default="BTCUSDT", pattern=r"^[A-Z]{3,10}USDT$")
+    interval: str = Field(default="1h", pattern=r"^(1m|5m|15m|30m|1h|4h|1d|1w)$")
+    initial_capital: float = Field(default=10000.0, ge=100, le=1_000_000)
+    signal_threshold: float = Field(default=0.3, ge=0.1, le=0.9)
+    atr_stop_multiplier: float = Field(default=2.0, ge=0.5, le=5.0)
+    risk_reward_ratio: float = Field(default=2.0, ge=0.5, le=10.0)
 
 
 class BacktestResponse(BaseModel):

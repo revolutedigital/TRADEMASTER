@@ -1,7 +1,13 @@
-"""CLI script to train ML models on historical data."""
+"""CLI script to train ML models on historical data.
+
+Integrates with MLflow for experiment tracking (if available) and registers
+trained models in the database via ModelRegistry.
+"""
 
 import asyncio
+import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +19,7 @@ from app.core.logging import get_logger, setup_logging
 from app.models.base import async_session_factory, engine, Base
 from app.services.market.data_collector import market_data_collector
 from app.services.ml.features import feature_engineer
+from app.services.ml.model_registry import model_registry
 from app.services.ml.models.lstm_model import LSTMTradingModel
 from app.services.ml.models.xgboost_model import XGBoostTradingModel
 from app.services.ml.preprocessor import Preprocessor
@@ -21,6 +28,15 @@ logger = get_logger(__name__)
 
 MODELS_DIR = Path("ml_artifacts/models")
 SCALERS_DIR = Path("ml_artifacts/scalers")
+
+# Try to import MLflow (optional dependency)
+try:
+    import mlflow
+    import mlflow.pytorch
+    MLFLOW_AVAILABLE = True
+except ImportError:
+    MLFLOW_AVAILABLE = False
+    logger.info("mlflow_not_installed", hint="pip install mlflow for experiment tracking")
 
 
 async def train_for_symbol(symbol: str, interval: str = "1h"):
@@ -133,6 +149,76 @@ async def train_for_symbol(symbol: str, interval: str = "1h"):
         xgboost_test_acc=round(xgb_test_acc, 4),
         lstm_test_acc=round(lstm_test_acc, 4),
     )
+
+    # 8. MLflow experiment tracking
+    data_version = f"v{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+
+    if MLFLOW_AVAILABLE:
+        mlflow.set_experiment(f"trademaster_{symbol_lower}")
+
+        # Log XGBoost run
+        with mlflow.start_run(run_name=f"xgboost_{symbol_lower}_{data_version}"):
+            mlflow.log_params({
+                "model_type": "xgboost",
+                "symbol": symbol,
+                "interval": interval,
+                "n_features": len(feature_cols),
+                "n_samples": len(df),
+                "threshold": 0.005,
+                "horizon": 5,
+            })
+            mlflow.log_metrics({
+                "train_accuracy": round(xgb_result.accuracy, 4),
+                "val_accuracy": round(xgb_result.val_accuracy, 4),
+                "test_accuracy": round(xgb_test_acc, 4),
+            })
+            mlflow.log_artifact(str(xgb_path))
+
+        # Log LSTM run
+        with mlflow.start_run(run_name=f"lstm_{symbol_lower}_{data_version}"):
+            mlflow.log_params({
+                "model_type": "lstm",
+                "symbol": symbol,
+                "interval": interval,
+                "seq_length": 60,
+                "epochs": 100,
+                "batch_size": 64,
+                "patience": 10,
+                "n_features": len(feature_cols),
+                "n_samples": len(df),
+            })
+            mlflow.log_metrics({
+                "train_accuracy": round(lstm_result.accuracy, 4),
+                "val_accuracy": round(lstm_result.val_accuracy, 4),
+                "test_accuracy": round(lstm_test_acc, 4),
+                "best_epoch": lstm_result.best_epoch,
+            })
+            mlflow.log_artifact(str(lstm_path))
+
+        logger.info("mlflow_tracking_complete", symbol=symbol)
+
+    # 9. Register models in database (ModelMetadata)
+    async with async_session_factory() as db:
+        await model_registry.register_model(
+            db=db,
+            model_type="xgboost",
+            symbol=symbol,
+            version=data_version,
+            artifact_path=str(xgb_path),
+            accuracy=round(xgb_test_acc, 4),
+            training_samples=len(tabular_data.X_train),
+        )
+        await model_registry.register_model(
+            db=db,
+            model_type="lstm",
+            symbol=symbol,
+            version=data_version,
+            artifact_path=str(lstm_path),
+            accuracy=round(lstm_test_acc, 4),
+            training_samples=len(seq_data.X_train),
+        )
+        await db.commit()
+        logger.info("model_metadata_registered", symbol=symbol, version=data_version)
 
     logger.info("training_complete", symbol=symbol)
 

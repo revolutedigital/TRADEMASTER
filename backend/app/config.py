@@ -31,13 +31,14 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # JWT
-    jwt_secret_key: str = "change-this-to-a-random-secret-key"
+    jwt_secret_key: str = Field(default="")
     jwt_algorithm: str = "HS256"
-    jwt_access_token_expire_minutes: int = 480  # 8 hours for trading sessions
+    jwt_access_token_expire_minutes: int = 30
+    jwt_refresh_token_expire_days: int = 7
 
-    # Admin credentials (for dashboard login)
-    admin_username: str = "admin"
-    admin_password: str = "trademaster2024"  # Override via env var in production
+    # Admin credentials (MUST be set via environment variables in production)
+    admin_username: str = Field(default="admin")
+    admin_password: str = Field(default="")
 
     # Paper trading mode (no real Binance orders)
     paper_mode: bool = True

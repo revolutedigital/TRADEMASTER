@@ -42,3 +42,6 @@ class ModelMetadata(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(default=False)
     trained_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     training_samples: Mapped[int | None] = mapped_column()
+    training_metrics: Mapped[str | None] = mapped_column(Text)  # JSON
+    hyperparameters: Mapped[str | None] = mapped_column(Text)  # JSON
+    data_version: Mapped[str | None] = mapped_column(String(50))

@@ -1,0 +1,71 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: trademaster-backend
+  namespace: trademaster
+spec:
+  hosts:
+    - trademaster-backend
+  http:
+    # Canary traffic splitting
+    - match:
+        - headers:
+            x-canary:
+              exact: "true"
+      route:
+        - destination:
+            host: trademaster-backend-canary
+            port:
+              number: 8000
+    # Production traffic
+    - route:
+        - destination:
+            host: trademaster-backend
+            port:
+              number: 8000
+          weight: 95
+        - destination:
+            host: trademaster-backend-canary
+            port:
+              number: 8000
+          weight: 5
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: 5xx,reset,connect-failure
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: trademaster-backend
+  namespace: trademaster
+spec:
+  host: trademaster-backend
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        h2UpgradePolicy: DEFAULT
+        maxRequestsPerConnection: 1000
+    outlierDetection:
+      consecutiveGatewayErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+  subsets:
+    - name: stable
+      labels:
+        version: stable
+    - name: canary
+      labels:
+        version: canary
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: trademaster
+spec:
+  mtls:
+    mode: STRICT

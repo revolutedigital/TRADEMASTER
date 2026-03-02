@@ -228,6 +228,9 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
     )
 
+    # Middleware order: last added = outermost (processes request first).
+    # CORS must be outermost so preflight OPTIONS are handled before other middleware.
+
     # Idempotency middleware (safe POST retries)
     app.add_middleware(IdempotencyMiddleware)
 
@@ -235,7 +238,10 @@ def create_app() -> FastAPI:
     from app.core.logging import RequestLoggingMiddleware
     app.add_middleware(RequestLoggingMiddleware)
 
-    # CSRF validation middleware (must be before security headers)
+    # RASP - Runtime Application Self-Protection (SQLi, XSS, path traversal detection)
+    app.add_middleware(RASPMiddleware)
+
+    # CSRF validation middleware
     from app.core.security import CSRFMiddleware
     app.add_middleware(CSRFMiddleware)
 
@@ -243,7 +249,7 @@ def create_app() -> FastAPI:
     from app.core.security import SecurityHeadersMiddleware
     app.add_middleware(SecurityHeadersMiddleware)
 
-    # CORS - restricted to frontend origin(s) with specific methods/headers
+    # CORS - MUST be outermost (added last) so preflight OPTIONS gets CORS headers
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -251,9 +257,6 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
     )
-
-    # RASP - Runtime Application Self-Protection (SQLi, XSS, path traversal detection)
-    app.add_middleware(RASPMiddleware)
 
     # Global exception handler: maps domain exceptions to proper HTTP responses
     @app.exception_handler(TradeMasterError)

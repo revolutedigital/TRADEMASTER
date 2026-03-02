@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     paper_mode: bool = True
 
     # Frontend URL for CORS (comma-separated for multiple origins)
-    frontend_url: str = "https://frontend-production-15e9.up.railway.app,http://localhost:3000"
+    frontend_url: str = "https://trademaster.up.railway.app,http://localhost:3000"
 
     # Trading
     trading_symbols: str = "BTCUSDT,ETHUSDT"

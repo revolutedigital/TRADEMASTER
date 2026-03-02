@@ -12,10 +12,10 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Common SQL injection patterns
+# Common SQL injection patterns (tuned to avoid false positives on normal headers)
 SQL_INJECTION_PATTERNS = [
     re.compile(r"(\b(UNION|SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|EXEC)\b.*\b(FROM|INTO|TABLE|WHERE)\b)", re.IGNORECASE),
-    re.compile(r"(--|;|\/\*|\*\/|xp_|sp_)", re.IGNORECASE),
+    re.compile(r"(\/\*|\*\/|xp_|sp_cmdshell)", re.IGNORECASE),
     re.compile(r"('\s*(OR|AND)\s*'?\s*\d+\s*=\s*\d+)", re.IGNORECASE),
     re.compile(r"(SLEEP\s*\(\s*\d+\s*\)|BENCHMARK\s*\()", re.IGNORECASE),
 ]
@@ -95,8 +95,8 @@ class RASPMiddleware(BaseHTTPMiddleware):
                 )
                 return JSONResponse(status_code=403, content={"error": "request_blocked", "message": "Suspicious request detected"})
 
-        # Check headers for injection
-        for header_name in ("referer", "user-agent", "x-forwarded-for"):
+        # Check injectable headers (skip user-agent as browsers include benign special chars)
+        for header_name in ("referer", "x-forwarded-for"):
             header_value = request.headers.get(header_name, "")
             if header_value:
                 attack = _scan_request_data(header_value)

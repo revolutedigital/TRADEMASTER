@@ -17,7 +17,7 @@ export default function JournalPage() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ notes: "", tags: "", sentiment: "neutral" as const, lessons_learned: "" });
+  const [form, setForm] = useState<{ notes: string; tags: string; sentiment: "bullish" | "bearish" | "neutral"; lessons_learned: string }>({ notes: "", tags: "", sentiment: "neutral", lessons_learned: "" });
 
   const fetchEntries = useCallback(async () => {
     try {

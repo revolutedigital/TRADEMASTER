@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Sidebar } from "@/components/sidebar";
+import { Sidebar } from "@/components/ui/sidebar";
 
 interface SentimentData {
   fear_greed_index: number;

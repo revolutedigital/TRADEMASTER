@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Sidebar } from "@/components/sidebar";
+import { Sidebar } from "@/components/ui/sidebar";
 
 interface PriceAlert {
   id: string;

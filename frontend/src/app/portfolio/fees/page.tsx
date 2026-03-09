@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Sidebar } from "@/components/ui/sidebar";
+import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
+import { Spinner } from "@/components/ui/progress";
 
 interface FeeData {
   total_fees: number;
@@ -27,59 +29,84 @@ export default function FeesPage() {
     } catch {} finally { setLoading(false); }
   }
 
+  const periods = ["7d", "30d", "90d", "1y"];
+
   return (
-    <div className="flex h-screen bg-[#0a0e17]">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-white">Fee Analysis</h1>
-          <div className="flex gap-2">
-            {["7d", "30d", "90d", "1y"].map((p) => (
-              <button key={p} onClick={() => setPeriod(p)} className={`px-3 py-1 rounded-lg text-sm ${period === p ? "bg-blue-600 text-white" : "bg-[#141922] text-gray-400 hover:text-white"}`}>
+    <div className="space-y-6">
+      <PageHeader
+        title="Fee Analysis"
+        description="Track trading fees and their impact on your returns"
+        actions={
+          <div className="flex gap-1.5 rounded-[var(--radius-md)] bg-[var(--color-background)] p-1">
+            {periods.map((p) => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`rounded-[var(--radius-sm)] px-3 py-1.5 text-xs font-medium transition-colors ${
+                  period === p
+                    ? "bg-[var(--color-primary)] text-white shadow-sm"
+                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                }`}
+              >
                 {p}
               </button>
             ))}
           </div>
-        </div>
+        }
+      />
 
-        {loading ? (
+      {loading ? (
+        <div className="flex justify-center py-12"><Spinner size="lg" /></div>
+      ) : (
+        <>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {[...Array(3)].map((_, i) => <div key={i} className="bg-[#141922] rounded-xl p-6 animate-pulse h-32" />)}
+            <Card>
+              <CardContent>
+                <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Total Fees Paid</h2>
+                <p className="mt-2 text-3xl font-bold tabular-nums text-[var(--color-text)]">
+                  ${data?.total_fees.toFixed(2) ?? "0.00"}
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent>
+                <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Fee Impact on Returns</h2>
+                <p className="mt-2 text-3xl font-bold tabular-nums text-[var(--color-danger)]">
+                  {data?.fee_impact_pct.toFixed(2) ?? "0.00"}%
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent>
+                <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Avg Fee per Trade</h2>
+                <p className="mt-2 text-3xl font-bold tabular-nums text-[var(--color-warning)]">
+                  ${((data?.total_fees ?? 0) / Math.max(Object.keys(data?.fees_by_symbol ?? {}).length, 1)).toFixed(2)}
+                </p>
+              </CardContent>
+            </Card>
           </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-              <div className="bg-[#141922] rounded-xl p-6">
-                <h2 className="text-sm text-gray-400">Total Fees Paid</h2>
-                <p className="text-3xl font-bold text-white mt-2">${data?.total_fees.toFixed(2) ?? "0.00"}</p>
-              </div>
-              <div className="bg-[#141922] rounded-xl p-6">
-                <h2 className="text-sm text-gray-400">Fee Impact on Returns</h2>
-                <p className="text-3xl font-bold text-red-400 mt-2">{data?.fee_impact_pct.toFixed(2) ?? "0.00"}%</p>
-              </div>
-              <div className="bg-[#141922] rounded-xl p-6">
-                <h2 className="text-sm text-gray-400">Avg Fee per Trade</h2>
-                <p className="text-3xl font-bold text-yellow-400 mt-2">${((data?.total_fees ?? 0) / Math.max(Object.keys(data?.fees_by_symbol ?? {}).length, 1)).toFixed(2)}</p>
-              </div>
-            </div>
 
-            <div className="bg-[#141922] rounded-xl p-6">
-              <h2 className="text-sm text-gray-400 mb-4">Fees by Symbol</h2>
+          <Card>
+            <CardContent>
+              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Fees by Symbol</h2>
               <div className="space-y-3">
                 {data?.fees_by_symbol && Object.entries(data.fees_by_symbol).sort(([, a], [, b]) => b - a).map(([symbol, fee]) => (
                   <div key={symbol} className="flex items-center gap-4">
-                    <span className="text-white font-medium w-24">{symbol}</span>
-                    <div className="flex-1 bg-gray-700 rounded-full h-2">
-                      <div className="bg-orange-500 h-2 rounded-full" style={{ width: `${(fee / (data.total_fees || 1)) * 100}%` }} />
+                    <span className="w-24 font-medium text-[var(--color-text)]">{symbol}</span>
+                    <div className="flex-1 overflow-hidden rounded-full bg-[var(--color-background)] h-2">
+                      <div
+                        className="h-2 rounded-full bg-[var(--color-warning)] transition-all duration-500"
+                        style={{ width: `${(fee / (data.total_fees || 1)) * 100}%` }}
+                      />
                     </div>
-                    <span className="text-gray-300 w-24 text-right">${fee.toFixed(2)}</span>
+                    <span className="w-24 text-right tabular-nums text-sm text-[var(--color-text-muted)]">${fee.toFixed(2)}</span>
                   </div>
                 ))}
               </div>
-            </div>
-          </>
-        )}
-      </main>
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 }

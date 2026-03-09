@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils";
 import { MobileSidebar } from "@/components/ui/sidebar";
 import { NotificationBell } from "@/components/ui/notification-bell";
 import { useThemeStore } from "@/stores/themeStore";
-import { Sun, Moon } from "lucide-react";
+import { Sun, Moon, Search, LogOut } from "lucide-react";
+import { Tooltip } from "@/components/ui/tooltip";
 
 export function Header() {
   const { prices } = useMarketStore();
@@ -17,59 +18,83 @@ export function Header() {
   const symbols = ["BTCUSDT", "ETHUSDT"];
 
   return (
-    <header className="flex h-14 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 sm:px-6">
-      {/* Left side: mobile menu + ticker strip */}
-      <div className="flex items-center gap-2 sm:gap-6">
-        <MobileSidebar />
+    <>
+      {/* Animated gradient top bar */}
+      <div className="gradient-bar" aria-hidden="true" />
 
-        {symbols.map((symbol) => {
-          const ticker = prices[symbol];
-          const change = ticker?.change_24h ?? 0;
-          const positive = change >= 0;
+      <header className="flex h-13 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 sm:px-6">
+        {/* Left side: mobile menu + ticker strip */}
+        <div className="flex items-center gap-2 sm:gap-6">
+          <MobileSidebar />
 
-          return (
-            <div key={symbol} className="flex items-center gap-1.5 sm:gap-3">
-              <span className="text-xs sm:text-sm font-semibold">
-                {symbol.replace("USDT", "")}
-              </span>
-              <span className="text-xs sm:text-sm font-mono">
-                {ticker ? formatCurrency(ticker.price) : "---"}
-              </span>
-              <span
-                className={cn(
-                  "text-xs font-medium hidden sm:inline",
-                  positive ? "text-green-400" : "text-red-400"
-                )}
-              >
-                {ticker ? formatPercent(change) : "---"}
-              </span>
-            </div>
-          );
-        })}
-      </div>
+          {symbols.map((symbol) => {
+            const ticker = prices[symbol];
+            const change = ticker?.change_24h ?? 0;
+            const positive = change >= 0;
 
-      {/* Right side */}
-      <div className="flex items-center gap-2 sm:gap-4">
-        <div className="hidden sm:flex items-center gap-1.5" aria-live="polite">
-          <div className="h-2 w-2 rounded-full bg-green-400 animate-pulse-glow" />
-          <span className="text-xs text-[var(--color-text-muted)]">Connected</span>
+            return (
+              <div key={symbol} className="flex items-center gap-1.5 sm:gap-3">
+                <span className="text-xs sm:text-sm font-semibold">
+                  {symbol.replace("USDT", "")}
+                </span>
+                <span className="text-xs sm:text-sm font-mono tabular-nums">
+                  {ticker ? formatCurrency(ticker.price) : "---"}
+                </span>
+                <span
+                  className={cn(
+                    "text-xs font-medium hidden sm:inline tabular-nums",
+                    positive ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
+                  )}
+                >
+                  {ticker ? formatPercent(change) : "---"}
+                </span>
+              </div>
+            );
+          })}
         </div>
-        <NotificationBell />
-        <button
-          onClick={toggleTheme}
-          className="p-1.5 rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-colors"
-          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-        >
-          {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-        </button>
-        <button
-          onClick={logout}
-          className="text-xs text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-danger)]"
-          aria-label="Log out"
-        >
-          Logout
-        </button>
-      </div>
-    </header>
+
+        {/* Right side */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Connection status */}
+          <div className="hidden sm:flex items-center gap-1.5 mr-2" aria-live="polite">
+            <div className="h-2 w-2 rounded-full bg-[var(--color-success)] animate-pulse-glow" />
+            <span className="text-xs text-[var(--color-text-faint)]">Live</span>
+          </div>
+
+          {/* Command Palette trigger */}
+          <Tooltip content="Search (⌘K)">
+            <button
+              onClick={() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))}
+              className="p-2 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-colors"
+              aria-label="Open command palette"
+            >
+              <Search className="h-4 w-4" />
+            </button>
+          </Tooltip>
+
+          <NotificationBell />
+
+          <Tooltip content={`${theme === "dark" ? "Light" : "Dark"} mode`}>
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-colors"
+              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            >
+              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
+          </Tooltip>
+
+          <Tooltip content="Log out">
+            <button
+              onClick={logout}
+              className="p-2 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+              aria-label="Log out"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </Tooltip>
+        </div>
+      </header>
+    </>
   );
 }

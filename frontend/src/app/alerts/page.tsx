@@ -1,7 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Sidebar } from "@/components/ui/sidebar";
+import { Bell, Plus, Trash2 } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Spinner } from "@/components/ui/progress";
 
 interface PriceAlert {
   id: string;
@@ -49,58 +55,98 @@ export default function AlertsPage() {
   }
 
   return (
-    <div className="flex h-screen bg-[#0a0e17]">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-white">Price Alerts</h1>
-          <button onClick={() => setShowForm(!showForm)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors">
-            {showForm ? "Cancel" : "+ New Alert"}
-          </button>
-        </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Price Alerts"
+        description="Get notified when prices hit your targets"
+        actions={
+          <Button variant={showForm ? "ghost" : "primary"} size="sm" onClick={() => setShowForm(!showForm)}>
+            {showForm ? "Cancel" : <><Plus className="mr-1.5 h-4 w-4" /> New Alert</>}
+          </Button>
+        }
+      />
 
-        {showForm && (
-          <form onSubmit={createAlert} className="bg-[#141922] rounded-xl p-6 mb-6">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <select value={form.symbol} onChange={(e) => setForm({ ...form, symbol: e.target.value })} className="bg-[#1a1f2e] text-white rounded-lg px-3 py-2 border border-gray-700">
-                <option value="BTCUSDT">BTCUSDT</option>
-                <option value="ETHUSDT">ETHUSDT</option>
-              </select>
-              <select value={form.condition} onChange={(e) => setForm({ ...form, condition: e.target.value as "above" | "below" })} className="bg-[#1a1f2e] text-white rounded-lg px-3 py-2 border border-gray-700">
-                <option value="above">Price Above</option>
-                <option value="below">Price Below</option>
-              </select>
-              <input type="number" step="0.01" placeholder="Target Price" value={form.target_price} onChange={(e) => setForm({ ...form, target_price: e.target.value })} className="bg-[#1a1f2e] text-white rounded-lg px-3 py-2 border border-gray-700" required />
-              <button type="submit" className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors">Create</button>
-            </div>
-          </form>
-        )}
-
-        {loading ? (
-          <div className="space-y-4">{[...Array(3)].map((_, i) => <div key={i} className="bg-[#141922] rounded-xl p-4 animate-pulse h-16" />)}</div>
-        ) : alerts.length === 0 ? (
-          <div className="bg-[#141922] rounded-xl p-12 text-center">
-            <p className="text-gray-400 text-lg">No price alerts configured</p>
-            <p className="text-gray-500 text-sm mt-2">Create your first alert to get notified when prices hit your targets.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {alerts.map((alert) => (
-              <div key={alert.id} className={`bg-[#141922] rounded-xl p-4 flex items-center justify-between ${alert.is_triggered ? "border border-yellow-500/30" : ""}`}>
-                <div className="flex items-center gap-4">
-                  <div className={`w-3 h-3 rounded-full ${alert.is_triggered ? "bg-yellow-500" : "bg-green-500"}`} />
-                  <div>
-                    <span className="text-white font-semibold">{alert.symbol}</span>
-                    <span className="text-gray-400 ml-2">{alert.condition === "above" ? ">" : "<"} ${alert.target_price.toLocaleString()}</span>
-                  </div>
-                  {alert.is_triggered && <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded">Triggered</span>}
-                </div>
-                <button onClick={() => deleteAlert(alert.id)} className="text-red-400 hover:text-red-300 text-sm">Delete</button>
+      {showForm && (
+        <Card>
+          <CardContent>
+            <form onSubmit={createAlert} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+              <div>
+                <label className="block text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Symbol</label>
+                <select
+                  value={form.symbol}
+                  onChange={(e) => setForm({ ...form, symbol: e.target.value })}
+                  className="w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+                >
+                  <option value="BTCUSDT">BTCUSDT</option>
+                  <option value="ETHUSDT">ETHUSDT</option>
+                </select>
               </div>
-            ))}
-          </div>
-        )}
-      </main>
+              <div>
+                <label className="block text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Condition</label>
+                <select
+                  value={form.condition}
+                  onChange={(e) => setForm({ ...form, condition: e.target.value as "above" | "below" })}
+                  className="w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+                >
+                  <option value="above">Price Above</option>
+                  <option value="below">Price Below</option>
+                </select>
+              </div>
+              <Input
+                label="Target Price"
+                type="number"
+                step="0.01"
+                placeholder="e.g. 100000"
+                value={form.target_price}
+                onChange={(e) => setForm({ ...form, target_price: e.target.value })}
+                required
+              />
+              <Button type="submit" variant="success" className="w-full">Create Alert</Button>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      {loading ? (
+        <div className="flex justify-center py-12"><Spinner size="lg" /></div>
+      ) : alerts.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon={<Bell className="h-7 w-7" />}
+            title="No price alerts configured"
+            description="Create your first alert to get notified when prices hit your targets."
+            action={{ label: "+ New Alert", onClick: () => setShowForm(true) }}
+          />
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {alerts.map((alert) => (
+            <Card key={alert.id} className={alert.is_triggered ? "border-[var(--color-warning)]/30" : ""}>
+              <CardContent>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className={`h-3 w-3 rounded-full ${alert.is_triggered ? "bg-[var(--color-warning)]" : "bg-[var(--color-success)]"}`} />
+                    <div>
+                      <span className="font-semibold text-[var(--color-text)]">{alert.symbol}</span>
+                      <span className="ml-2 text-[var(--color-text-muted)]">
+                        {alert.condition === "above" ? ">" : "<"} ${alert.target_price.toLocaleString()}
+                      </span>
+                    </div>
+                    {alert.is_triggered && (
+                      <span className="text-xs rounded-full bg-[var(--color-warning)]/15 px-2.5 py-1 font-medium text-[var(--color-warning)]">
+                        Triggered
+                      </span>
+                    )}
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => deleteAlert(alert.id)} className="text-[var(--color-danger)] hover:text-[var(--color-danger)]">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

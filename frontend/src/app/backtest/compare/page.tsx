@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Sidebar } from "@/components/ui/sidebar";
+import { GitCompare } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Spinner } from "@/components/ui/progress";
 
 interface BacktestResult {
   id: string;
@@ -55,47 +59,66 @@ export default function BacktestComparePage() {
   }
 
   return (
-    <div className="flex h-screen bg-[#0a0e17]">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto p-6">
-        <h1 className="text-2xl font-bold text-white mb-6">Compare Backtests</h1>
+    <div className="space-y-6">
+      <PageHeader title="Compare Backtests" description="Select up to 4 backtests to compare side-by-side" />
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1">
-            <div className="bg-[#141922] rounded-xl p-4">
-              <h2 className="text-sm text-gray-400 mb-3">Select up to 4 backtests</h2>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-1">
+          <Card>
+            <CardContent>
+              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-3">
+                Select Backtests ({selected.length}/4)
+              </h2>
               {loading ? (
-                <div className="space-y-2">{[...Array(5)].map((_, i) => <div key={i} className="bg-[#1a1f2e] rounded-lg p-3 animate-pulse h-16" />)}</div>
+                <div className="flex justify-center py-8"><Spinner /></div>
+              ) : backtests.length === 0 ? (
+                <p className="py-4 text-center text-sm text-[var(--color-text-muted)]">No backtests found. Run a backtest first.</p>
               ) : (
-                <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+                <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
                   {backtests.map((bt) => (
-                    <button key={bt.id} onClick={() => toggleSelect(bt.id)} className={`w-full text-left p-3 rounded-lg transition-colors ${selected.includes(bt.id) ? "bg-blue-600/20 border border-blue-500" : "bg-[#1a1f2e] hover:bg-[#252a38] border border-transparent"}`}>
-                      <div className="text-white text-sm font-medium">{bt.strategy_name}</div>
-                      <div className="text-xs text-gray-400">{bt.symbol} - {new Date(bt.created_at).toLocaleDateString()}</div>
+                    <button
+                      key={bt.id}
+                      onClick={() => toggleSelect(bt.id)}
+                      className={`w-full text-left rounded-[var(--radius-md)] p-3 transition-all ${
+                        selected.includes(bt.id)
+                          ? "bg-[var(--color-primary)]/10 border border-[var(--color-primary)] shadow-sm"
+                          : "bg-[var(--color-background)] border border-transparent hover:border-[var(--color-border)]"
+                      }`}
+                    >
+                      <div className="text-sm font-medium text-[var(--color-text)]">{bt.strategy_name}</div>
+                      <div className="text-xs text-[var(--color-text-muted)]">
+                        {bt.symbol} &middot; {new Date(bt.created_at).toLocaleDateString()}
+                      </div>
                     </button>
                   ))}
                 </div>
               )}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
+        </div>
 
-          <div className="lg:col-span-2">
-            {selectedResults.length === 0 ? (
-              <div className="bg-[#141922] rounded-xl p-12 text-center">
-                <p className="text-gray-400">Select backtests from the left panel to compare</p>
-              </div>
-            ) : (
-              <div className="bg-[#141922] rounded-xl p-6">
-                <h2 className="text-sm text-gray-400 mb-4">Comparison Table</h2>
+        <div className="lg:col-span-2">
+          {selectedResults.length === 0 ? (
+            <Card>
+              <EmptyState
+                icon={<GitCompare className="h-7 w-7" />}
+                title="No backtests selected"
+                description="Select backtests from the left panel to compare their performance metrics."
+              />
+            </Card>
+          ) : (
+            <Card>
+              <CardContent>
+                <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Comparison Table</h2>
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b border-gray-700">
-                        <th className="text-left text-sm text-gray-400 pb-3 pr-4">Metric</th>
+                      <tr className="border-b border-[var(--color-border)]">
+                        <th className="pb-3 pr-4 text-left text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Metric</th>
                         {selectedResults.map((bt) => (
-                          <th key={bt.id} className="text-center text-sm text-gray-400 pb-3 px-2">
-                            <div className="text-white">{bt.strategy_name}</div>
-                            <div className="text-xs">{bt.symbol}</div>
+                          <th key={bt.id} className="px-2 pb-3 text-center">
+                            <div className="text-sm font-medium text-[var(--color-text)]">{bt.strategy_name}</div>
+                            <div className="text-xs text-[var(--color-text-muted)]">{bt.symbol}</div>
                           </th>
                         ))}
                       </tr>
@@ -105,10 +128,15 @@ export default function BacktestComparePage() {
                         const values = selectedResults.map((bt) => bt[metric]);
                         const best = getBestValue(metric, values);
                         return (
-                          <tr key={metric} className="border-b border-gray-800">
-                            <td className="text-sm text-gray-300 py-3 pr-4">{metricLabels[metric]}</td>
+                          <tr key={metric} className="border-b border-[var(--color-border)]/50">
+                            <td className="py-3 pr-4 text-sm text-[var(--color-text-muted)]">{metricLabels[metric]}</td>
                             {selectedResults.map((bt) => (
-                              <td key={bt.id} className={`text-center py-3 px-2 text-sm ${bt[metric] === best ? "text-green-400 font-semibold" : "text-white"}`}>
+                              <td
+                                key={bt.id}
+                                className={`px-2 py-3 text-center text-sm tabular-nums ${
+                                  bt[metric] === best ? "font-semibold text-[var(--color-success)]" : "text-[var(--color-text)]"
+                                }`}
+                              >
                                 {formatMetric(metric, bt[metric])}
                               </td>
                             ))}
@@ -118,11 +146,11 @@ export default function BacktestComparePage() {
                     </tbody>
                   </table>
                 </div>
-              </div>
-            )}
-          </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
-      </main>
+      </div>
     </div>
   );
 }

@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Sidebar } from "@/components/ui/sidebar";
+import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
+import { Spinner } from "@/components/ui/progress";
+import { Progress } from "@/components/ui/progress";
 
 interface SentimentData {
   fear_greed_index: number;
@@ -25,153 +28,155 @@ export default function SentimentPage() {
     try {
       const res = await fetch("/api/v1/market/sentiment", { credentials: "include" });
       if (res.ok) setData(await res.json());
-    } catch {
-      // Use fallback data
-    } finally {
-      setLoading(false);
-    }
+    } catch {} finally { setLoading(false); }
   }
 
   function getFearGreedColor(value: number) {
-    if (value <= 25) return "text-red-500";
+    if (value <= 25) return "text-[var(--color-danger)]";
     if (value <= 45) return "text-orange-500";
-    if (value <= 55) return "text-yellow-500";
-    if (value <= 75) return "text-green-400";
-    return "text-green-500";
+    if (value <= 55) return "text-[var(--color-warning)]";
+    if (value <= 75) return "text-[var(--color-success)]";
+    return "text-emerald-400";
   }
 
   return (
-    <div className="flex h-screen bg-[#0a0e17]">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto p-6">
-        <h1 className="text-2xl font-bold text-white mb-6">Market Sentiment</h1>
+    <div className="space-y-6">
+      <PageHeader title="Market Sentiment" description="Real-time market sentiment indicators and analysis" />
 
-        {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="bg-[#141922] rounded-xl p-6 animate-pulse h-48" />
-            ))}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {/* Fear & Greed Index */}
-            <div className="bg-[#141922] rounded-xl p-6 col-span-1 md:col-span-2 lg:col-span-1">
-              <h2 className="text-sm text-gray-400 mb-4">Fear & Greed Index</h2>
+      {loading ? (
+        <div className="flex justify-center py-12"><Spinner size="lg" /></div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {/* Fear & Greed Index */}
+          <Card className="md:col-span-2 lg:col-span-1">
+            <CardContent>
+              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Fear & Greed Index</h2>
               <div className="flex flex-col items-center">
-                <div className={`text-6xl font-bold ${getFearGreedColor(data?.fear_greed_index ?? 50)}`}>
+                <div className={`text-6xl font-bold tabular-nums ${getFearGreedColor(data?.fear_greed_index ?? 50)}`}>
                   {data?.fear_greed_index ?? "--"}
                 </div>
-                <div className="text-lg text-gray-300 mt-2">{data?.fear_greed_label ?? "Neutral"}</div>
-                <div className="w-full bg-gray-700 rounded-full h-3 mt-4">
-                  <div
-                    className="h-3 rounded-full bg-gradient-to-r from-red-500 via-yellow-500 to-green-500"
-                    style={{ width: `${data?.fear_greed_index ?? 50}%` }}
-                  />
-                </div>
-                <div className="flex justify-between w-full text-xs text-gray-500 mt-1">
-                  <span>Extreme Fear</span>
-                  <span>Extreme Greed</span>
+                <div className="mt-2 text-lg text-[var(--color-text)]">{data?.fear_greed_label ?? "Neutral"}</div>
+                <div className="mt-4 w-full">
+                  <div className="h-3 w-full overflow-hidden rounded-full bg-[var(--color-background)]">
+                    <div
+                      className="h-3 rounded-full bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 transition-all duration-500"
+                      style={{ width: `${data?.fear_greed_index ?? 50}%` }}
+                    />
+                  </div>
+                  <div className="mt-1 flex justify-between text-xs text-[var(--color-text-muted)]">
+                    <span>Extreme Fear</span>
+                    <span>Extreme Greed</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            </CardContent>
+          </Card>
 
-            {/* Funding Rates */}
-            <div className="bg-[#141922] rounded-xl p-6">
-              <h2 className="text-sm text-gray-400 mb-4">Funding Rates</h2>
+          {/* Funding Rates */}
+          <Card>
+            <CardContent>
+              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Funding Rates</h2>
               <div className="space-y-4">
                 {data?.funding_rates ? Object.entries(data.funding_rates).map(([symbol, rate]) => (
                   <div key={symbol} className="flex justify-between items-center">
-                    <span className="text-white font-medium">{symbol}</span>
-                    <span className={rate >= 0 ? "text-green-400" : "text-red-400"}>
+                    <span className="font-medium text-[var(--color-text)]">{symbol}</span>
+                    <span className={`tabular-nums font-mono text-sm ${rate >= 0 ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}`}>
                       {(rate * 100).toFixed(4)}%
                     </span>
                   </div>
                 )) : (
-                  <p className="text-gray-500">No data available</p>
+                  <p className="text-sm text-[var(--color-text-muted)]">No data available</p>
                 )}
               </div>
-            </div>
+            </CardContent>
+          </Card>
 
-            {/* Long/Short Ratio */}
-            <div className="bg-[#141922] rounded-xl p-6">
-              <h2 className="text-sm text-gray-400 mb-4">Long/Short Ratio</h2>
+          {/* Long/Short Ratio */}
+          <Card>
+            <CardContent>
+              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Long/Short Ratio</h2>
               <div className="space-y-4">
-                {data?.long_short_ratio ? Object.entries(data.long_short_ratio).map(([symbol, ratio]) => (
-                  <div key={symbol}>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="text-white">{symbol}</span>
-                      <span className="text-gray-400">{ratio.toFixed(2)}</span>
+                {data?.long_short_ratio ? Object.entries(data.long_short_ratio).map(([symbol, ratio]) => {
+                  const longPct = (ratio / (ratio + 1)) * 100;
+                  const shortPct = (1 / (ratio + 1)) * 100;
+                  return (
+                    <div key={symbol}>
+                      <div className="mb-1 flex justify-between text-sm">
+                        <span className="text-[var(--color-text)]">{symbol}</span>
+                        <span className="tabular-nums text-[var(--color-text-muted)]">{ratio.toFixed(2)}</span>
+                      </div>
+                      <div className="flex h-2 overflow-hidden rounded-full">
+                        <div className="bg-[var(--color-success)]" style={{ width: `${longPct}%` }} />
+                        <div className="flex-1 bg-[var(--color-danger)]" />
+                      </div>
+                      <div className="mt-1 flex justify-between text-xs text-[var(--color-text-muted)]">
+                        <span>Long {longPct.toFixed(1)}%</span>
+                        <span>Short {shortPct.toFixed(1)}%</span>
+                      </div>
                     </div>
-                    <div className="flex h-2 rounded-full overflow-hidden">
-                      <div className="bg-green-500" style={{ width: `${(ratio / (ratio + 1)) * 100}%` }} />
-                      <div className="bg-red-500 flex-1" />
-                    </div>
-                    <div className="flex justify-between text-xs text-gray-500 mt-1">
-                      <span>Long {((ratio / (ratio + 1)) * 100).toFixed(1)}%</span>
-                      <span>Short {((1 / (ratio + 1)) * 100).toFixed(1)}%</span>
-                    </div>
-                  </div>
-                )) : (
-                  <p className="text-gray-500">No data available</p>
+                  );
+                }) : (
+                  <p className="text-sm text-[var(--color-text-muted)]">No data available</p>
                 )}
               </div>
-            </div>
+            </CardContent>
+          </Card>
 
-            {/* Open Interest */}
-            <div className="bg-[#141922] rounded-xl p-6">
-              <h2 className="text-sm text-gray-400 mb-4">Open Interest</h2>
+          {/* Open Interest */}
+          <Card>
+            <CardContent>
+              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Open Interest</h2>
               <div className="space-y-4">
                 {data?.open_interest ? Object.entries(data.open_interest).map(([symbol, oi]) => (
                   <div key={symbol} className="flex justify-between items-center">
-                    <span className="text-white font-medium">{symbol}</span>
-                    <span className="text-gray-300">${(oi / 1e9).toFixed(2)}B</span>
+                    <span className="font-medium text-[var(--color-text)]">{symbol}</span>
+                    <span className="tabular-nums font-mono text-sm text-[var(--color-text-muted)]">${(oi / 1e9).toFixed(2)}B</span>
                   </div>
                 )) : (
-                  <p className="text-gray-500">No data available</p>
+                  <p className="text-sm text-[var(--color-text-muted)]">No data available</p>
                 )}
               </div>
-            </div>
+            </CardContent>
+          </Card>
 
-            {/* Market Overview */}
-            <div className="bg-[#141922] rounded-xl p-6">
-              <h2 className="text-sm text-gray-400 mb-4">Market Overview</h2>
+          {/* Market Overview */}
+          <Card>
+            <CardContent>
+              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Market Overview</h2>
               <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Dominance BTC</span>
-                  <span className="text-white">54.2%</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Dominance ETH</span>
-                  <span className="text-white">17.8%</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Total Market Cap</span>
-                  <span className="text-white">$3.2T</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">24h Volume</span>
-                  <span className="text-white">$89.4B</span>
-                </div>
+                {[
+                  { label: "Dominance BTC", value: "54.2%" },
+                  { label: "Dominance ETH", value: "17.8%" },
+                  { label: "Total Market Cap", value: "$3.2T" },
+                  { label: "24h Volume", value: "$89.4B" },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex justify-between">
+                    <span className="text-sm text-[var(--color-text-muted)]">{label}</span>
+                    <span className="text-sm font-medium tabular-nums text-[var(--color-text)]">{value}</span>
+                  </div>
+                ))}
               </div>
-            </div>
+            </CardContent>
+          </Card>
 
-            {/* Sentiment Summary */}
-            <div className="bg-[#141922] rounded-xl p-6">
-              <h2 className="text-sm text-gray-400 mb-4">Sentiment Summary</h2>
+          {/* Sentiment Summary */}
+          <Card>
+            <CardContent>
+              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Sentiment Summary</h2>
               <div className="space-y-3">
-                <div className="p-3 bg-[#1a1f2e] rounded-lg">
-                  <span className="text-xs text-gray-400">Overall Bias</span>
-                  <p className="text-lg text-yellow-400 font-semibold">Neutral</p>
+                <div className="rounded-[var(--radius-md)] bg-[var(--color-background)] p-3">
+                  <span className="text-xs text-[var(--color-text-muted)]">Overall Bias</span>
+                  <p className="text-lg font-semibold text-[var(--color-warning)]">Neutral</p>
                 </div>
-                <p className="text-sm text-gray-400">
+                <p className="text-sm text-[var(--color-text-muted)]">
                   Market sentiment is mixed. Funding rates suggest balanced positioning.
                   Monitor for directional shifts in long/short ratios.
                 </p>
               </div>
-            </div>
-          </div>
-        )}
-      </main>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

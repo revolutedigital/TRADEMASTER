@@ -107,14 +107,19 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         if request.method in ("POST", "PUT", "DELETE", "PATCH"):
             # Allow exempt paths (auth endpoints, docs, health)
             if request.url.path not in CSRF_EXEMPT_PATHS:
-                csrf_cookie = request.cookies.get("csrf_token")
-                csrf_header = request.headers.get("X-CSRF-Token")
-                if not validate_csrf_token(csrf_header, csrf_cookie):
-                    from starlette.responses import JSONResponse
-                    return JSONResponse(
-                        status_code=403,
-                        content={"error": "csrf_validation_failed", "message": "CSRF token missing or invalid"},
-                    )
+                # Skip CSRF check when Bearer token is present — Bearer tokens
+                # are not auto-sent by the browser, so they are not vulnerable
+                # to CSRF attacks (only cookies are).
+                auth_header = request.headers.get("authorization", "")
+                if not auth_header.startswith("Bearer "):
+                    csrf_cookie = request.cookies.get("csrf_token")
+                    csrf_header = request.headers.get("X-CSRF-Token")
+                    if not validate_csrf_token(csrf_header, csrf_cookie):
+                        from starlette.responses import JSONResponse
+                        return JSONResponse(
+                            status_code=403,
+                            content={"error": "csrf_validation_failed", "message": "CSRF token missing or invalid"},
+                        )
         return await call_next(request)
 
 

@@ -47,35 +47,25 @@ async def login(req: LoginRequest, request: Request, response: Response):
     refresh_token = create_refresh_token(data=token_data)
     csrf_token = generate_csrf_token()
 
-    # Set httpOnly cookie for access token
+    # Cross-origin cookies require SameSite=None + Secure because
+    # up.railway.app is on the Public Suffix List, making frontend/backend
+    # subdomains different "sites" in the browser's cookie model.
+    _ck = {"secure": True, "samesite": "none"}
+
     response.set_cookie(
-        key="access_token",
-        value=access_token,
-        httponly=True,
-        secure=settings.is_production,
-        samesite="lax",
-        max_age=settings.jwt_access_token_expire_minutes * 60,
-        path="/",
+        key="access_token", value=access_token,
+        httponly=True, max_age=settings.jwt_access_token_expire_minutes * 60,
+        path="/", **_ck,
     )
-    # Set refresh token in httpOnly cookie
     response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=settings.is_production,
-        samesite="lax",
-        max_age=settings.jwt_refresh_token_expire_days * 86400,
-        path="/api/v1/auth",
+        key="refresh_token", value=refresh_token,
+        httponly=True, max_age=settings.jwt_refresh_token_expire_days * 86400,
+        path="/", **_ck,
     )
-    # CSRF token readable by JavaScript
     response.set_cookie(
-        key="csrf_token",
-        value=csrf_token,
-        httponly=False,
-        secure=settings.is_production,
-        samesite="lax",
-        max_age=settings.jwt_access_token_expire_minutes * 60,
-        path="/",
+        key="csrf_token", value=csrf_token,
+        httponly=False, max_age=settings.jwt_access_token_expire_minutes * 60,
+        path="/", **_ck,
     )
 
     # Also return token in body for backward compatibility
@@ -103,23 +93,16 @@ async def refresh_token(request: Request, response: Response):
     new_access = create_access_token(data=token_data)
     new_csrf = generate_csrf_token()
 
+    _ck = {"secure": True, "samesite": "none"}
     response.set_cookie(
-        key="access_token",
-        value=new_access,
-        httponly=True,
-        secure=settings.is_production,
-        samesite="lax",
-        max_age=settings.jwt_access_token_expire_minutes * 60,
-        path="/",
+        key="access_token", value=new_access,
+        httponly=True, max_age=settings.jwt_access_token_expire_minutes * 60,
+        path="/", **_ck,
     )
     response.set_cookie(
-        key="csrf_token",
-        value=new_csrf,
-        httponly=False,
-        secure=settings.is_production,
-        samesite="lax",
-        max_age=settings.jwt_access_token_expire_minutes * 60,
-        path="/",
+        key="csrf_token", value=new_csrf,
+        httponly=False, max_age=settings.jwt_access_token_expire_minutes * 60,
+        path="/", **_ck,
     )
 
     return TokenResponse(access_token=new_access)
@@ -128,7 +111,8 @@ async def refresh_token(request: Request, response: Response):
 @router.post("/logout")
 async def logout(response: Response):
     """Clear authentication cookies."""
-    response.delete_cookie("access_token", path="/")
-    response.delete_cookie("refresh_token", path="/api/v1/auth")
-    response.delete_cookie("csrf_token", path="/")
+    _ck = {"secure": True, "samesite": "none"}
+    response.delete_cookie("access_token", path="/", **_ck)
+    response.delete_cookie("refresh_token", path="/", **_ck)
+    response.delete_cookie("csrf_token", path="/", **_ck)
     return {"status": "logged_out"}

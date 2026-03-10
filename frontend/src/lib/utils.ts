@@ -65,15 +65,22 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   const isMutating = init?.method && ["POST", "PUT", "DELETE", "PATCH"].includes(init.method);
   const csrfToken = isMutating ? getCsrfToken() : null;
 
+  // Send Bearer token as fallback (cross-origin cookies may be blocked)
+  const { useAuthStore } = await import("@/stores/authStore");
+  const token = useAuthStore.getState().token;
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+    ...(init?.headers as Record<string, string> ?? {}),
+  };
+
   const res = await fetch(url, {
     ...init,
     cache: "no-store",
-    credentials: "include",  // httpOnly cookies handle auth
-    headers: {
-      "Content-Type": "application/json",
-      ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
-      ...init?.headers,
-    },
+    credentials: "include",
+    headers,
   });
 
   // Handle authentication errors - try refresh before giving up
@@ -85,15 +92,22 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
       }).catch(() => null);
 
       if (refreshRes?.ok) {
-        // Retry original request (cookies auto-included)
+        const refreshData = await refreshRes.json().catch(() => null);
+        // Update in-memory token from refresh response
+        if (refreshData?.access_token) {
+          useAuthStore.getState().token = refreshData.access_token;
+        }
+        // Retry original request with new token
+        const newToken = useAuthStore.getState().token;
         const retryRes = await fetch(url, {
           ...init,
           cache: "no-store",
           credentials: "include",
           headers: {
             "Content-Type": "application/json",
+            ...(newToken ? { Authorization: `Bearer ${newToken}` } : {}),
             ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
-            ...init?.headers,
+            ...(init?.headers as Record<string, string> ?? {}),
           },
         });
         if (retryRes.ok) return retryRes.json();

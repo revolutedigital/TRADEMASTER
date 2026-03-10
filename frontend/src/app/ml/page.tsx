@@ -70,8 +70,8 @@ export default function MLDashboardPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="ML/AI Dashboard"
-        description="Model performance, feature importance, and drift monitoring"
+        title="Painel ML/IA"
+        description="Performance dos modelos, importância de features e monitoramento de drift"
         actions={
           <div className="flex items-center gap-3">
             <select
@@ -102,44 +102,44 @@ export default function MLDashboardPage() {
               <CardContent>
                 <div className="flex items-center gap-2 text-[var(--color-text-muted)] text-sm mb-2">
                   <Brain className="h-4 w-4" />
-                  Active Models
+                  Modelos Ativos
                 </div>
                 <p className="text-2xl font-bold tabular-nums text-[var(--color-text)]">{models.length || 4}</p>
-                <p className="text-xs text-[var(--color-success)] mt-1">All operational</p>
+                <p className="text-xs text-[var(--color-success)] mt-1">Todos operacionais</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent>
                 <div className="flex items-center gap-2 text-[var(--color-text-muted)] text-sm mb-2">
                   <TrendingUp className="h-4 w-4" />
-                  Avg Accuracy
+                  Acurácia Média
                 </div>
                 <p className="text-2xl font-bold tabular-nums text-[var(--color-text)]">
                   {models.length > 0
                     ? `${(models.reduce((a, m) => a + m.accuracy, 0) / models.length * 100).toFixed(1)}%`
                     : "72.3%"}
                 </p>
-                <p className="text-xs text-[var(--color-text-muted)] mt-1">Last 100 predictions</p>
+                <p className="text-xs text-[var(--color-text-muted)] mt-1">Últimas 100 predições</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent>
                 <div className="flex items-center gap-2 text-[var(--color-text-muted)] text-sm mb-2">
                   <BarChart3 className="h-4 w-4" />
-                  Signals Today
+                  Sinais Hoje
                 </div>
                 <p className="text-2xl font-bold tabular-nums text-[var(--color-text)]">12</p>
-                <p className="text-xs text-[var(--color-text-muted)] mt-1">8 BUY / 3 SELL / 1 HOLD</p>
+                <p className="text-xs text-[var(--color-text-muted)] mt-1">8 COMPRA / 3 VENDA / 1 NEUTRO</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent>
                 <div className="flex items-center gap-2 text-[var(--color-text-muted)] text-sm mb-2">
                   <AlertTriangle className="h-4 w-4" />
-                  Drift Status
+                  Status de Drift
                 </div>
-                <p className="text-2xl font-bold text-[var(--color-success)]">No Drift</p>
-                <p className="text-xs text-[var(--color-text-muted)] mt-1">Last checked 5m ago</p>
+                <p className="text-2xl font-bold text-[var(--color-success)]">Sem Drift</p>
+                <p className="text-xs text-[var(--color-text-muted)] mt-1">Verificado há 5min</p>
               </CardContent>
             </Card>
           </div>
@@ -147,7 +147,7 @@ export default function MLDashboardPage() {
           <Card>
             <CardContent>
               <h2 className="text-sm font-semibold text-[var(--color-text)] mb-4">
-                Top 10 Feature Importance &mdash; {selectedSymbol}
+                Top 10 Importância de Features &mdash; {selectedSymbol}
               </h2>
               <div className="space-y-3">
                 {sampleFeatures.map((feature, i) => (
@@ -171,15 +171,15 @@ export default function MLDashboardPage() {
 
           <Card>
             <CardContent>
-              <h2 className="text-sm font-semibold text-[var(--color-text)] mb-4">Model Registry</h2>
+              <h2 className="text-sm font-semibold text-[var(--color-text)] mb-4">Registro de Modelos</h2>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-[var(--color-border)]">
-                      <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Model</th>
-                      <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Symbol</th>
-                      <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Accuracy</th>
-                      <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Version</th>
+                      <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Modelo</th>
+                      <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Par</th>
+                      <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Acurácia</th>
+                      <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Versão</th>
                       <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Status</th>
                     </tr>
                   </thead>

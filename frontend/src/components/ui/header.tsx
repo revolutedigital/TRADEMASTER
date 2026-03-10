@@ -58,11 +58,11 @@ export function Header() {
           {/* Connection status */}
           <div className="hidden sm:flex items-center gap-1.5 mr-2" aria-live="polite">
             <div className="h-2 w-2 rounded-full bg-[var(--color-success)] animate-pulse-glow" />
-            <span className="text-xs text-[var(--color-text-faint)]">Live</span>
+            <span className="text-xs text-[var(--color-text-faint)]">Ao Vivo</span>
           </div>
 
           {/* Command Palette trigger */}
-          <Tooltip content="Search (⌘K)">
+          <Tooltip content="Buscar (⌘K)">
             <button
               onClick={() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))}
               className="p-2 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-colors"
@@ -74,21 +74,21 @@ export function Header() {
 
           <NotificationBell />
 
-          <Tooltip content={`${theme === "dark" ? "Light" : "Dark"} mode`}>
+          <Tooltip content={theme === "dark" ? "Modo claro" : "Modo escuro"}>
             <button
               onClick={toggleTheme}
               className="p-2 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-colors"
-              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+              aria-label={theme === "dark" ? "Modo claro" : "Modo escuro"}
             >
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
           </Tooltip>
 
-          <Tooltip content="Log out">
+          <Tooltip content="Sair">
             <button
               onClick={logout}
               className="p-2 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
-              aria-label="Log out"
+              aria-label="Sair"
             >
               <LogOut className="h-4 w-4" />
             </button>

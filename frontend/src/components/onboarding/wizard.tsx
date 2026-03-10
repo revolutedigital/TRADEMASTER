@@ -14,31 +14,31 @@ import {
 const steps = [
   {
     icon: Activity,
-    title: "Welcome to TradeMaster",
-    subtitle: "AI-Powered Crypto Trading",
+    title: "Bem-vindo ao TradeMaster",
+    subtitle: "Trading Cripto com Inteligência Artificial",
     content: (
       <div className="space-y-4 text-sm text-[var(--color-text-muted)]">
         <p>
-          TradeMaster is an AI-powered cryptocurrency trading platform that combines
-          machine learning models with real-time market data to generate trading signals
-          for BTC and ETH.
+          TradeMaster é uma plataforma de trading de criptomoedas com inteligência artificial que combina
+          modelos de machine learning com dados de mercado em tempo real para gerar sinais de trading
+          para BTC e ETH.
         </p>
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-lg border border-[var(--color-border)] p-3">
-            <div className="font-medium text-[var(--color-text)]">Real-Time Data</div>
-            <p className="mt-1 text-xs">Live prices from Binance with candlestick charts and technical indicators</p>
+            <div className="font-medium text-[var(--color-text)]">Dados em Tempo Real</div>
+            <p className="mt-1 text-xs">Preços ao vivo da Binance com gráficos de candlestick e indicadores técnicos</p>
           </div>
           <div className="rounded-lg border border-[var(--color-border)] p-3">
-            <div className="font-medium text-[var(--color-text)]">ML Signals</div>
-            <p className="mt-1 text-xs">LSTM + XGBoost ensemble models generate BUY/HOLD/SELL signals</p>
+            <div className="font-medium text-[var(--color-text)]">Sinais de ML</div>
+            <p className="mt-1 text-xs">Modelos ensemble LSTM + XGBoost geram sinais de COMPRA/MANUTENÇÃO/VENDA</p>
           </div>
           <div className="rounded-lg border border-[var(--color-border)] p-3">
             <div className="font-medium text-[var(--color-text)]">Paper Trading</div>
-            <p className="mt-1 text-xs">Practice with simulated orders before going live</p>
+            <p className="mt-1 text-xs">Pratique com ordens simuladas antes de operar ao vivo</p>
           </div>
           <div className="rounded-lg border border-[var(--color-border)] p-3">
-            <div className="font-medium text-[var(--color-text)]">Risk Management</div>
-            <p className="mt-1 text-xs">Circuit breakers, position sizing, and drawdown limits</p>
+            <div className="font-medium text-[var(--color-text)]">Gestão de Risco</div>
+            <p className="mt-1 text-xs">Circuit breakers, dimensionamento de posição e limites de drawdown</p>
           </div>
         </div>
       </div>
@@ -46,79 +46,79 @@ const steps = [
   },
   {
     icon: Key,
-    title: "API Configuration",
-    subtitle: "Connect to Binance Testnet",
+    title: "Configuração de API",
+    subtitle: "Conectar à Binance Testnet",
     content: (
       <div className="space-y-4 text-sm text-[var(--color-text-muted)]">
         <p>
-          TradeMaster connects to Binance Testnet by default for safe, risk-free trading practice.
-          No real funds are used until you explicitly switch to live mode.
+          O TradeMaster se conecta à Binance Testnet por padrão para prática segura e sem riscos.
+          Nenhum fundo real é utilizado até que você mude explicitamente para o modo ao vivo.
         </p>
         <div className="rounded-lg bg-[var(--color-background)] p-4 space-y-3">
           <div className="flex items-start gap-2">
             <span className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-primary)]/20 text-xs font-bold text-[var(--color-primary)]">1</span>
             <div>
-              <div className="font-medium text-[var(--color-text)]">Create Testnet Account</div>
-              <p className="text-xs">Visit testnet.binance.vision and create a free testnet account</p>
+              <div className="font-medium text-[var(--color-text)]">Criar Conta Testnet</div>
+              <p className="text-xs">Acesse testnet.binance.vision e crie uma conta testnet gratuita</p>
             </div>
           </div>
           <div className="flex items-start gap-2">
             <span className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-primary)]/20 text-xs font-bold text-[var(--color-primary)]">2</span>
             <div>
-              <div className="font-medium text-[var(--color-text)]">Generate API Keys</div>
-              <p className="text-xs">Generate an API key and secret from the testnet dashboard</p>
+              <div className="font-medium text-[var(--color-text)]">Gerar Chaves de API</div>
+              <p className="text-xs">Gere uma chave de API e segredo no painel da testnet</p>
             </div>
           </div>
           <div className="flex items-start gap-2">
             <span className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-primary)]/20 text-xs font-bold text-[var(--color-primary)]">3</span>
             <div>
-              <div className="font-medium text-[var(--color-text)]">Configure in Settings</div>
-              <p className="text-xs">Go to Settings page and paste your API keys securely</p>
+              <div className="font-medium text-[var(--color-text)]">Configurar nas Configurações</div>
+              <p className="text-xs">Vá para a página de Configurações e cole suas chaves de API com segurança</p>
             </div>
           </div>
         </div>
         <p className="text-xs text-yellow-400">
-          Your API keys are encrypted at rest and never exposed in the frontend.
+          Suas chaves de API são criptografadas em repouso e nunca expostas no frontend.
         </p>
       </div>
     ),
   },
   {
     icon: Shield,
-    title: "Risk Management",
-    subtitle: "Understanding Your Safety Net",
+    title: "Gestão de Risco",
+    subtitle: "Entendendo Sua Rede de Proteção",
     content: (
       <div className="space-y-4 text-sm text-[var(--color-text-muted)]">
         <p>
-          TradeMaster includes multiple layers of risk protection to safeguard your capital.
+          O TradeMaster inclui múltiplas camadas de proteção de risco para proteger seu capital.
         </p>
         <div className="space-y-3">
           <div className="rounded-lg border border-[var(--color-border)] p-3">
             <div className="font-medium text-[var(--color-text)]">Circuit Breaker</div>
             <p className="mt-1 text-xs">
-              Automatically reduces or halts trading when drawdown thresholds are breached.
-              States: NORMAL &rarr; REDUCED (-50% size) &rarr; PAUSED &rarr; HALTED
+              Reduz ou interrompe automaticamente o trading quando limites de drawdown são ultrapassados.
+              Estados: NORMAL &rarr; REDUZIDO (-50% tamanho) &rarr; PAUSADO &rarr; PARADO
             </p>
           </div>
           <div className="rounded-lg border border-[var(--color-border)] p-3">
-            <div className="font-medium text-[var(--color-text)]">Position Limits</div>
+            <div className="font-medium text-[var(--color-text)]">Limites de Posição</div>
             <p className="mt-1 text-xs">
-              Maximum 3 concurrent positions with a 40% total portfolio exposure cap.
-              Individual position size limited to 20% of equity.
+              Máximo de 3 posições simultâneas com limite de 40% de exposição total do portfólio.
+              Tamanho individual da posição limitado a 20% do patrimônio.
             </p>
           </div>
           <div className="rounded-lg border border-[var(--color-border)] p-3">
             <div className="font-medium text-[var(--color-text)]">Stop Loss / Take Profit</div>
             <p className="mt-1 text-xs">
-              Every trade includes automatic stop-loss (2%) and take-profit (4%) levels.
-              These are monitored every 5 seconds and executed automatically.
+              Toda operação inclui stop-loss automático (2%) e take-profit (4%).
+              Estes são monitorados a cada 5 segundos e executados automaticamente.
             </p>
           </div>
           <div className="rounded-lg border border-[var(--color-border)] p-3">
-            <div className="font-medium text-[var(--color-text)]">Drawdown Limits</div>
+            <div className="font-medium text-[var(--color-text)]">Limites de Drawdown</div>
             <p className="mt-1 text-xs">
-              Daily: -3% | Weekly: -7% | Monthly: -15%.
-              Breaching these triggers the circuit breaker for capital preservation.
+              Diário: -3% | Semanal: -7% | Mensal: -15%.
+              Ultrapassar estes limites aciona o circuit breaker para preservação de capital.
             </p>
           </div>
         </div>
@@ -127,46 +127,46 @@ const steps = [
   },
   {
     icon: FlaskConical,
-    title: "Your First Backtest",
-    subtitle: "Test Before You Trade",
+    title: "Seu Primeiro Backtest",
+    subtitle: "Teste Antes de Operar",
     content: (
       <div className="space-y-4 text-sm text-[var(--color-text-muted)]">
         <p>
-          Before trading with real signals, run a backtest to see how the ML models
-          would have performed historically.
+          Antes de operar com sinais reais, execute um backtest para ver como os modelos de ML
+          teriam performado historicamente.
         </p>
         <div className="rounded-lg bg-[var(--color-background)] p-4 space-y-3">
           <div className="flex items-start gap-2">
             <span className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-green-500/20 text-xs font-bold text-green-400">1</span>
             <div>
-              <div className="font-medium text-[var(--color-text)]">Navigate to Backtest</div>
-              <p className="text-xs">Click &ldquo;Backtest&rdquo; in the sidebar to open the backtesting page</p>
+              <div className="font-medium text-[var(--color-text)]">Navegue até o Backtest</div>
+              <p className="text-xs">Clique em &ldquo;Backtest&rdquo; na barra lateral para abrir a página de backtesting</p>
             </div>
           </div>
           <div className="flex items-start gap-2">
             <span className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-green-500/20 text-xs font-bold text-green-400">2</span>
             <div>
-              <div className="font-medium text-[var(--color-text)]">Configure Parameters</div>
-              <p className="text-xs">Select BTCUSDT, 1h interval, $10,000 initial capital, and default signal threshold</p>
+              <div className="font-medium text-[var(--color-text)]">Configure os Parâmetros</div>
+              <p className="text-xs">Selecione BTCUSDT, intervalo de 1h, capital inicial de $10.000 e limiar de sinal padrão</p>
             </div>
           </div>
           <div className="flex items-start gap-2">
             <span className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-green-500/20 text-xs font-bold text-green-400">3</span>
             <div>
-              <div className="font-medium text-[var(--color-text)]">Analyze Results</div>
-              <p className="text-xs">Review equity curve, Sharpe ratio, max drawdown, win rate, and profit factor</p>
+              <div className="font-medium text-[var(--color-text)]">Analise os Resultados</div>
+              <p className="text-xs">Revise a curva de patrimônio, índice Sharpe, drawdown máximo, taxa de acerto e fator de lucro</p>
             </div>
           </div>
           <div className="flex items-start gap-2">
             <span className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-green-500/20 text-xs font-bold text-green-400">4</span>
             <div>
-              <div className="font-medium text-[var(--color-text)]">Start Paper Trading</div>
-              <p className="text-xs">If results look promising, return to Dashboard and start the trading engine</p>
+              <div className="font-medium text-[var(--color-text)]">Inicie o Paper Trading</div>
+              <p className="text-xs">Se os resultados parecerem promissores, volte ao Painel e inicie o motor de trading</p>
             </div>
           </div>
         </div>
         <p className="mt-2 text-xs text-[var(--color-primary)]">
-          Tip: A Sharpe ratio above 1.0 and a profit factor above 1.5 are generally considered good indicators.
+          Dica: Um índice Sharpe acima de 1.0 e um fator de lucro acima de 1.5 são geralmente considerados bons indicadores.
         </p>
       </div>
     ),
@@ -186,7 +186,7 @@ export function OnboardingWizard() {
         <button
           onClick={complete}
           className="absolute right-4 top-4 rounded-md p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
-          aria-label="Skip onboarding"
+          aria-label="Pular introdução"
         >
           <X className="h-5 w-5" />
         </button>
@@ -231,14 +231,14 @@ export function OnboardingWizard() {
                 className="flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)] transition-colors"
               >
                 <ChevronLeft className="h-4 w-4" />
-                Back
+                Voltar
               </button>
             )}
             <button
               onClick={isLast ? complete : nextStep}
               className="flex items-center gap-1 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--color-primary)]/90 transition-colors"
             >
-              {isLast ? "Get Started" : "Next"}
+              {isLast ? "Começar" : "Próximo"}
               {!isLast && <ChevronRight className="h-4 w-4" />}
             </button>
           </div>

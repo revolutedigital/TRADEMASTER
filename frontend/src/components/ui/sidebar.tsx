@@ -35,42 +35,42 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/", label: "Painel", icon: LayoutDashboard },
   {
     href: "/trading",
     label: "Trading",
     icon: CandlestickChart,
     children: [
       { href: "/trading", label: "Terminal", icon: CandlestickChart },
-      { href: "/trading/history", label: "History", icon: History },
-      { href: "/trading/journal", label: "Journal", icon: FileText },
-      { href: "/trading/strategy-builder", label: "Strategy", icon: Wrench },
+      { href: "/trading/history", label: "Histórico", icon: History },
+      { href: "/trading/journal", label: "Diário", icon: FileText },
+      { href: "/trading/strategy-builder", label: "Estratégia", icon: Wrench },
     ],
   },
   {
     href: "/portfolio",
-    label: "Portfolio",
+    label: "Portfólio",
     icon: Briefcase,
     children: [
-      { href: "/portfolio", label: "Overview", icon: Briefcase },
-      { href: "/portfolio/optimizer", label: "Optimizer", icon: PieChart },
-      { href: "/portfolio/fees", label: "Fees", icon: DollarSign },
+      { href: "/portfolio", label: "Visão Geral", icon: Briefcase },
+      { href: "/portfolio/optimizer", label: "Otimizador", icon: PieChart },
+      { href: "/portfolio/fees", label: "Taxas", icon: DollarSign },
     ],
   },
-  { href: "/signals", label: "Signals", icon: Zap },
+  { href: "/signals", label: "Sinais", icon: Zap },
   {
     href: "/backtest",
     label: "Backtest",
     icon: FlaskConical,
     children: [
-      { href: "/backtest", label: "Run", icon: FlaskConical },
-      { href: "/backtest/compare", label: "Compare", icon: GitCompare },
+      { href: "/backtest", label: "Executar", icon: FlaskConical },
+      { href: "/backtest/compare", label: "Comparar", icon: GitCompare },
     ],
   },
-  { href: "/ml", label: "ML/AI", icon: Brain },
-  { href: "/sentiment", label: "Sentiment", icon: BarChart3 },
-  { href: "/alerts", label: "Alerts", icon: Bell },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/ml", label: "ML/IA", icon: Brain },
+  { href: "/sentiment", label: "Sentimento", icon: BarChart3 },
+  { href: "/alerts", label: "Alertas", icon: Bell },
+  { href: "/settings", label: "Configurações", icon: Settings },
 ];
 
 function NavLink({
@@ -174,7 +174,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       <div className="border-t border-[var(--color-border)] p-3">
         <div className="flex items-center gap-2 rounded-lg bg-[var(--color-background)] px-3 py-2">
           <Shield className="h-4 w-4 text-green-400" />
-          <span className="text-xs text-[var(--color-text-muted)]">Testnet Mode</span>
+          <span className="text-xs text-[var(--color-text-muted)]">Modo Testnet</span>
         </div>
       </div>
     </>
@@ -202,7 +202,7 @@ export function MobileSidebar() {
       <button
         onClick={() => setOpen(true)}
         className="lg:hidden p-2 rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-colors"
-        aria-label="Open navigation menu"
+        aria-label="Abrir menu de navegação"
       >
         <Menu className="h-5 w-5" />
       </button>
@@ -228,7 +228,7 @@ export function MobileSidebar() {
           <button
             onClick={() => setOpen(false)}
             className="p-1 rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-            aria-label="Close navigation menu"
+            aria-label="Fechar menu de navegação"
           >
             <X className="h-5 w-5" />
           </button>

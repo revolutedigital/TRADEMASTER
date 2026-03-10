@@ -2,9 +2,9 @@ import Link from "next/link";
 
 const features = [
   {
-    title: "AI-Powered Trading",
+    title: "Trading com IA",
     description:
-      "Machine learning models analyze market data in real-time to generate high-confidence trading signals for BTC and ETH.",
+      "Modelos de machine learning analisam dados de mercado em tempo real para gerar sinais de trading de alta confiança para BTC e ETH.",
     icon: (
       <svg
         className="h-8 w-8 text-[var(--color-primary)]"
@@ -22,9 +22,9 @@ const features = [
     ),
   },
   {
-    title: "Risk Management",
+    title: "Gestão de Risco",
     description:
-      "Built-in circuit breakers, position sizing, and drawdown limits protect your capital with automated risk controls.",
+      "Circuit breakers integrados, dimensionamento de posição e limites de drawdown protegem seu capital com controles de risco automatizados.",
     icon: (
       <svg
         className="h-8 w-8 text-[var(--color-primary)]"
@@ -44,7 +44,7 @@ const features = [
   {
     title: "Paper Trading",
     description:
-      "Test strategies with simulated funds before risking real capital. Full order execution and portfolio tracking included.",
+      "Teste estratégias com fundos simulados antes de arriscar capital real. Execução de ordens e acompanhamento de portfólio incluídos.",
     icon: (
       <svg
         className="h-8 w-8 text-[var(--color-primary)]"
@@ -62,9 +62,9 @@ const features = [
     ),
   },
   {
-    title: "Real-time Analytics",
+    title: "Análise em Tempo Real",
     description:
-      "Live candlestick charts, portfolio tracking, equity curves, and performance metrics updated via WebSocket.",
+      "Gráficos de velas ao vivo, acompanhamento de portfólio, curvas de equity e métricas de performance atualizadas via WebSocket.",
     icon: (
       <svg
         className="h-8 w-8 text-[var(--color-primary)]"
@@ -96,7 +96,7 @@ export default function LandingPage() {
             href="/login"
             className="rounded-lg bg-[var(--color-primary)] px-5 py-2 text-sm font-medium text-white transition-colors hover:opacity-90"
           >
-            Sign In
+            Entrar
           </Link>
         </div>
       </nav>
@@ -106,21 +106,19 @@ export default function LandingPage() {
         <div className="mx-auto max-w-3xl space-y-6">
           <div className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-1.5 text-xs text-[var(--color-text-muted)]">
             <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
-            Paper Trading Mode
+            Modo Paper Trading
           </div>
 
           <h1 className="text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
-            AI-Powered
+            Trading com
             <br />
             <span className="text-[var(--color-primary)]">
-              Crypto Trading
+              Inteligência Artificial
             </span>
           </h1>
 
           <p className="mx-auto max-w-xl text-lg text-[var(--color-text-muted)]">
-            TradeMaster uses machine learning to analyze BTC and ETH markets in
-            real-time, generating signals and executing trades with built-in
-            risk management.
+            O TradeMaster usa machine learning para analisar os mercados de BTC e ETH em tempo real, gerando sinais e executando operações com gestão de risco integrada.
           </p>
 
           <div className="flex items-center justify-center gap-4 pt-4">
@@ -128,7 +126,7 @@ export default function LandingPage() {
               href="/login"
               className="inline-flex items-center rounded-lg bg-[var(--color-primary)] px-6 py-3 text-sm font-medium text-white transition-colors hover:opacity-90"
             >
-              Get Started
+              Começar
               <svg
                 className="ml-2 h-4 w-4"
                 fill="none"
@@ -147,7 +145,7 @@ export default function LandingPage() {
               href="/"
               className="inline-flex items-center rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-3 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-hover)]"
             >
-              Learn More
+              Saiba Mais
             </Link>
           </div>
         </div>
@@ -158,10 +156,10 @@ export default function LandingPage() {
         <div className="mx-auto max-w-6xl">
           <div className="mb-12 text-center">
             <h2 className="text-2xl font-bold sm:text-3xl">
-              Everything you need to trade smarter
+              Tudo que você precisa para operar com inteligência
             </h2>
             <p className="mt-3 text-[var(--color-text-muted)]">
-              A complete AI trading platform built for cryptocurrency markets.
+              Uma plataforma completa de trading com IA para mercados de criptomoedas.
             </p>
           </div>
 
@@ -186,10 +184,10 @@ export default function LandingPage() {
       <footer className="border-t border-[var(--color-border)] px-6 py-8">
         <div className="mx-auto flex max-w-6xl items-center justify-between">
           <span className="text-sm text-[var(--color-text-muted)]">
-            TradeMaster &mdash; AI Trading Dashboard
+            TradeMaster &mdash; Painel de Trading com IA
           </span>
           <span className="text-xs text-[var(--color-text-muted)]">
-            Paper Trading Only
+            Apenas Paper Trading
           </span>
         </div>
       </footer>

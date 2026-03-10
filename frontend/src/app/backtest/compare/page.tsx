@@ -43,7 +43,7 @@ export default function BacktestComparePage() {
   const selectedResults = backtests.filter((b) => selected.includes(b.id));
   const metrics = ["total_return", "sharpe_ratio", "max_drawdown", "win_rate", "total_trades"] as const;
   const metricLabels: Record<string, string> = {
-    total_return: "Total Return", sharpe_ratio: "Sharpe Ratio", max_drawdown: "Max Drawdown", win_rate: "Win Rate", total_trades: "Total Trades",
+    total_return: "Retorno Total", sharpe_ratio: "Sharpe Ratio", max_drawdown: "Drawdown Máximo", win_rate: "Taxa de Acerto", total_trades: "Total de Trades",
   };
 
   function formatMetric(key: string, value: number) {
@@ -61,19 +61,19 @@ export default function BacktestComparePage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Compare Backtests" description="Select up to 4 backtests to compare side-by-side" />
+      <PageHeader title="Comparar Backtests" description="Selecione até 4 backtests para comparar lado a lado" />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1">
           <Card>
             <CardContent>
               <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-3">
-                Select Backtests ({selected.length}/4)
+                Selecionar Backtests ({selected.length}/4)
               </h2>
               {loading ? (
                 <div className="flex justify-center py-8"><Spinner /></div>
               ) : backtests.length === 0 ? (
-                <p className="py-4 text-center text-sm text-[var(--color-text-muted)]">No backtests found. Run a backtest first.</p>
+                <p className="py-4 text-center text-sm text-[var(--color-text-muted)]">Nenhum backtest encontrado. Rode um backtest primeiro.</p>
               ) : (
                 <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
                   {backtests.map((bt) => (
@@ -103,19 +103,19 @@ export default function BacktestComparePage() {
             <Card>
               <EmptyState
                 icon={<GitCompare className="h-7 w-7" />}
-                title="No backtests selected"
-                description="Select backtests from the left panel to compare their performance metrics."
+                title="Nenhum backtest selecionado"
+                description="Selecione backtests do painel esquerdo para comparar suas métricas."
               />
             </Card>
           ) : (
             <Card>
               <CardContent>
-                <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Comparison Table</h2>
+                <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Tabela Comparativa</h2>
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-[var(--color-border)]">
-                        <th className="pb-3 pr-4 text-left text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Metric</th>
+                        <th className="pb-3 pr-4 text-left text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Métrica</th>
                         {selectedResults.map((bt) => (
                           <th key={bt.id} className="px-2 pb-3 text-center">
                             <div className="text-sm font-medium text-[var(--color-text)]">{bt.strategy_name}</div>

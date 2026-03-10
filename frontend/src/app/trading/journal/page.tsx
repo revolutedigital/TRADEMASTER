@@ -55,11 +55,11 @@ export default function JournalPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Trading Journal"
-        description="Document your trades, lessons, and insights"
+        title="Diário de Trading"
+        description="Documente suas operações, lições e insights"
         actions={
           <Button variant={showForm ? "ghost" : "primary"} size="sm" onClick={() => setShowForm(!showForm)}>
-            {showForm ? "Cancel" : <><Plus className="mr-1.5 h-4 w-4" /> New Entry</>}
+            {showForm ? "Cancelar" : <><Plus className="mr-1.5 h-4 w-4" /> Nova Entrada</>}
           </Button>
         }
       />
@@ -69,7 +69,7 @@ export default function JournalPage() {
           <CardContent>
             <form onSubmit={createEntry} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Notes</label>
+                <label className="block text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Notas</label>
                 <textarea
                   rows={4}
                   value={form.notes}
@@ -80,29 +80,29 @@ export default function JournalPage() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Sentiment</label>
+                  <label className="block text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Sentimento</label>
                   <select
                     value={form.sentiment}
                     onChange={(e) => setForm({ ...form, sentiment: e.target.value as "bullish" | "bearish" | "neutral" })}
                     className="w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
                   >
-                    <option value="bullish">Bullish</option>
-                    <option value="bearish">Bearish</option>
-                    <option value="neutral">Neutral</option>
+                    <option value="bullish">Otimista</option>
+                    <option value="bearish">Pessimista</option>
+                    <option value="neutral">Neutro</option>
                   </select>
                 </div>
                 <Input
-                  label="Tags (comma-separated)"
+                  label="Tags (separados por vírgula)"
                   value={form.tags}
                   onChange={(e) => setForm({ ...form, tags: e.target.value })}
                   placeholder="swing, btc, breakout"
                 />
                 <div className="flex items-end">
-                  <Button type="submit" variant="success" className="w-full">Save Entry</Button>
+                  <Button type="submit" variant="success" className="w-full">Salvar</Button>
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Lessons Learned</label>
+                <label className="block text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Lições Aprendidas</label>
                 <textarea
                   rows={2}
                   value={form.lessons_learned}
@@ -121,9 +121,9 @@ export default function JournalPage() {
         <Card>
           <EmptyState
             icon={<BookOpen className="h-7 w-7" />}
-            title="No journal entries yet"
-            description="Start documenting your trades and lessons learned."
-            action={{ label: "+ New Entry", onClick: () => setShowForm(true) }}
+            title="Nenhuma entrada ainda"
+            description="Comece a documentar suas operações e lições aprendidas"
+            action={{ label: "+ Nova Entrada", onClick: () => setShowForm(true) }}
           />
         </Card>
       ) : (
@@ -149,7 +149,7 @@ export default function JournalPage() {
                 <p className="text-[var(--color-text)]">{entry.notes}</p>
                 {entry.lessons_learned && (
                   <div className="mt-3 rounded-[var(--radius-md)] bg-[var(--color-background)] p-3">
-                    <span className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Lessons Learned</span>
+                    <span className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Lições Aprendidas</span>
                     <p className="mt-1 text-sm text-[var(--color-text-muted)]">{entry.lessons_learned}</p>
                   </div>
                 )}

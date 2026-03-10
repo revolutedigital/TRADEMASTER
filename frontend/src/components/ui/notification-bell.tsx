@@ -47,14 +47,14 @@ export function NotificationBell() {
         <div className="absolute right-0 top-full mt-2 w-80 max-h-96 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl z-50">
           {/* Header */}
           <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
-            <span className="text-sm font-semibold">Notifications</span>
+            <span className="text-sm font-semibold">Notificações</span>
             {unreadCount > 0 && (
               <button
                 onClick={markAllRead}
                 className="flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
               >
                 <CheckCheck className="h-3 w-3" />
-                Mark all read
+                Marcar todas como lidas
               </button>
             )}
           </div>
@@ -62,7 +62,7 @@ export function NotificationBell() {
           {/* List */}
           {notifications.length === 0 ? (
             <p className="px-4 py-8 text-center text-sm text-[var(--color-text-muted)]">
-              No notifications yet
+              Nenhuma notificação ainda
             </p>
           ) : (
             <div className="divide-y divide-[var(--color-border)]">

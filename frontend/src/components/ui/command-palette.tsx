@@ -45,21 +45,21 @@ export function CommandPalette() {
 
   const commands: CommandItem[] = useMemo(
     () => [
-      { id: "dash", label: "Dashboard", group: "Navigation", icon: <LayoutDashboard className="h-4 w-4" />, action: () => navigate("/"), keywords: ["home"] },
-      { id: "trade", label: "Trading Terminal", group: "Navigation", icon: <CandlestickChart className="h-4 w-4" />, action: () => navigate("/trading"), keywords: ["buy", "sell"] },
-      { id: "port", label: "Portfolio", group: "Navigation", icon: <Briefcase className="h-4 w-4" />, action: () => navigate("/portfolio"), keywords: ["positions", "balance"] },
-      { id: "sig", label: "AI Signals", group: "Navigation", icon: <Zap className="h-4 w-4" />, action: () => navigate("/signals"), keywords: ["predictions"] },
-      { id: "bt", label: "Backtesting", group: "Navigation", icon: <FlaskConical className="h-4 w-4" />, action: () => navigate("/backtest"), keywords: ["simulate"] },
-      { id: "ml", label: "ML/AI Dashboard", group: "Navigation", icon: <Brain className="h-4 w-4" />, action: () => navigate("/ml"), keywords: ["model", "ai"] },
-      { id: "alert", label: "Price Alerts", group: "Navigation", icon: <Bell className="h-4 w-4" />, action: () => navigate("/alerts"), keywords: ["notify"] },
-      { id: "sent", label: "Market Sentiment", group: "Navigation", icon: <BarChart3 className="h-4 w-4" />, action: () => navigate("/sentiment"), keywords: ["fear", "greed"] },
-      { id: "set", label: "Settings", group: "Navigation", icon: <Settings className="h-4 w-4" />, action: () => navigate("/settings"), keywords: ["config"] },
-      { id: "buy-btc", label: "Buy BTC", group: "Trading", icon: <ArrowUpCircle className="h-4 w-4 text-[var(--color-buy)]" />, action: () => navigate("/trading?action=buy&symbol=BTCUSDT"), keywords: ["long", "bitcoin"] },
-      { id: "sell-btc", label: "Sell BTC", group: "Trading", icon: <ArrowDownCircle className="h-4 w-4 text-[var(--color-sell)]" />, action: () => navigate("/trading?action=sell&symbol=BTCUSDT"), keywords: ["short", "bitcoin"] },
-      { id: "buy-eth", label: "Buy ETH", group: "Trading", icon: <ArrowUpCircle className="h-4 w-4 text-[var(--color-buy)]" />, action: () => navigate("/trading?action=buy&symbol=ETHUSDT"), keywords: ["long", "ethereum"] },
-      { id: "sell-eth", label: "Sell ETH", group: "Trading", icon: <ArrowDownCircle className="h-4 w-4 text-[var(--color-sell)]" />, action: () => navigate("/trading?action=sell&symbol=ETHUSDT"), keywords: ["short", "ethereum"] },
-      { id: "hist", label: "Trade History", group: "Navigation", icon: <CandlestickChart className="h-4 w-4" />, action: () => navigate("/trading/history"), keywords: ["past", "trades"] },
-      { id: "journ", label: "Trade Journal", group: "Navigation", icon: <CandlestickChart className="h-4 w-4" />, action: () => navigate("/trading/journal"), keywords: ["notes"] },
+      { id: "dash", label: "Painel", group: "Navegação", icon: <LayoutDashboard className="h-4 w-4" />, action: () => navigate("/"), keywords: ["home"] },
+      { id: "trade", label: "Terminal de Trading", group: "Navegação", icon: <CandlestickChart className="h-4 w-4" />, action: () => navigate("/trading"), keywords: ["buy", "sell"] },
+      { id: "port", label: "Portfólio", group: "Navegação", icon: <Briefcase className="h-4 w-4" />, action: () => navigate("/portfolio"), keywords: ["positions", "balance"] },
+      { id: "sig", label: "Sinais de IA", group: "Navegação", icon: <Zap className="h-4 w-4" />, action: () => navigate("/signals"), keywords: ["predictions"] },
+      { id: "bt", label: "Backtesting", group: "Navegação", icon: <FlaskConical className="h-4 w-4" />, action: () => navigate("/backtest"), keywords: ["simulate"] },
+      { id: "ml", label: "Painel ML/IA", group: "Navegação", icon: <Brain className="h-4 w-4" />, action: () => navigate("/ml"), keywords: ["model", "ai"] },
+      { id: "alert", label: "Alertas de Preço", group: "Navegação", icon: <Bell className="h-4 w-4" />, action: () => navigate("/alerts"), keywords: ["notify"] },
+      { id: "sent", label: "Sentimento de Mercado", group: "Navegação", icon: <BarChart3 className="h-4 w-4" />, action: () => navigate("/sentiment"), keywords: ["fear", "greed"] },
+      { id: "set", label: "Configurações", group: "Navegação", icon: <Settings className="h-4 w-4" />, action: () => navigate("/settings"), keywords: ["config"] },
+      { id: "buy-btc", label: "Comprar BTC", group: "Trading", icon: <ArrowUpCircle className="h-4 w-4 text-[var(--color-buy)]" />, action: () => navigate("/trading?action=buy&symbol=BTCUSDT"), keywords: ["long", "bitcoin"] },
+      { id: "sell-btc", label: "Vender BTC", group: "Trading", icon: <ArrowDownCircle className="h-4 w-4 text-[var(--color-sell)]" />, action: () => navigate("/trading?action=sell&symbol=BTCUSDT"), keywords: ["short", "bitcoin"] },
+      { id: "buy-eth", label: "Comprar ETH", group: "Trading", icon: <ArrowUpCircle className="h-4 w-4 text-[var(--color-buy)]" />, action: () => navigate("/trading?action=buy&symbol=ETHUSDT"), keywords: ["long", "ethereum"] },
+      { id: "sell-eth", label: "Vender ETH", group: "Trading", icon: <ArrowDownCircle className="h-4 w-4 text-[var(--color-sell)]" />, action: () => navigate("/trading?action=sell&symbol=ETHUSDT"), keywords: ["short", "ethereum"] },
+      { id: "hist", label: "Histórico de Operações", group: "Navegação", icon: <CandlestickChart className="h-4 w-4" />, action: () => navigate("/trading/history"), keywords: ["past", "trades"] },
+      { id: "journ", label: "Diário de Trading", group: "Navegação", icon: <CandlestickChart className="h-4 w-4" />, action: () => navigate("/trading/journal"), keywords: ["notes"] },
     ],
     [navigate]
   );
@@ -143,7 +143,7 @@ export function CommandPalette() {
               setSelected(0);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Type a command or search..."
+            placeholder="Digite um comando ou busque..."
             className="flex-1 bg-transparent py-3.5 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-faint)] focus:outline-none"
           />
           <kbd className="hidden sm:inline-flex rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-faint)]">
@@ -154,7 +154,7 @@ export function CommandPalette() {
         {/* Results */}
         <div className="max-h-80 overflow-y-auto py-2">
           {filtered.length === 0 && (
-            <p className="py-8 text-center text-sm text-[var(--color-text-muted)]">No results found</p>
+            <p className="py-8 text-center text-sm text-[var(--color-text-muted)]">Nenhum resultado encontrado</p>
           )}
           {Array.from(groups.entries()).map(([group, items]) => (
             <div key={group}>
@@ -190,7 +190,7 @@ export function CommandPalette() {
 
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-[var(--color-border)] px-4 py-2 text-[10px] text-[var(--color-text-faint)]">
-          <span>Navigate with <kbd className="font-mono">↑↓</kbd> · Select with <kbd className="font-mono">↵</kbd></span>
+          <span>Navegue com <kbd className="font-mono">↑↓</kbd> · Selecione com <kbd className="font-mono">↵</kbd></span>
           <span>
             <kbd className="font-mono">⌘K</kbd> to toggle
           </span>

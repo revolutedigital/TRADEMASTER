@@ -30,36 +30,36 @@ export default function PortfolioPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Portfolio</h1>
+        <h1 className="text-2xl font-bold">Portfólio</h1>
         <ExportButton endpoint="/api/v1/export/portfolio" filename="portfolio.csv" />
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <StatCard
-          label="Total Equity"
+          label="Patrimônio Total"
           value={formatCurrency(summary?.total_equity ?? 10000)}
           icon={<DollarSign className="h-4 w-4" />}
         />
         <StatCard
-          label="Available Balance"
+          label="Saldo Disponível"
           value={formatCurrency(summary?.available_balance ?? 10000)}
           icon={<DollarSign className="h-4 w-4" />}
         />
         <StatCard
-          label="Unrealized P&L"
+          label="P&L Não Realizado"
           value={formatCurrency(summary?.total_unrealized_pnl ?? 0)}
           positive={summary ? summary.total_unrealized_pnl >= 0 : undefined}
           icon={<TrendingUp className="h-4 w-4" />}
         />
         <StatCard
-          label="Realized P&L"
+          label="P&L Realizado"
           value={formatCurrency(summary?.total_realized_pnl ?? 0)}
           positive={summary ? summary.total_realized_pnl >= 0 : undefined}
           icon={<TrendingDown className="h-4 w-4" />}
         />
         <StatCard
-          label="Exposure"
+          label="Exposição"
           value={formatPercent(summary?.exposure_pct ?? 0)}
           change={`${summary?.open_positions ?? 0} positions`}
           icon={<PieChart className="h-4 w-4" />}
@@ -69,7 +69,7 @@ export default function PortfolioPage() {
       {/* Risk Status */}
       <Card>
         <CardHeader>
-          <CardTitle>Risk Management</CardTitle>
+          <CardTitle>Gestão de Risco</CardTitle>
           <Badge
             variant={
               riskStatus?.circuit_breaker_state === "NORMAL"
@@ -87,9 +87,9 @@ export default function PortfolioPage() {
           <div className="flex items-center gap-3 rounded-lg bg-[var(--color-background)] p-3">
             <Shield className="h-5 w-5 text-[var(--color-text-muted)]" />
             <div>
-              <p className="text-xs text-[var(--color-text-muted)]">Can Trade</p>
+              <p className="text-xs text-[var(--color-text-muted)]">Pode Operar</p>
               <p className={cn("text-sm font-medium", riskStatus?.can_trade ? "text-green-400" : "text-red-400")}>
-                {riskStatus?.can_trade ? "Yes" : "No"}
+                {riskStatus?.can_trade ? "Sim" : "Não"}
               </p>
             </div>
           </div>
@@ -97,7 +97,7 @@ export default function PortfolioPage() {
           <div className="flex items-center gap-3 rounded-lg bg-[var(--color-background)] p-3">
             <AlertTriangle className="h-5 w-5 text-[var(--color-text-muted)]" />
             <div>
-              <p className="text-xs text-[var(--color-text-muted)]">Daily Drawdown</p>
+              <p className="text-xs text-[var(--color-text-muted)]">Drawdown Diário</p>
               <p className={cn("text-sm font-mono font-medium",
                 (riskStatus?.daily_drawdown ?? 0) > 0.02 ? "text-red-400" : "text-[var(--color-text)]"
               )}>
@@ -109,7 +109,7 @@ export default function PortfolioPage() {
           <div className="flex items-center gap-3 rounded-lg bg-[var(--color-background)] p-3">
             <AlertTriangle className="h-5 w-5 text-[var(--color-text-muted)]" />
             <div>
-              <p className="text-xs text-[var(--color-text-muted)]">Weekly Drawdown</p>
+              <p className="text-xs text-[var(--color-text-muted)]">Drawdown Semanal</p>
               <p className="text-sm font-mono font-medium">
                 {formatPercent(riskStatus?.weekly_drawdown ?? 0)}
               </p>
@@ -119,7 +119,7 @@ export default function PortfolioPage() {
           <div className="flex items-center gap-3 rounded-lg bg-[var(--color-background)] p-3">
             <TrendingDown className="h-5 w-5 text-[var(--color-text-muted)]" />
             <div>
-              <p className="text-xs text-[var(--color-text-muted)]">Position Size Mult.</p>
+              <p className="text-xs text-[var(--color-text-muted)]">Mult. Tamanho Posição</p>
               <p className="text-sm font-mono font-medium">
                 {riskStatus?.position_size_multiplier?.toFixed(1) ?? "1.0"}x
               </p>
@@ -131,7 +131,7 @@ export default function PortfolioPage() {
       {/* Positions Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Open Positions</CardTitle>
+          <CardTitle>Posições Abertas</CardTitle>
           <Badge variant="primary">{positions.length}</Badge>
         </CardHeader>
 
@@ -141,20 +141,20 @@ export default function PortfolioPage() {
             <TableRow>
               <TableHead>Symbol</TableHead>
               <TableHead>Side</TableHead>
-              <TableHead>Quantity</TableHead>
-              <TableHead>Entry Price</TableHead>
-              <TableHead>Current Price</TableHead>
-              <TableHead>Unrealized P&L</TableHead>
+              <TableHead>Quantidade</TableHead>
+              <TableHead>Preço de Entrada</TableHead>
+              <TableHead>Preço Atual</TableHead>
+              <TableHead>P&L Não Realizado</TableHead>
               <TableHead>Stop Loss</TableHead>
               <TableHead>Take Profit</TableHead>
-              <TableHead>Opened</TableHead>
+              <TableHead>Abertura</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {positions.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={9} className="py-12 text-center text-[var(--color-text-muted)]">
-                  No open positions. The AI will open trades when strong signals are detected.
+                  Sem posições abertas. A IA abrirá operações quando detectar sinais fortes.
                 </TableCell>
               </TableRow>
             ) : (

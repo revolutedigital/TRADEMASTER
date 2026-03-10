@@ -75,14 +75,14 @@ export default function DashboardPage() {
       if (engineRunning) {
         await apiFetch("/api/v1/trading/engine/stop", { method: "POST" });
         setEngineRunning(false);
-        toast.warning("Trading engine stopped");
+        toast.warning("Engine de trading parado");
       } else {
         await apiFetch("/api/v1/trading/engine/start", { method: "POST" });
         setEngineRunning(true);
-        toast.success("Trading engine started");
+        toast.success("Engine de trading iniciado");
       }
     } catch (err) {
-      toast.error(`Engine toggle failed: ${err}`);
+      toast.error(`Falha ao alternar engine: ${err}`);
     }
     setEngineLoading(false);
   };
@@ -109,10 +109,10 @@ export default function DashboardPage() {
         message = `${side} ${selectedSymbol} @ $${Number(price).toLocaleString()}`;
         toast.success(message);
       } else if (status === "position_closed") {
-        message = `Closed position | P&L: $${pnl}`;
+        message = `Posição fechada | P&L: $${pnl}`;
         Number(pnl) >= 0 ? toast.success(message) : toast.warning(message);
       } else if (status === "position_increased") {
-        message = `Added to ${result.side} | Avg: $${Number(result.avg_entry).toLocaleString()}`;
+        message = `Adicionado a ${result.side} | Méd: $${Number(result.avg_entry).toLocaleString()}`;
         toast.info(message);
       }
       setLastOrder({ status: status === "position_closed" ? (Number(pnl) >= 0 ? "profit" : "loss") : "ok", message });
@@ -131,7 +131,7 @@ export default function DashboardPage() {
       const result = await apiFetch<{ pnl: number }>(`/api/v1/trading/close-position/${posId}`, {
         method: "POST",
       });
-      const message = `Position closed | P&L: $${result.pnl.toFixed(2)}`;
+      const message = `Posição fechada | P&L: $${result.pnl.toFixed(2)}`;
       setLastOrder({
         status: result.pnl >= 0 ? "profit" : "loss",
         message,
@@ -140,7 +140,7 @@ export default function DashboardPage() {
       fetchPositions();
       fetchSummary();
     } catch (err) {
-      toast.error(`Close failed: ${err}`);
+      toast.error(`Falha ao fechar: ${err}`);
       setLastOrder({ status: "error", message: String(err) });
     }
   };
@@ -152,10 +152,10 @@ export default function DashboardPage() {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Painel</h1>
           <Badge variant={engineRunning ? "success" : "default"}>
             <span className={cn("mr-1.5 h-1.5 w-1.5 rounded-full inline-block", engineRunning ? "bg-[var(--color-success)] animate-pulse-glow" : "bg-[var(--color-text-faint)]")} />
-            {engineRunning ? "Engine Running" : "Engine Stopped"}
+            {engineRunning ? "Engine Ativo" : "Engine Parado"}
           </Badge>
         </div>
         <div className="flex items-center gap-2">
@@ -166,9 +166,9 @@ export default function DashboardPage() {
             disabled={engineLoading}
           >
             {engineRunning ? <Square className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-            {engineRunning ? "Stop Engine" : "Start Engine"}
+            {engineRunning ? "Parar Engine" : "Iniciar Engine"}
           </Button>
-          <Tooltip content="Refresh engine status">
+          <Tooltip content="Atualizar status do engine">
             <Button
               variant="ghost"
               size="sm"
@@ -188,29 +188,29 @@ export default function DashboardPage() {
       {/* Stats row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger-children">
         <StatCard
-          label="Total Equity"
+          label="Patrimônio Total"
           value={formatCurrency(summary?.total_equity ?? 10000)}
           change={summary ? formatPercent(summary.daily_pnl_pct) : undefined}
           positive={summary ? summary.daily_pnl_pct >= 0 : undefined}
           icon={<DollarSign className="h-4 w-4" />}
         />
         <StatCard
-          label="Daily P&L"
+          label="P&L Diário"
           value={formatCurrency(summary?.daily_pnl ?? 0)}
           change={summary ? formatPercent(summary.daily_pnl_pct) : undefined}
           positive={summary ? summary.daily_pnl >= 0 : undefined}
           icon={<TrendingUp className="h-4 w-4" />}
         />
         <StatCard
-          label="Open Positions"
+          label="Posições Abertas"
           value={String(summary?.open_positions ?? 0)}
-          change={`${formatPercent(summary?.exposure_pct ?? 0)} exposed`}
+          change={`${formatPercent(summary?.exposure_pct ?? 0)} exposto`}
           icon={<BarChart3 className="h-4 w-4" />}
         />
         <StatCard
-          label="Risk Status"
+          label="Status de Risco"
           value={riskStatus?.circuit_breaker_state ?? "NORMAL"}
-          change={`${formatPercent(riskStatus?.daily_drawdown ?? 0)} daily DD`}
+          change={`${formatPercent(riskStatus?.daily_drawdown ?? 0)} DD diário`}
           positive={riskStatus?.can_trade}
           icon={<Shield className="h-4 w-4" />}
         />
@@ -254,7 +254,7 @@ export default function DashboardPage() {
           {currentPrice && (
             <div className="mt-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-t border-[var(--color-border)] px-4 pt-3 pb-3">
               <div className="flex items-center gap-4 text-sm">
-                <span className="text-[var(--color-text-faint)] text-xs uppercase tracking-wider">Price</span>
+                <span className="text-[var(--color-text-faint)] text-xs uppercase tracking-wider">Preço</span>
                 <LivePrice price={currentPrice.price} className="font-semibold text-base" />
                 <span
                   className={cn(
@@ -280,7 +280,7 @@ export default function DashboardPage() {
         <Card className="flex flex-col">
           <CardHeader>
             <CardTitle>Paper Trading</CardTitle>
-            <Badge variant="warning">Simulated</Badge>
+            <Badge variant="warning">Simulado</Badge>
           </CardHeader>
 
           <div className="flex flex-col gap-4 px-0 pt-0 flex-1">
@@ -294,7 +294,7 @@ export default function DashboardPage() {
 
             {/* Quantity Input */}
             <Input
-              label={`Quantity (${selectedSymbol.replace("USDT", "")})`}
+              label={`Quantidade (${selectedSymbol.replace("USDT", "")})`}
               type="number"
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
@@ -329,7 +329,7 @@ export default function DashboardPage() {
                 disabled={orderLoading}
               >
                 <ArrowUpCircle className="h-4 w-4" />
-                Buy / Long
+                Comprar
               </Button>
               <Button
                 variant="danger"
@@ -337,7 +337,7 @@ export default function DashboardPage() {
                 disabled={orderLoading}
               >
                 <ArrowDownCircle className="h-4 w-4" />
-                Sell / Short
+                Vender
               </Button>
             </div>
 
@@ -367,7 +367,7 @@ export default function DashboardPage() {
                 <span className="font-mono">4.0%</span>
               </div>
               <div className="flex justify-between">
-                <span>Fee</span>
+                <span>Taxa</span>
                 <span className="font-mono">0.1%</span>
               </div>
             </div>
@@ -380,7 +380,7 @@ export default function DashboardPage() {
         {/* Open Positions */}
         <Card>
           <CardHeader>
-            <CardTitle>Open Positions</CardTitle>
+            <CardTitle>Posições Abertas</CardTitle>
             <Badge variant={positions.length > 0 ? "primary" : "default"}>
               {positions.length}
             </Badge>
@@ -389,18 +389,18 @@ export default function DashboardPage() {
           {positions.length === 0 ? (
             <EmptyState
               icon={<Inbox className="h-6 w-6" />}
-              title="No open positions"
-              description="Execute a paper trade to see your positions here"
+              title="Sem posições abertas"
+              description="Execute uma ordem simulada para ver suas posições aqui"
             />
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Symbol</TableHead>
-                  <TableHead>Side</TableHead>
-                  <TableHead>Entry</TableHead>
+                  <TableHead>Par</TableHead>
+                  <TableHead>Lado</TableHead>
+                  <TableHead>Entrada</TableHead>
                   <TableHead>P&L</TableHead>
-                  <TableHead><span className="sr-only">Actions</span></TableHead>
+                  <TableHead><span className="sr-only">Ações</span></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -424,13 +424,13 @@ export default function DashboardPage() {
                       {formatCurrency(pos.unrealized_pnl)}
                     </TableCell>
                     <TableCell>
-                      <Tooltip content="Close position">
+                      <Tooltip content="Fechar posição">
                         <Button
                           variant="ghost"
                           size="sm"
                           className="h-7 w-7 p-0 text-[var(--color-danger)] hover:bg-[var(--color-danger-light)]"
                           onClick={() => closePosition(pos.id)}
-                          aria-label={`Close ${pos.symbol} position`}
+                          aria-label={`Fechar posição ${pos.symbol}`}
                         >
                           <X className="h-3.5 w-3.5" />
                         </Button>
@@ -446,24 +446,24 @@ export default function DashboardPage() {
         {/* Recent Signals */}
         <Card>
           <CardHeader>
-            <CardTitle>Recent Signals</CardTitle>
+            <CardTitle>Sinais Recentes</CardTitle>
             <Badge variant="primary">{signals.length}</Badge>
           </CardHeader>
 
           {signals.length === 0 ? (
             <EmptyState
               icon={<Radio className="h-6 w-6" />}
-              title="No signals yet"
-              description="Start the trading engine to receive AI signals"
+              title="Nenhum sinal ainda"
+              description="Inicie o engine de trading para receber sinais de IA"
             />
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Symbol</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>Strength</TableHead>
-                  <TableHead>Time</TableHead>
+                  <TableHead>Par</TableHead>
+                  <TableHead>Ação</TableHead>
+                  <TableHead>Força</TableHead>
+                  <TableHead>Tempo</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

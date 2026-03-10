@@ -9,7 +9,7 @@ interface ExportButtonProps {
   className?: string;
 }
 
-export function ExportButton({ endpoint, filename, label = "Export CSV", className = "" }: ExportButtonProps) {
+export function ExportButton({ endpoint, filename, label = "Exportar CSV", className = "" }: ExportButtonProps) {
   const [loading, setLoading] = useState(false);
 
   const handleExport = async () => {
@@ -19,7 +19,7 @@ export function ExportButton({ endpoint, filename, label = "Export CSV", classNa
       const response = await fetch(`${API_URL}${endpoint}`, {
         credentials: "include",
       });
-      if (!response.ok) throw new Error("Export failed");
+      if (!response.ok) throw new Error("Falha na exportação");
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
@@ -48,7 +48,7 @@ export function ExportButton({ endpoint, filename, label = "Export CSV", classNa
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
       </svg>
-      {loading ? "Exporting..." : label}
+      {loading ? "Exportando..." : label}
     </button>
   );
 }

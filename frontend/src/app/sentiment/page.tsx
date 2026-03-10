@@ -41,7 +41,7 @@ export default function SentimentPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Market Sentiment" description="Real-time market sentiment indicators and analysis" />
+      <PageHeader title="Sentimento de Mercado" description="Indicadores de sentimento de mercado em tempo real" />
 
       {loading ? (
         <div className="flex justify-center py-12"><Spinner size="lg" /></div>
@@ -50,12 +50,12 @@ export default function SentimentPage() {
           {/* Fear & Greed Index */}
           <Card className="md:col-span-2 lg:col-span-1">
             <CardContent>
-              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Fear & Greed Index</h2>
+              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Índice Medo & Ganância</h2>
               <div className="flex flex-col items-center">
                 <div className={`text-6xl font-bold tabular-nums ${getFearGreedColor(data?.fear_greed_index ?? 50)}`}>
                   {data?.fear_greed_index ?? "--"}
                 </div>
-                <div className="mt-2 text-lg text-[var(--color-text)]">{data?.fear_greed_label ?? "Neutral"}</div>
+                <div className="mt-2 text-lg text-[var(--color-text)]">{data?.fear_greed_label ?? "Neutro"}</div>
                 <div className="mt-4 w-full">
                   <div className="h-3 w-full overflow-hidden rounded-full bg-[var(--color-background)]">
                     <div
@@ -64,8 +64,8 @@ export default function SentimentPage() {
                     />
                   </div>
                   <div className="mt-1 flex justify-between text-xs text-[var(--color-text-muted)]">
-                    <span>Extreme Fear</span>
-                    <span>Extreme Greed</span>
+                    <span>Medo Extremo</span>
+                    <span>Ganância Extrema</span>
                   </div>
                 </div>
               </div>
@@ -75,7 +75,7 @@ export default function SentimentPage() {
           {/* Funding Rates */}
           <Card>
             <CardContent>
-              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Funding Rates</h2>
+              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Taxas de Funding</h2>
               <div className="space-y-4">
                 {data?.funding_rates ? Object.entries(data.funding_rates).map(([symbol, rate]) => (
                   <div key={symbol} className="flex justify-between items-center">
@@ -85,7 +85,7 @@ export default function SentimentPage() {
                     </span>
                   </div>
                 )) : (
-                  <p className="text-sm text-[var(--color-text-muted)]">No data available</p>
+                  <p className="text-sm text-[var(--color-text-muted)]">Dados indisponíveis</p>
                 )}
               </div>
             </CardContent>
@@ -94,7 +94,7 @@ export default function SentimentPage() {
           {/* Long/Short Ratio */}
           <Card>
             <CardContent>
-              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Long/Short Ratio</h2>
+              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Proporção Long/Short</h2>
               <div className="space-y-4">
                 {data?.long_short_ratio ? Object.entries(data.long_short_ratio).map(([symbol, ratio]) => {
                   const longPct = (ratio / (ratio + 1)) * 100;
@@ -116,7 +116,7 @@ export default function SentimentPage() {
                     </div>
                   );
                 }) : (
-                  <p className="text-sm text-[var(--color-text-muted)]">No data available</p>
+                  <p className="text-sm text-[var(--color-text-muted)]">Dados indisponíveis</p>
                 )}
               </div>
             </CardContent>
@@ -125,7 +125,7 @@ export default function SentimentPage() {
           {/* Open Interest */}
           <Card>
             <CardContent>
-              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Open Interest</h2>
+              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Contratos em Aberto</h2>
               <div className="space-y-4">
                 {data?.open_interest ? Object.entries(data.open_interest).map(([symbol, oi]) => (
                   <div key={symbol} className="flex justify-between items-center">
@@ -133,7 +133,7 @@ export default function SentimentPage() {
                     <span className="tabular-nums font-mono text-sm text-[var(--color-text-muted)]">${(oi / 1e9).toFixed(2)}B</span>
                   </div>
                 )) : (
-                  <p className="text-sm text-[var(--color-text-muted)]">No data available</p>
+                  <p className="text-sm text-[var(--color-text-muted)]">Dados indisponíveis</p>
                 )}
               </div>
             </CardContent>
@@ -142,13 +142,13 @@ export default function SentimentPage() {
           {/* Market Overview */}
           <Card>
             <CardContent>
-              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Market Overview</h2>
+              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Visão do Mercado</h2>
               <div className="space-y-3">
                 {[
-                  { label: "Dominance BTC", value: "54.2%" },
-                  { label: "Dominance ETH", value: "17.8%" },
-                  { label: "Total Market Cap", value: "$3.2T" },
-                  { label: "24h Volume", value: "$89.4B" },
+                  { label: "Dominância BTC", value: "54.2%" },
+                  { label: "Dominância ETH", value: "17.8%" },
+                  { label: "Cap. Total de Mercado", value: "$3.2T" },
+                  { label: "Volume 24h", value: "$89.4B" },
                 ].map(({ label, value }) => (
                   <div key={label} className="flex justify-between">
                     <span className="text-sm text-[var(--color-text-muted)]">{label}</span>
@@ -162,15 +162,15 @@ export default function SentimentPage() {
           {/* Sentiment Summary */}
           <Card>
             <CardContent>
-              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Sentiment Summary</h2>
+              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Resumo do Sentimento</h2>
               <div className="space-y-3">
                 <div className="rounded-[var(--radius-md)] bg-[var(--color-background)] p-3">
-                  <span className="text-xs text-[var(--color-text-muted)]">Overall Bias</span>
-                  <p className="text-lg font-semibold text-[var(--color-warning)]">Neutral</p>
+                  <span className="text-xs text-[var(--color-text-muted)]">Viés Geral</span>
+                  <p className="text-lg font-semibold text-[var(--color-warning)]">Neutro</p>
                 </div>
                 <p className="text-sm text-[var(--color-text-muted)]">
-                  Market sentiment is mixed. Funding rates suggest balanced positioning.
-                  Monitor for directional shifts in long/short ratios.
+                  O sentimento do mercado está misto. As taxas de funding sugerem posicionamento equilibrado.
+                  Monitore mudanças direcionais nas proporções long/short.
                 </p>
               </div>
             </CardContent>

@@ -56,11 +56,11 @@ export default function AlertsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Price Alerts"
-        description="Get notified when prices hit your targets"
+        title="Alertas de Preço"
+        description="Receba notificações quando os preços atingirem seus alvos"
         actions={
           <Button variant={showForm ? "ghost" : "primary"} size="sm" onClick={() => setShowForm(!showForm)}>
-            {showForm ? "Cancel" : <><Plus className="mr-1.5 h-4 w-4" /> New Alert</>}
+            {showForm ? "Cancelar" : <><Plus className="mr-1.5 h-4 w-4" /> Novo Alerta</>}
           </Button>
         }
       />
@@ -81,18 +81,18 @@ export default function AlertsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Condition</label>
+                <label className="block text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Condição</label>
                 <select
                   value={form.condition}
                   onChange={(e) => setForm({ ...form, condition: e.target.value as "above" | "below" })}
                   className="w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
                 >
-                  <option value="above">Price Above</option>
-                  <option value="below">Price Below</option>
+                  <option value="above">Preço Acima</option>
+                  <option value="below">Preço Abaixo</option>
                 </select>
               </div>
               <Input
-                label="Target Price"
+                label="Preço Alvo"
                 type="number"
                 step="0.01"
                 placeholder="e.g. 100000"
@@ -100,7 +100,7 @@ export default function AlertsPage() {
                 onChange={(e) => setForm({ ...form, target_price: e.target.value })}
                 required
               />
-              <Button type="submit" variant="success" className="w-full">Create Alert</Button>
+              <Button type="submit" variant="success" className="w-full">Criar Alerta</Button>
             </form>
           </CardContent>
         </Card>
@@ -112,9 +112,9 @@ export default function AlertsPage() {
         <Card>
           <EmptyState
             icon={<Bell className="h-7 w-7" />}
-            title="No price alerts configured"
-            description="Create your first alert to get notified when prices hit your targets."
-            action={{ label: "+ New Alert", onClick: () => setShowForm(true) }}
+            title="Nenhum alerta configurado"
+            description="Crie seu primeiro alerta para ser notificado quando os preços atingirem seus alvos."
+            action={{ label: "+ Novo Alerta", onClick: () => setShowForm(true) }}
           />
         </Card>
       ) : (
@@ -133,7 +133,7 @@ export default function AlertsPage() {
                     </div>
                     {alert.is_triggered && (
                       <span className="text-xs rounded-full bg-[var(--color-warning)]/15 px-2.5 py-1 font-medium text-[var(--color-warning)]">
-                        Triggered
+                        Disparado
                       </span>
                     )}
                   </div>

@@ -35,16 +35,16 @@ export default function SignalsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">AI Signals</h1>
+        <h1 className="text-2xl font-bold">Sinais de IA</h1>
         <div className="flex items-center gap-2">
           <div className="h-2 w-2 rounded-full bg-green-400 animate-pulse-glow" />
-          <span className="text-xs text-[var(--color-text-muted)]">Real-time</span>
+          <span className="text-xs text-[var(--color-text-muted)]">Tempo real</span>
         </div>
       </div>
 
       {/* Signal Legend */}
       <Card className="flex flex-wrap items-center gap-4 sm:gap-6 p-3">
-        <span className="text-xs text-[var(--color-text-muted)]">Signal Strength:</span>
+        <span className="text-xs text-[var(--color-text-muted)]">Força do Sinal:</span>
         <div className="flex items-center gap-1">
           <div className="h-3 w-3 rounded-sm bg-green-500" />
           <span className="text-xs">BUY (&ge;0.3)</span>
@@ -62,7 +62,7 @@ export default function SignalsPage() {
       {/* Signals Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Signal History</CardTitle>
+          <CardTitle>Histórico de Sinais</CardTitle>
           <Badge variant="primary">{signals.length} signals</Badge>
         </CardHeader>
 
@@ -70,11 +70,11 @@ export default function SignalsPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Time</TableHead>
+              <TableHead>Tempo</TableHead>
               <TableHead>Symbol</TableHead>
-              <TableHead>Action</TableHead>
-              <TableHead>Strength</TableHead>
-              <TableHead>Confidence</TableHead>
+              <TableHead>Ação</TableHead>
+              <TableHead>Força</TableHead>
+              <TableHead>Confiança</TableHead>
               <TableHead>Model</TableHead>
             </TableRow>
           </TableHeader>
@@ -82,7 +82,7 @@ export default function SignalsPage() {
             {signals.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="py-12 text-center text-[var(--color-text-muted)]">
-                  No signals generated yet. The ML pipeline will generate signals when market data flows.
+                  Nenhum sinal gerado ainda. O pipeline de ML gerará sinais quando houver dados de mercado.
                 </TableCell>
               </TableRow>
             ) : (

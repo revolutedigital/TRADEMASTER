@@ -31,14 +31,14 @@ export default function OptimizerPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Portfolio Optimizer" description="Markowitz Mean-Variance Optimization for optimal asset allocation" />
+      <PageHeader title="Otimizador de Portfólio" description="Otimização Média-Variância de Markowitz para alocação ótima de ativos" />
 
       <Card>
         <CardContent>
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
             <div className="flex-1 w-full">
               <label className="block text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-2">
-                Risk Tolerance: <span className="tabular-nums text-[var(--color-text)]">{(riskTolerance * 100).toFixed(0)}%</span>
+                Tolerância ao Risco: <span className="tabular-nums text-[var(--color-text)]">{(riskTolerance * 100).toFixed(0)}%</span>
               </label>
               <input
                 type="range" min="0" max="1" step="0.05"
@@ -47,13 +47,13 @@ export default function OptimizerPage() {
                 className="w-full accent-[var(--color-primary)]"
               />
               <div className="mt-1 flex justify-between text-xs text-[var(--color-text-muted)]">
-                <span>Conservative</span>
-                <span>Moderate</span>
-                <span>Aggressive</span>
+                <span>Conservador</span>
+                <span>Moderado</span>
+                <span>Agressivo</span>
               </div>
             </div>
             <Button variant="primary" onClick={runOptimization} disabled={loading} className="min-w-[140px]">
-              {loading ? <Spinner size="sm" /> : "Optimize"}
+              {loading ? <Spinner size="sm" /> : "Otimizar"}
             </Button>
           </div>
         </CardContent>
@@ -63,7 +63,7 @@ export default function OptimizerPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in">
           <Card>
             <CardContent>
-              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Optimal Allocation</h2>
+              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Alocação Ótima</h2>
               <div className="space-y-4">
                 {Object.entries(result.optimal_weights).map(([asset, weight]) => (
                   <div key={asset}>
@@ -80,14 +80,14 @@ export default function OptimizerPage() {
 
           <Card>
             <CardContent>
-              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Portfolio Metrics</h2>
+              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Métricas do Portfólio</h2>
               <div className="space-y-3">
                 <div className="flex justify-between rounded-[var(--radius-md)] bg-[var(--color-background)] p-3">
-                  <span className="text-sm text-[var(--color-text-muted)]">Expected Annual Return</span>
+                  <span className="text-sm text-[var(--color-text-muted)]">Retorno Anual Esperado</span>
                   <span className="font-semibold tabular-nums text-[var(--color-success)]">{(result.expected_return * 100).toFixed(2)}%</span>
                 </div>
                 <div className="flex justify-between rounded-[var(--radius-md)] bg-[var(--color-background)] p-3">
-                  <span className="text-sm text-[var(--color-text-muted)]">Expected Risk (Volatility)</span>
+                  <span className="text-sm text-[var(--color-text-muted)]">Risco Esperado (Volatilidade)</span>
                   <span className="font-semibold tabular-nums text-[var(--color-warning)]">{(result.expected_risk * 100).toFixed(2)}%</span>
                 </div>
                 <div className="flex justify-between rounded-[var(--radius-md)] bg-[var(--color-background)] p-3">
@@ -101,7 +101,7 @@ export default function OptimizerPage() {
           {result.frontier.length > 0 && (
             <Card className="md:col-span-2">
               <CardContent>
-                <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Efficient Frontier</h2>
+                <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Fronteira Eficiente</h2>
                 <div className="flex h-64 items-end gap-1">
                   {result.frontier.map((point, i) => (
                     <div key={i} className="flex flex-1 flex-col items-center">
@@ -113,8 +113,8 @@ export default function OptimizerPage() {
                   ))}
                 </div>
                 <div className="mt-2 flex justify-between text-xs text-[var(--color-text-muted)]">
-                  <span>Low Risk</span>
-                  <span>High Risk</span>
+                  <span>Baixo Risco</span>
+                  <span>Alto Risco</span>
                 </div>
               </CardContent>
             </Card>

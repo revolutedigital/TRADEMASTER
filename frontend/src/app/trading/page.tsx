@@ -37,9 +37,9 @@ export default function TradingPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold">Trading Terminal</h1>
+        <h1 className="text-2xl font-bold">Terminal de Trading</h1>
         <div className="flex items-center gap-2">
-          <ExportButton endpoint="/api/v1/export/trades" filename="trades.csv" label="Export Trades" />
+          <ExportButton endpoint="/api/v1/export/trades" filename="trades.csv" label="Exportar Trades" />
           <Badge
             variant={
               riskStatus?.circuit_breaker_state === "NORMAL"
@@ -52,7 +52,7 @@ export default function TradingPage() {
             {riskStatus?.circuit_breaker_state ?? "NORMAL"}
           </Badge>
           <span className="text-xs text-[var(--color-text-muted)]">
-            {riskStatus?.can_trade ? "AI Trading Active" : "Trading Paused"}
+            {riskStatus?.can_trade ? "Trading IA Ativo" : "Trading Pausado"}
           </span>
         </div>
       </div>
@@ -101,7 +101,7 @@ export default function TradingPage() {
         {/* Active Positions */}
         <Card>
           <CardHeader>
-            <CardTitle>Active Positions</CardTitle>
+            <CardTitle>Posições Ativas</CardTitle>
             <Badge variant="primary">{positions.length}</Badge>
           </CardHeader>
 
@@ -109,11 +109,11 @@ export default function TradingPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Symbol</TableHead>
-                <TableHead>Side</TableHead>
-                <TableHead>Qty</TableHead>
-                <TableHead>Entry</TableHead>
-                <TableHead>Current</TableHead>
+                <TableHead>Par</TableHead>
+                <TableHead>Lado</TableHead>
+                <TableHead>Qtd</TableHead>
+                <TableHead>Entrada</TableHead>
+                <TableHead>Atual</TableHead>
                 <TableHead>P&L</TableHead>
                 <TableHead>SL</TableHead>
                 <TableHead>TP</TableHead>
@@ -123,7 +123,7 @@ export default function TradingPage() {
               {positions.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center text-[var(--color-text-muted)]">
-                    No active positions
+                    Sem posições ativas
                   </TableCell>
                 </TableRow>
               ) : (
@@ -167,7 +167,7 @@ export default function TradingPage() {
         {/* Recent Orders */}
         <Card>
           <CardHeader>
-            <CardTitle>Recent Orders</CardTitle>
+            <CardTitle>Ordens Recentes</CardTitle>
             <Badge>{orders.length}</Badge>
           </CardHeader>
 
@@ -175,19 +175,19 @@ export default function TradingPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Symbol</TableHead>
-                <TableHead>Side</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Price</TableHead>
+                <TableHead>Par</TableHead>
+                <TableHead>Lado</TableHead>
+                <TableHead>Tipo</TableHead>
+                <TableHead>Preço</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Time</TableHead>
+                <TableHead>Tempo</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {orders.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center text-[var(--color-text-muted)]">
-                    No orders yet
+                    Nenhuma ordem ainda
                   </TableCell>
                 </TableRow>
               ) : (

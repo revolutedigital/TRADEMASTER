@@ -35,9 +35,9 @@ export class ErrorBoundary extends Component<Props, State> {
         <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-danger-light)] text-[var(--color-danger)]">
           <AlertCircle className="h-7 w-7" />
         </div>
-        <h3 className="text-lg font-semibold">Something went wrong</h3>
+        <h3 className="text-lg font-semibold">Algo deu errado</h3>
         <p className="mt-1 text-sm text-[var(--color-text-muted)] max-w-md">
-          An unexpected error occurred. Please try refreshing the page.
+          Um erro inesperado ocorreu. Tente atualizar a página.
         </p>
         <div className="mt-4 flex items-center gap-3">
           <Button
@@ -49,14 +49,14 @@ export class ErrorBoundary extends Component<Props, State> {
             }}
           >
             <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-            Refresh
+            Atualizar
           </Button>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => this.setState((s) => ({ showDetails: !s.showDetails }))}
           >
-            {this.state.showDetails ? "Hide" : "Show"} Details
+            {this.state.showDetails ? "Ocultar Detalhes" : "Ver Detalhes"}
           </Button>
         </div>
         {this.state.showDetails && this.state.error && (

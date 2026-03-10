@@ -35,8 +35,8 @@ export default function FeesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Fee Analysis"
-        description="Track trading fees and their impact on your returns"
+        title="Análise de Taxas"
+        description="Acompanhe as taxas de trading e seu impacto nos retornos"
         actions={
           <div className="flex gap-1.5 rounded-[var(--radius-md)] bg-[var(--color-background)] p-1">
             {periods.map((p) => (
@@ -63,7 +63,7 @@ export default function FeesPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Card>
               <CardContent>
-                <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Total Fees Paid</h2>
+                <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Total de Taxas Pagas</h2>
                 <p className="mt-2 text-3xl font-bold tabular-nums text-[var(--color-text)]">
                   ${data?.total_fees.toFixed(2) ?? "0.00"}
                 </p>
@@ -71,7 +71,7 @@ export default function FeesPage() {
             </Card>
             <Card>
               <CardContent>
-                <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Fee Impact on Returns</h2>
+                <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Impacto nos Retornos</h2>
                 <p className="mt-2 text-3xl font-bold tabular-nums text-[var(--color-danger)]">
                   {data?.fee_impact_pct.toFixed(2) ?? "0.00"}%
                 </p>
@@ -79,7 +79,7 @@ export default function FeesPage() {
             </Card>
             <Card>
               <CardContent>
-                <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Avg Fee per Trade</h2>
+                <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Taxa Média por Trade</h2>
                 <p className="mt-2 text-3xl font-bold tabular-nums text-[var(--color-warning)]">
                   ${((data?.total_fees ?? 0) / Math.max(Object.keys(data?.fees_by_symbol ?? {}).length, 1)).toFixed(2)}
                 </p>
@@ -89,7 +89,7 @@ export default function FeesPage() {
 
           <Card>
             <CardContent>
-              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Fees by Symbol</h2>
+              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Taxas por Par</h2>
               <div className="space-y-3">
                 {data?.fees_by_symbol && Object.entries(data.fees_by_symbol).sort(([, a], [, b]) => b - a).map(([symbol, fee]) => (
                   <div key={symbol} className="flex items-center gap-4">

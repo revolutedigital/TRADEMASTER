@@ -85,13 +85,13 @@ export default function BacktestPage() {
       {/* Configuration */}
       <Card>
         <CardHeader>
-          <CardTitle>Backtest Configuration</CardTitle>
+          <CardTitle>Configuração do Backtest</CardTitle>
         </CardHeader>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Symbol */}
           <div>
-            <label className="mb-1 block text-xs text-[var(--color-text-muted)]">Symbol</label>
+            <label className="mb-1 block text-xs text-[var(--color-text-muted)]">Par</label>
             <select
               value={symbol}
               onChange={(e) => setSymbol(e.target.value)}
@@ -104,22 +104,22 @@ export default function BacktestPage() {
 
           {/* Interval */}
           <div>
-            <label className="mb-1 block text-xs text-[var(--color-text-muted)]">Interval</label>
+            <label className="mb-1 block text-xs text-[var(--color-text-muted)]">Intervalo</label>
             <select
               value={interval}
               onChange={(e) => setInterval(e.target.value)}
               className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
             >
-              <option value="15m">15 minutes</option>
-              <option value="1h">1 hour</option>
-              <option value="4h">4 hours</option>
-              <option value="1d">1 day</option>
+              <option value="15m">15 minutos</option>
+              <option value="1h">1 hora</option>
+              <option value="4h">4 horas</option>
+              <option value="1d">1 dia</option>
             </select>
           </div>
 
           {/* Capital */}
           <div>
-            <label className="mb-1 block text-xs text-[var(--color-text-muted)]">Initial Capital ($)</label>
+            <label className="mb-1 block text-xs text-[var(--color-text-muted)]">Capital Inicial ($)</label>
             <input
               type="number"
               value={capital}
@@ -130,7 +130,7 @@ export default function BacktestPage() {
 
           {/* Threshold */}
           <div>
-            <label className="mb-1 block text-xs text-[var(--color-text-muted)]">Signal Threshold</label>
+            <label className="mb-1 block text-xs text-[var(--color-text-muted)]">Limite do Sinal</label>
             <input
               type="number"
               step="0.05"
@@ -148,12 +148,12 @@ export default function BacktestPage() {
             {loading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Running...
+                Rodando...
               </>
             ) : (
               <>
                 <Play className="mr-2 h-4 w-4" />
-                Run Backtest
+                Rodar Backtest
               </>
             )}
           </Button>
@@ -173,19 +173,19 @@ export default function BacktestPage() {
           {/* Metrics */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
             <StatCard
-              label="Total Return"
+              label="Retorno Total"
               value={formatCurrency(result.total_return)}
               change={formatPercent(result.total_return_pct)}
               positive={result.total_return >= 0}
             />
             <StatCard
-              label="Win Rate"
+              label="Taxa de Acerto"
               value={formatPercent(result.win_rate)}
               change={`${result.winning_trades}W / ${result.losing_trades}L`}
               positive={result.win_rate > 0.5}
             />
             <StatCard
-              label="Profit Factor"
+              label="Fator de Lucro"
               value={result.profit_factor.toFixed(2)}
               positive={result.profit_factor > 1}
             />
@@ -195,7 +195,7 @@ export default function BacktestPage() {
               positive={result.sharpe_ratio > 1}
             />
             <StatCard
-              label="Max Drawdown"
+              label="Drawdown Máximo"
               value={formatPercent(result.max_drawdown)}
               positive={false}
             />
@@ -204,7 +204,7 @@ export default function BacktestPage() {
           {/* Equity Curve */}
           <Card>
             <CardHeader>
-              <CardTitle>Equity Curve</CardTitle>
+              <CardTitle>Curva de Equity</CardTitle>
               <Badge variant={result.total_return >= 0 ? "success" : "danger"}>
                 {result.total_trades} trades
               </Badge>
@@ -225,7 +225,7 @@ export default function BacktestPage() {
             <CardTitle>
               <div className="flex items-center gap-2">
                 <History className="h-4 w-4" />
-                Backtest History
+                Histórico de Backtests
               </div>
             </CardTitle>
             <Badge>{history.length}</Badge>
@@ -235,14 +235,14 @@ export default function BacktestPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Symbol</TableHead>
-                  <TableHead>Interval</TableHead>
+                  <TableHead>Data</TableHead>
+                  <TableHead>Par</TableHead>
+                  <TableHead>Intervalo</TableHead>
                   <TableHead>Capital</TableHead>
                   <TableHead>Trades</TableHead>
-                  <TableHead>Return</TableHead>
+                  <TableHead>Retorno</TableHead>
                   <TableHead>Sharpe</TableHead>
-                  <TableHead>Win Rate</TableHead>
+                  <TableHead>Taxa de Acerto</TableHead>
                   <TableHead>Max DD</TableHead>
                 </TableRow>
               </TableHeader>

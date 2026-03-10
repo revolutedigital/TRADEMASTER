@@ -22,8 +22,8 @@ const defaultIndicators: IndicatorConfig[] = [
     label: "SMA (Simple Moving Average)",
     enabled: false,
     params: [
-      { label: "Short Period", key: "sma_short", value: 10, min: 2, max: 100, step: 1 },
-      { label: "Long Period", key: "sma_long", value: 30, min: 5, max: 200, step: 1 },
+      { label: "Período Curto", key: "sma_short", value: 10, min: 2, max: 100, step: 1 },
+      { label: "Período Longo", key: "sma_long", value: 30, min: 5, max: 200, step: 1 },
     ],
   },
   {
@@ -31,8 +31,8 @@ const defaultIndicators: IndicatorConfig[] = [
     label: "EMA (Exponential Moving Average)",
     enabled: false,
     params: [
-      { label: "Short Period", key: "ema_short", value: 12, min: 2, max: 100, step: 1 },
-      { label: "Long Period", key: "ema_long", value: 26, min: 5, max: 200, step: 1 },
+      { label: "Período Curto", key: "ema_short", value: 12, min: 2, max: 100, step: 1 },
+      { label: "Período Longo", key: "ema_long", value: 26, min: 5, max: 200, step: 1 },
     ],
   },
   {
@@ -40,9 +40,9 @@ const defaultIndicators: IndicatorConfig[] = [
     label: "RSI (Relative Strength Index)",
     enabled: false,
     params: [
-      { label: "Period", key: "rsi_period", value: 14, min: 2, max: 50, step: 1 },
-      { label: "Overbought", key: "rsi_overbought", value: 70, min: 50, max: 95, step: 1 },
-      { label: "Oversold", key: "rsi_oversold", value: 30, min: 5, max: 50, step: 1 },
+      { label: "Período", key: "rsi_period", value: 14, min: 2, max: 50, step: 1 },
+      { label: "Sobrecomprado", key: "rsi_overbought", value: 70, min: 50, max: 95, step: 1 },
+      { label: "Sobrevendido", key: "rsi_oversold", value: 30, min: 5, max: 50, step: 1 },
     ],
   },
   {
@@ -50,9 +50,9 @@ const defaultIndicators: IndicatorConfig[] = [
     label: "MACD",
     enabled: false,
     params: [
-      { label: "Fast Period", key: "macd_fast", value: 12, min: 2, max: 50, step: 1 },
-      { label: "Slow Period", key: "macd_slow", value: 26, min: 5, max: 100, step: 1 },
-      { label: "Signal Period", key: "macd_signal", value: 9, min: 2, max: 50, step: 1 },
+      { label: "Período Rápido", key: "macd_fast", value: 12, min: 2, max: 50, step: 1 },
+      { label: "Período Lento", key: "macd_slow", value: 26, min: 5, max: 100, step: 1 },
+      { label: "Período do Sinal", key: "macd_signal", value: 9, min: 2, max: 50, step: 1 },
     ],
   },
   {
@@ -60,8 +60,8 @@ const defaultIndicators: IndicatorConfig[] = [
     label: "Bollinger Bands",
     enabled: false,
     params: [
-      { label: "Period", key: "bb_period", value: 20, min: 5, max: 100, step: 1 },
-      { label: "Std Deviation", key: "bb_std", value: 2, min: 0.5, max: 4, step: 0.1 },
+      { label: "Período", key: "bb_period", value: 20, min: 5, max: 100, step: 1 },
+      { label: "Desvio Padrão", key: "bb_std", value: 2, min: 0.5, max: 4, step: 0.1 },
     ],
   },
 ];
@@ -103,7 +103,7 @@ export default function StrategyBuilderPage() {
 
   const runBacktest = async () => {
     if (enabledIndicators.length === 0) {
-      setError("Please select at least one indicator.");
+      setError("Selecione pelo menos um indicador.");
       return;
     }
 
@@ -134,7 +134,7 @@ export default function StrategyBuilderPage() {
 
       setResult(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Backtest failed");
+      setError(err instanceof Error ? err.message : "Falha no backtest");
     } finally {
       setLoading(false);
     }
@@ -145,7 +145,7 @@ export default function StrategyBuilderPage() {
       {/* Header */}
       <div className="flex items-center gap-3">
         <Sliders className="h-6 w-6 text-[var(--color-primary)]" />
-        <h1 className="text-2xl font-bold">Strategy Builder</h1>
+        <h1 className="text-2xl font-bold">Criador de Estratégias</h1>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -154,13 +154,13 @@ export default function StrategyBuilderPage() {
           {/* General Settings */}
           <Card>
             <CardHeader>
-              <CardTitle>General Settings</CardTitle>
+              <CardTitle>Configurações Gerais</CardTitle>
             </CardHeader>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="mb-1 block text-xs text-[var(--color-text-muted)]">
-                  Symbol
+                  Par
                 </label>
                 <select
                   value={symbol}
@@ -174,23 +174,23 @@ export default function StrategyBuilderPage() {
 
               <div>
                 <label className="mb-1 block text-xs text-[var(--color-text-muted)]">
-                  Interval
+                  Intervalo
                 </label>
                 <select
                   value={interval}
                   onChange={(e) => setInterval(e.target.value)}
                   className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--color-text)]"
                 >
-                  <option value="15m">15 minutes</option>
-                  <option value="1h">1 hour</option>
-                  <option value="4h">4 hours</option>
-                  <option value="1d">1 day</option>
+                  <option value="15m">15 minutos</option>
+                  <option value="1h">1 hora</option>
+                  <option value="4h">4 horas</option>
+                  <option value="1d">1 dia</option>
                 </select>
               </div>
 
               <div>
                 <label className="mb-1 block text-xs text-[var(--color-text-muted)]">
-                  Initial Capital ($)
+                  Capital Inicial ($)
                 </label>
                 <input
                   type="number"
@@ -205,9 +205,9 @@ export default function StrategyBuilderPage() {
           {/* Indicators */}
           <Card>
             <CardHeader>
-              <CardTitle>Indicators</CardTitle>
+              <CardTitle>Indicadores</CardTitle>
               <Badge variant="primary">
-                {enabledIndicators.length} selected
+                {enabledIndicators.length} selecionados
               </Badge>
             </CardHeader>
 
@@ -260,18 +260,18 @@ export default function StrategyBuilderPage() {
           {/* Preview */}
           <Card>
             <CardHeader>
-              <CardTitle>Strategy Preview</CardTitle>
+              <CardTitle>Prévia da Estratégia</CardTitle>
             </CardHeader>
 
             <div className="space-y-3">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-[var(--color-text-muted)]">Symbol</span>
+                <span className="text-[var(--color-text-muted)]">Par</span>
                 <span className="font-medium">
                   {symbol.replace("USDT", "/USDT")}
                 </span>
               </div>
               <div className="flex items-center justify-between text-sm">
-                <span className="text-[var(--color-text-muted)]">Interval</span>
+                <span className="text-[var(--color-text-muted)]">Intervalo</span>
                 <span className="font-medium">{interval}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
@@ -283,11 +283,11 @@ export default function StrategyBuilderPage() {
 
               <div className="border-t border-[var(--color-border)] pt-3">
                 <p className="mb-2 text-xs text-[var(--color-text-muted)]">
-                  Selected Indicators
+                  Indicadores Selecionados
                 </p>
                 {enabledIndicators.length === 0 ? (
                   <p className="text-sm text-[var(--color-text-muted)]">
-                    No indicators selected. Choose at least one to run a
+                    Nenhum indicador selecionado. Escolha pelo menos um para rodar um
                     backtest.
                   </p>
                 ) : (
@@ -303,13 +303,13 @@ export default function StrategyBuilderPage() {
 
               <div className="flex items-center justify-between text-sm border-t border-[var(--color-border)] pt-3">
                 <span className="text-[var(--color-text-muted)]">
-                  Signal Count (est.)
+                  Sinais Estimados
                 </span>
                 <span className="font-mono font-medium">
                   {enabledIndicators.length > 0
                     ? enabledIndicators.length * 2
                     : 0}{" "}
-                  signals
+                  sinais
                 </span>
               </div>
             </div>
@@ -325,12 +325,12 @@ export default function StrategyBuilderPage() {
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Running Backtest...
+                    Rodando Backtest...
                   </>
                 ) : (
                   <>
                     <Play className="mr-2 h-4 w-4" />
-                    Run Backtest
+                    Rodar Backtest
                   </>
                 )}
               </Button>
@@ -351,7 +351,7 @@ export default function StrategyBuilderPage() {
                 <CardTitle>
                   <div className="flex items-center gap-2">
                     <BarChart3 className="h-4 w-4" />
-                    Backtest Results
+                    Resultados do Backtest
                   </div>
                 </CardTitle>
                 <Badge variant={result.total_return >= 0 ? "success" : "danger"}>
@@ -361,19 +361,19 @@ export default function StrategyBuilderPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <StatCard
-                  label="Total Return"
+                  label="Retorno Total"
                   value={formatCurrency(result.total_return)}
                   change={formatPercent(result.total_return_pct)}
                   positive={result.total_return >= 0}
                 />
                 <StatCard
-                  label="Win Rate"
+                  label="Taxa de Acerto"
                   value={formatPercent(result.win_rate)}
                   change={`${result.winning_trades}W / ${result.losing_trades}L`}
                   positive={result.win_rate > 0.5}
                 />
                 <StatCard
-                  label="Profit Factor"
+                  label="Fator de Lucro"
                   value={result.profit_factor.toFixed(2)}
                   positive={result.profit_factor > 1}
                 />
@@ -383,12 +383,12 @@ export default function StrategyBuilderPage() {
                   positive={result.sharpe_ratio > 1}
                 />
                 <StatCard
-                  label="Max Drawdown"
+                  label="Drawdown Máximo"
                   value={formatPercent(result.max_drawdown)}
                   positive={false}
                 />
                 <StatCard
-                  label="Total Trades"
+                  label="Total de Trades"
                   value={String(result.total_trades)}
                   positive={result.total_trades > 0}
                 />

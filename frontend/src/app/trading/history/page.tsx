@@ -52,7 +52,7 @@ export default function TradeHistoryPage() {
       );
       setOrders(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch orders");
+      setError(err instanceof Error ? err.message : "Falha ao buscar ordens");
     } finally {
       setLoading(false);
     }
@@ -81,20 +81,20 @@ export default function TradeHistoryPage() {
       {/* Header */}
       <div className="flex items-center gap-3">
         <History className="h-6 w-6 text-[var(--color-primary)]" />
-        <h1 className="text-2xl font-bold">Trade History</h1>
+        <h1 className="text-2xl font-bold">Histórico de Operações</h1>
       </div>
 
       {/* Filters */}
       <Card>
         <CardHeader>
-          <CardTitle>Filters</CardTitle>
+          <CardTitle>Filtros</CardTitle>
         </CardHeader>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           {/* Start Date */}
           <div>
             <label className="mb-1 block text-xs text-[var(--color-text-muted)]">
-              Start Date
+              Data Inicial
             </label>
             <input
               type="date"
@@ -107,7 +107,7 @@ export default function TradeHistoryPage() {
           {/* End Date */}
           <div>
             <label className="mb-1 block text-xs text-[var(--color-text-muted)]">
-              End Date
+              Data Final
             </label>
             <input
               type="date"
@@ -120,14 +120,14 @@ export default function TradeHistoryPage() {
           {/* Symbol */}
           <div>
             <label className="mb-1 block text-xs text-[var(--color-text-muted)]">
-              Symbol
+              Par
             </label>
             <select
               value={symbol}
               onChange={(e) => setSymbol(e.target.value)}
               className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--color-text)]"
             >
-              <option value="ALL">All Symbols</option>
+              <option value="ALL">Todos os Pares</option>
               <option value="BTCUSDT">BTC/USDT</option>
               <option value="ETHUSDT">ETH/USDT</option>
             </select>
@@ -136,14 +136,14 @@ export default function TradeHistoryPage() {
           {/* Side */}
           <div>
             <label className="mb-1 block text-xs text-[var(--color-text-muted)]">
-              Side
+              Lado
             </label>
             <select
               value={side}
               onChange={(e) => setSide(e.target.value)}
               className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--color-text)]"
             >
-              <option value="ALL">All</option>
+              <option value="ALL">Todos</option>
               <option value="BUY">BUY</option>
               <option value="SELL">SELL</option>
             </select>
@@ -159,7 +159,7 @@ export default function TradeHistoryPage() {
               onChange={(e) => setStatus(e.target.value)}
               className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--color-text)]"
             >
-              <option value="ALL">All</option>
+              <option value="ALL">Todos</option>
               <option value="FILLED">FILLED</option>
               <option value="CANCELLED">CANCELLED</option>
               <option value="PENDING">PENDING</option>
@@ -170,11 +170,11 @@ export default function TradeHistoryPage() {
 
         <div className="mt-4 flex items-center gap-2 justify-end">
           <Button variant="ghost" size="sm" onClick={handleResetFilters}>
-            Reset
+            Limpar
           </Button>
           <Button variant="primary" size="sm" onClick={handleApplyFilters}>
             <Search className="mr-1.5 h-3.5 w-3.5" />
-            Apply Filters
+            Aplicar Filtros
           </Button>
         </div>
       </Card>
@@ -189,19 +189,19 @@ export default function TradeHistoryPage() {
       {/* Results Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Orders</CardTitle>
-          <Badge variant="primary">{orders.length} results</Badge>
+          <CardTitle>Ordens</CardTitle>
+          <Badge variant="primary">{orders.length} resultados</Badge>
         </CardHeader>
 
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Symbol</TableHead>
-                <TableHead>Side</TableHead>
-                <TableHead>Qty</TableHead>
-                <TableHead>Price</TableHead>
+                <TableHead>Data</TableHead>
+                <TableHead>Par</TableHead>
+                <TableHead>Lado</TableHead>
+                <TableHead>Qtd</TableHead>
+                <TableHead>Preço</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>P&amp;L</TableHead>
               </TableRow>
@@ -213,7 +213,7 @@ export default function TradeHistoryPage() {
                     colSpan={7}
                     className="py-12 text-center text-[var(--color-text-muted)]"
                   >
-                    Loading orders...
+                    Carregando ordens...
                   </TableCell>
                 </TableRow>
               ) : orders.length === 0 ? (
@@ -222,7 +222,7 @@ export default function TradeHistoryPage() {
                     colSpan={7}
                     className="py-12 text-center text-[var(--color-text-muted)]"
                   >
-                    No orders found matching the current filters.
+                    Nenhuma ordem encontrada com os filtros atuais.
                   </TableCell>
                 </TableRow>
               ) : (
@@ -285,7 +285,7 @@ export default function TradeHistoryPage() {
         {!loading && orders.length > 0 && (
           <div className="mt-4 flex items-center justify-between border-t border-[var(--color-border)] pt-4">
             <span className="text-xs text-[var(--color-text-muted)]">
-              Page {page}
+              Página {page}
             </span>
             <div className="flex items-center gap-2">
               <Button
@@ -295,7 +295,7 @@ export default function TradeHistoryPage() {
                 disabled={page === 1}
               >
                 <ChevronLeft className="h-4 w-4" />
-                Previous
+                Anterior
               </Button>
               <Button
                 variant="ghost"
@@ -303,7 +303,7 @@ export default function TradeHistoryPage() {
                 onClick={() => setPage((p) => p + 1)}
                 disabled={orders.length < PAGE_SIZE}
               >
-                Next
+                Próximo
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>

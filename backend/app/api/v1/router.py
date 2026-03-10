@@ -19,6 +19,7 @@ from app.api.v1.security_txt import router as security_txt_router
 from app.api.v1.alerts import router as alerts_router
 from app.api.v1.journal import router as journal_router
 from app.api.v1.admin import router as admin_router
+from app.api.v1.ml import router as ml_router
 
 api_router = APIRouter()
 
@@ -39,3 +40,4 @@ api_router.include_router(security_txt_router)
 api_router.include_router(alerts_router)
 api_router.include_router(journal_router)
 api_router.include_router(admin_router)
+api_router.include_router(ml_router, prefix="/ml", tags=["ml"])

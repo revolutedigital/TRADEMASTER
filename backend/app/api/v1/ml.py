@@ -4,14 +4,14 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.dependencies import get_db
+from app.dependencies import get_db, require_auth
 
 logger = get_logger(__name__)
 router = APIRouter()
 
 
 @router.get("/models")
-async def list_models(db: AsyncSession = Depends(get_db)):
+async def list_models(db: AsyncSession = Depends(get_db), _user: dict = Depends(require_auth)):
     """List all registered ML models and their metadata."""
     try:
         from app.services.ml.model_registry import model_registry
@@ -23,7 +23,7 @@ async def list_models(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/feature-importance/{symbol}")
-async def get_feature_importance(symbol: str):
+async def get_feature_importance(symbol: str, _user: dict = Depends(require_auth)):
     """Get feature importance rankings for a symbol's model."""
     try:
         from app.services.ml.explainability import model_explainer

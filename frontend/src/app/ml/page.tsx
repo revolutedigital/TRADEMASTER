@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/progress";
+import { apiFetch } from "@/lib/utils";
 
 interface ModelInfo {
   model_type: string;
@@ -33,8 +34,7 @@ export default function MLDashboardPage() {
 
   async function fetchModels() {
     try {
-      const res = await fetch("/api/v1/ml/models");
-      const data = await res.json();
+      const data = await apiFetch<{ models: ModelInfo[] }>("/api/v1/ml/models");
       setModels(data.models || []);
     } catch {
       setModels([]);
@@ -45,8 +45,7 @@ export default function MLDashboardPage() {
 
   async function fetchFeatures(symbol: string) {
     try {
-      const res = await fetch(`/api/v1/ml/feature-importance/${symbol}`);
-      const data = await res.json();
+      const data = await apiFetch<{ features: FeatureImportance[] }>(`/api/v1/ml/feature-importance/${symbol}`);
       setFeatures(data.features || []);
     } catch {
       setFeatures([]);

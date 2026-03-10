@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { Spinner } from "@/components/ui/progress";
+import { apiFetch } from "@/lib/utils";
 
 interface FeeData {
   total_fees: number;
@@ -24,8 +25,8 @@ export default function FeesPage() {
   async function fetchFees() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/v1/portfolio/fees?period=${period}`, { credentials: "include" });
-      if (res.ok) setData(await res.json());
+      const result = await apiFetch<FeeData>(`/api/v1/portfolio/fees?period=${period}`);
+      setData(result);
     } catch {} finally { setLoading(false); }
   }
 

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { Spinner } from "@/components/ui/progress";
 import { Progress } from "@/components/ui/progress";
+import { apiFetch } from "@/lib/utils";
 
 interface OptimizationResult {
   optimal_weights: Record<string, number>;
@@ -23,8 +24,8 @@ export default function OptimizerPage() {
   async function runOptimization() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/v1/portfolio/optimize?risk_tolerance=${riskTolerance}`, { credentials: "include" });
-      if (res.ok) setResult(await res.json());
+      const data = await apiFetch<OptimizationResult>(`/api/v1/portfolio/optimize?risk_tolerance=${riskTolerance}`);
+      setResult(data);
     } catch {} finally { setLoading(false); }
   }
 

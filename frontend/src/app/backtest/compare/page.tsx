@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Spinner } from "@/components/ui/progress";
+import { apiFetch } from "@/lib/utils";
 
 interface BacktestResult {
   id: string;
@@ -30,8 +31,8 @@ export default function BacktestComparePage() {
 
   async function fetchBacktests() {
     try {
-      const res = await fetch("/api/v1/backtest/history", { credentials: "include" });
-      if (res.ok) setBacktests(await res.json());
+      const data = await apiFetch<BacktestResult[]>("/api/v1/backtest/history");
+      setBacktests(data);
     } catch {} finally { setLoading(false); }
   }
 

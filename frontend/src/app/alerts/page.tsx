@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Spinner } from "@/components/ui/progress";
+import { apiFetch } from "@/lib/utils";
 
 interface PriceAlert {
   id: string;
@@ -27,8 +28,8 @@ export default function AlertsPage() {
 
   const fetchAlerts = useCallback(async () => {
     try {
-      const res = await fetch("/api/v1/alerts", { credentials: "include" });
-      if (res.ok) setAlerts(await res.json());
+      const data = await apiFetch<PriceAlert[]>("/api/v1/alerts");
+      setAlerts(data);
     } catch {} finally { setLoading(false); }
   }, []);
 
@@ -37,19 +38,17 @@ export default function AlertsPage() {
   async function createAlert(e: React.FormEvent) {
     e.preventDefault();
     try {
-      const res = await fetch("/api/v1/alerts", {
+      await apiFetch("/api/v1/alerts", {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, target_price: parseFloat(form.target_price) }),
       });
-      if (res.ok) { setShowForm(false); setForm({ symbol: "BTCUSDT", condition: "above", target_price: "" }); fetchAlerts(); }
+      setShowForm(false); setForm({ symbol: "BTCUSDT", condition: "above", target_price: "" }); fetchAlerts();
     } catch {}
   }
 
   async function deleteAlert(id: string) {
     try {
-      await fetch(`/api/v1/alerts/${id}`, { method: "DELETE", credentials: "include" });
+      await apiFetch(`/api/v1/alerts/${id}`, { method: "DELETE" });
       fetchAlerts();
     } catch {}
   }

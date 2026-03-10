@@ -43,7 +43,7 @@ async def get_settings(_user: dict = Depends(require_auth)):
     return FullSettings(
         trading=TradingConfig(
             trading_mode="testnet" if settings.binance_testnet else "live",
-            symbols=settings.symbols,
+            symbols=settings.symbols_list,
         ),
         risk=_runtime_risk,
     )

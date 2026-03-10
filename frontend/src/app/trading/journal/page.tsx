@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Spinner } from "@/components/ui/progress";
+import { apiFetch } from "@/lib/utils";
 
 interface JournalEntry {
   id: string;
@@ -27,8 +28,8 @@ export default function JournalPage() {
 
   const fetchEntries = useCallback(async () => {
     try {
-      const res = await fetch("/api/v1/journal", { credentials: "include" });
-      if (res.ok) setEntries(await res.json());
+      const data = await apiFetch<JournalEntry[]>("/api/v1/journal");
+      setEntries(data);
     } catch {} finally { setLoading(false); }
   }, []);
 
@@ -37,12 +38,11 @@ export default function JournalPage() {
   async function createEntry(e: React.FormEvent) {
     e.preventDefault();
     try {
-      const res = await fetch("/api/v1/journal", {
-        method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" },
+      await apiFetch("/api/v1/journal", {
+        method: "POST",
         body: JSON.stringify({ ...form, tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean) }),
       });
-      if (res.ok) { setShowForm(false); setForm({ notes: "", tags: "", sentiment: "neutral", lessons_learned: "" }); fetchEntries(); }
+      setShowForm(false); setForm({ notes: "", tags: "", sentiment: "neutral", lessons_learned: "" }); fetchEntries();
     } catch {}
   }
 

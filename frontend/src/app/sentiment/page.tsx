@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { Spinner } from "@/components/ui/progress";
+import { apiFetch } from "@/lib/utils";
 
 interface SentimentData {
   fear_greed_index: number;
@@ -25,8 +26,8 @@ export default function SentimentPage() {
 
   async function fetchSentiment() {
     try {
-      const res = await fetch("/api/v1/market/sentiment", { credentials: "include" });
-      if (res.ok) setData(await res.json());
+      const result = await apiFetch<SentimentData>("/api/v1/market/sentiment");
+      setData(result);
     } catch {} finally { setLoading(false); }
   }
 

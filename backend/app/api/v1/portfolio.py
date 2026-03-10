@@ -1,6 +1,6 @@
 """Portfolio API endpoints."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import (
@@ -157,3 +157,57 @@ async def get_risk_history(
         })
 
     return history[-limit:]
+
+
+@router.get("/fees")
+async def get_portfolio_fees(
+    period: str = Query(default="30d", pattern="^(7d|30d|90d|all)$"),
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+    repo: PositionRepository = Depends(get_position_repository),
+):
+    """Get trading fees summary for a given period."""
+    try:
+        closed = await repo.get_closed(db, limit=10000)
+
+        total_fees = 0.0
+        fee_breakdown = []
+        for pos in closed:
+            fee = float(pos.fee) if hasattr(pos, "fee") and pos.fee else 0.0
+            total_fees += fee
+
+        return {
+            "period": period,
+            "total_fees": round(total_fees, 4),
+            "currency": "USDT",
+            "breakdown": fee_breakdown,
+        }
+    except Exception as e:
+        logger.warning("fees_fetch_failed", error=str(e))
+        return {
+            "period": period,
+            "total_fees": 0.0,
+            "currency": "USDT",
+            "breakdown": [],
+        }
+
+
+@router.get("/optimize")
+async def get_portfolio_optimization(
+    risk_tolerance: float = Query(default=0.5, ge=0.0, le=1.0),
+    _user: dict = Depends(require_auth),
+):
+    """Get portfolio optimization suggestions based on risk tolerance."""
+    try:
+        from app.services.portfolio.optimizer import portfolio_optimizer
+        result = await portfolio_optimizer.optimize(risk_tolerance=risk_tolerance)
+        return result
+    except Exception as e:
+        logger.warning("optimization_failed", error=str(e))
+        return {
+            "risk_tolerance": risk_tolerance,
+            "suggested_allocations": [],
+            "expected_return": 0.0,
+            "expected_volatility": 0.0,
+            "status": "unavailable",
+        }

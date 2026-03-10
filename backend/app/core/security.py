@@ -86,6 +86,7 @@ def validate_csrf_token(request_token: str | None, cookie_token: str | None) -> 
 CSRF_EXEMPT_PATHS: set[str] = {
     "/api/v1/auth/login",
     "/api/v1/auth/register",
+    "/api/v1/auth/refresh",
     "/docs",
     "/redoc",
     "/openapi.json",

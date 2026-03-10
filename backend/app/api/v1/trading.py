@@ -70,23 +70,12 @@ async def create_paper_order(
     if side not in ("BUY", "SELL"):
         raise HTTPException(400, "side must be BUY or SELL")
 
-    # Get LIVE price from Binance API (not stale DB candle)
+    # Get LIVE price from Binance — no fallback, real-time or nothing
     try:
         price = float(await binance_client.get_ticker_price(symbol))
     except Exception as e:
-        logger.warning("live_price_fetch_failed", symbol=symbol, error=str(e))
-        # Fallback to DB price if Binance API fails
-        from app.models.market import OHLCV
-        result = await db.execute(
-            select(OHLCV)
-            .where(OHLCV.symbol == symbol, OHLCV.interval == "1h")
-            .order_by(OHLCV.open_time.desc())
-            .limit(1)
-        )
-        candle = result.scalar_one_or_none()
-        if not candle:
-            raise HTTPException(404, f"No price data for {symbol}")
-        price = float(candle.close)
+        logger.error("live_price_fetch_failed", symbol=symbol, error=str(e))
+        raise HTTPException(503, f"Não foi possível obter preço em tempo real para {symbol}. Tente novamente.")
     now = datetime.now(timezone.utc)
     commission = price * req.quantity * 0.001  # 0.1% fee
 
@@ -258,11 +247,12 @@ async def close_position_manually(
     if not position:
         raise HTTPException(status_code=404, detail="Open position not found")
 
-    # Get LIVE price from Binance API
+    # Get LIVE price from Binance — no fallback
     try:
         exit_price = float(await binance_client.get_ticker_price(position.symbol))
-    except Exception:
-        exit_price = float(position.current_price)
+    except Exception as e:
+        logger.error("live_price_fetch_failed", symbol=position.symbol, error=str(e))
+        raise HTTPException(503, f"Não foi possível obter preço em tempo real. Tente novamente.")
 
     # Calculate P&L
     if position.side == "LONG":

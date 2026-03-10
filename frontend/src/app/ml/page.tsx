@@ -2,6 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { Brain, BarChart3, AlertTriangle, TrendingUp, RefreshCw } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/progress";
 
 interface ModelInfo {
   model_type: string;
@@ -65,131 +69,147 @@ export default function MLDashboardPage() {
   const maxImportance = Math.max(...sampleFeatures.map(f => f.importance));
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Brain className="w-8 h-8 text-purple-400" />
-          <h1 className="text-2xl font-bold text-white">ML/AI Dashboard</h1>
-        </div>
-        <div className="flex items-center gap-3">
-          <select
-            value={selectedSymbol}
-            onChange={(e) => setSelectedSymbol(e.target.value)}
-            className="bg-[#1a1f2e] text-white border border-gray-700 rounded-lg px-3 py-2"
-          >
-            <option value="BTCUSDT">BTC/USDT</option>
-            <option value="ETHUSDT">ETH/USDT</option>
-          </select>
-          <button
-            onClick={() => { fetchModels(); fetchFeatures(selectedSymbol); }}
-            className="p-2 bg-[#1a1f2e] rounded-lg hover:bg-[#252b3b] text-gray-400"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="ML/AI Dashboard"
+        description="Model performance, feature importance, and drift monitoring"
+        actions={
+          <div className="flex items-center gap-3">
+            <select
+              value={selectedSymbol}
+              onChange={(e) => setSelectedSymbol(e.target.value)}
+              className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+            >
+              <option value="BTCUSDT">BTC/USDT</option>
+              <option value="ETHUSDT">ETH/USDT</option>
+            </select>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { fetchModels(); fetchFeatures(selectedSymbol); }}
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </div>
+        }
+      />
 
-      {/* Model Status Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-[#1a1f2e] rounded-xl p-4 border border-gray-800">
-          <div className="flex items-center gap-2 text-gray-400 text-sm mb-2">
-            <Brain className="w-4 h-4" />
-            Active Models
+      {loading ? (
+        <div className="flex justify-center py-12"><Spinner size="lg" /></div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card>
+              <CardContent>
+                <div className="flex items-center gap-2 text-[var(--color-text-muted)] text-sm mb-2">
+                  <Brain className="h-4 w-4" />
+                  Active Models
+                </div>
+                <p className="text-2xl font-bold tabular-nums text-[var(--color-text)]">{models.length || 4}</p>
+                <p className="text-xs text-[var(--color-success)] mt-1">All operational</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent>
+                <div className="flex items-center gap-2 text-[var(--color-text-muted)] text-sm mb-2">
+                  <TrendingUp className="h-4 w-4" />
+                  Avg Accuracy
+                </div>
+                <p className="text-2xl font-bold tabular-nums text-[var(--color-text)]">
+                  {models.length > 0
+                    ? `${(models.reduce((a, m) => a + m.accuracy, 0) / models.length * 100).toFixed(1)}%`
+                    : "72.3%"}
+                </p>
+                <p className="text-xs text-[var(--color-text-muted)] mt-1">Last 100 predictions</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent>
+                <div className="flex items-center gap-2 text-[var(--color-text-muted)] text-sm mb-2">
+                  <BarChart3 className="h-4 w-4" />
+                  Signals Today
+                </div>
+                <p className="text-2xl font-bold tabular-nums text-[var(--color-text)]">12</p>
+                <p className="text-xs text-[var(--color-text-muted)] mt-1">8 BUY / 3 SELL / 1 HOLD</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent>
+                <div className="flex items-center gap-2 text-[var(--color-text-muted)] text-sm mb-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  Drift Status
+                </div>
+                <p className="text-2xl font-bold text-[var(--color-success)]">No Drift</p>
+                <p className="text-xs text-[var(--color-text-muted)] mt-1">Last checked 5m ago</p>
+              </CardContent>
+            </Card>
           </div>
-          <p className="text-2xl font-bold text-white">{models.length || 4}</p>
-          <p className="text-xs text-green-400 mt-1">All operational</p>
-        </div>
-        <div className="bg-[#1a1f2e] rounded-xl p-4 border border-gray-800">
-          <div className="flex items-center gap-2 text-gray-400 text-sm mb-2">
-            <TrendingUp className="w-4 h-4" />
-            Avg Accuracy
-          </div>
-          <p className="text-2xl font-bold text-white">
-            {models.length > 0
-              ? `${(models.reduce((a, m) => a + m.accuracy, 0) / models.length * 100).toFixed(1)}%`
-              : "72.3%"}
-          </p>
-          <p className="text-xs text-gray-400 mt-1">Last 100 predictions</p>
-        </div>
-        <div className="bg-[#1a1f2e] rounded-xl p-4 border border-gray-800">
-          <div className="flex items-center gap-2 text-gray-400 text-sm mb-2">
-            <BarChart3 className="w-4 h-4" />
-            Signals Today
-          </div>
-          <p className="text-2xl font-bold text-white">12</p>
-          <p className="text-xs text-gray-400 mt-1">8 BUY / 3 SELL / 1 HOLD</p>
-        </div>
-        <div className="bg-[#1a1f2e] rounded-xl p-4 border border-gray-800">
-          <div className="flex items-center gap-2 text-gray-400 text-sm mb-2">
-            <AlertTriangle className="w-4 h-4" />
-            Drift Status
-          </div>
-          <p className="text-2xl font-bold text-green-400">No Drift</p>
-          <p className="text-xs text-gray-400 mt-1">Last checked 5m ago</p>
-        </div>
-      </div>
 
-      {/* Feature Importance */}
-      <div className="bg-[#1a1f2e] rounded-xl p-6 border border-gray-800">
-        <h2 className="text-lg font-semibold text-white mb-4">
-          Top 10 Feature Importance - {selectedSymbol}
-        </h2>
-        <div className="space-y-3">
-          {sampleFeatures.map((feature, i) => (
-            <div key={feature.name} className="flex items-center gap-3">
-              <span className="text-gray-500 text-sm w-6">{i + 1}</span>
-              <span className="text-gray-300 text-sm w-36 truncate">{feature.name}</span>
-              <div className="flex-1 bg-gray-800 rounded-full h-4 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-purple-500 to-blue-500"
-                  style={{ width: `${(feature.importance / maxImportance) * 100}%` }}
-                />
-              </div>
-              <span className="text-white text-sm w-14 text-right">
-                {(feature.importance * 100).toFixed(1)}%
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Model Registry Table */}
-      <div className="bg-[#1a1f2e] rounded-xl p-6 border border-gray-800">
-        <h2 className="text-lg font-semibold text-white mb-4">Model Registry</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-gray-400 border-b border-gray-800">
-                <th className="text-left py-2 px-3">Model</th>
-                <th className="text-left py-2 px-3">Symbol</th>
-                <th className="text-left py-2 px-3">Accuracy</th>
-                <th className="text-left py-2 px-3">Version</th>
-                <th className="text-left py-2 px-3">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(models.length > 0 ? models : [
-                { model_type: "LSTM", symbol: "BTCUSDT", accuracy: 0.73, version: "v20260301", status: "active" },
-                { model_type: "XGBoost", symbol: "BTCUSDT", accuracy: 0.71, version: "v20260301", status: "active" },
-                { model_type: "LSTM", symbol: "ETHUSDT", accuracy: 0.69, version: "v20260301", status: "active" },
-                { model_type: "XGBoost", symbol: "ETHUSDT", accuracy: 0.72, version: "v20260301", status: "active" },
-              ]).map((model, i) => (
-                <tr key={i} className="border-b border-gray-800/50 text-gray-300">
-                  <td className="py-2 px-3 font-medium">{model.model_type}</td>
-                  <td className="py-2 px-3">{model.symbol}</td>
-                  <td className="py-2 px-3">{(model.accuracy * 100).toFixed(1)}%</td>
-                  <td className="py-2 px-3 text-gray-500">{model.version}</td>
-                  <td className="py-2 px-3">
-                    <span className="px-2 py-0.5 rounded-full text-xs bg-green-500/10 text-green-400">
-                      {model.status}
+          <Card>
+            <CardContent>
+              <h2 className="text-sm font-semibold text-[var(--color-text)] mb-4">
+                Top 10 Feature Importance &mdash; {selectedSymbol}
+              </h2>
+              <div className="space-y-3">
+                {sampleFeatures.map((feature, i) => (
+                  <div key={feature.name} className="flex items-center gap-3">
+                    <span className="text-[var(--color-text-muted)] text-sm w-6 tabular-nums">{i + 1}</span>
+                    <span className="text-sm w-36 truncate text-[var(--color-text)]">{feature.name}</span>
+                    <div className="flex-1 overflow-hidden rounded-full bg-[var(--color-background)] h-4">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-[var(--color-primary)] to-purple-500 transition-all duration-500"
+                        style={{ width: `${(feature.importance / maxImportance) * 100}%` }}
+                      />
+                    </div>
+                    <span className="text-sm w-14 text-right tabular-nums font-mono text-[var(--color-text-muted)]">
+                      {(feature.importance * 100).toFixed(1)}%
                     </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent>
+              <h2 className="text-sm font-semibold text-[var(--color-text)] mb-4">Model Registry</h2>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-[var(--color-border)]">
+                      <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Model</th>
+                      <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Symbol</th>
+                      <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Accuracy</th>
+                      <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Version</th>
+                      <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider text-[var(--color-text-muted)]">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(models.length > 0 ? models : [
+                      { model_type: "LSTM", symbol: "BTCUSDT", accuracy: 0.73, version: "v20260301", status: "active" },
+                      { model_type: "XGBoost", symbol: "BTCUSDT", accuracy: 0.71, version: "v20260301", status: "active" },
+                      { model_type: "LSTM", symbol: "ETHUSDT", accuracy: 0.69, version: "v20260301", status: "active" },
+                      { model_type: "XGBoost", symbol: "ETHUSDT", accuracy: 0.72, version: "v20260301", status: "active" },
+                    ]).map((model, i) => (
+                      <tr key={i} className="border-b border-[var(--color-border)]/50">
+                        <td className="py-2 px-3 font-medium text-[var(--color-text)]">{model.model_type}</td>
+                        <td className="py-2 px-3 text-[var(--color-text-muted)]">{model.symbol}</td>
+                        <td className="py-2 px-3 tabular-nums text-[var(--color-text)]">{(model.accuracy * 100).toFixed(1)}%</td>
+                        <td className="py-2 px-3 font-mono text-xs text-[var(--color-text-muted)]">{model.version}</td>
+                        <td className="py-2 px-3">
+                          <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-[var(--color-success)]/10 text-[var(--color-success)]">
+                            {model.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 }

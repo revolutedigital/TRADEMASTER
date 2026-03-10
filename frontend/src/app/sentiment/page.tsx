@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { Spinner } from "@/components/ui/progress";
-import { Progress } from "@/components/ui/progress";
 
 interface SentimentData {
   fear_greed_index: number;
@@ -33,10 +32,10 @@ export default function SentimentPage() {
 
   function getFearGreedColor(value: number) {
     if (value <= 25) return "text-[var(--color-danger)]";
-    if (value <= 45) return "text-orange-500";
-    if (value <= 55) return "text-[var(--color-warning)]";
+    if (value <= 45) return "text-[var(--color-warning)]";
+    if (value <= 55) return "text-[var(--color-text-muted)]";
     if (value <= 75) return "text-[var(--color-success)]";
-    return "text-emerald-400";
+    return "text-[var(--color-success)]";
   }
 
   return (

@@ -16,8 +16,8 @@ from app.dependencies import (
     get_trading_engine,
     require_auth,
 )
-from app.models.market import OHLCV
 from app.models.trade import Order
+from app.services.exchange.binance_client import binance_client
 from app.models.portfolio import Position
 from app.repositories.order_repo import OrderRepository
 from app.repositories.position_repo import PositionRepository
@@ -64,24 +64,29 @@ async def create_paper_order(
     db: AsyncSession = Depends(get_db),
     _user: dict = Depends(require_auth),
 ):
-    """Execute a simulated paper trade using DB prices. Requires authentication."""
+    """Execute a simulated paper trade using live Binance prices. Requires authentication."""
     symbol = req.symbol.upper()
     side = req.side.upper()
     if side not in ("BUY", "SELL"):
         raise HTTPException(400, "side must be BUY or SELL")
 
-    # Get current price from latest candle in DB
-    result = await db.execute(
-        select(OHLCV)
-        .where(OHLCV.symbol == symbol, OHLCV.interval == "1h")
-        .order_by(OHLCV.open_time.desc())
-        .limit(1)
-    )
-    candle = result.scalar_one_or_none()
-    if not candle:
-        raise HTTPException(404, f"No price data for {symbol}")
-
-    price = float(candle.close)
+    # Get LIVE price from Binance API (not stale DB candle)
+    try:
+        price = float(await binance_client.get_ticker_price(symbol))
+    except Exception as e:
+        logger.warning("live_price_fetch_failed", symbol=symbol, error=str(e))
+        # Fallback to DB price if Binance API fails
+        from app.models.market import OHLCV
+        result = await db.execute(
+            select(OHLCV)
+            .where(OHLCV.symbol == symbol, OHLCV.interval == "1h")
+            .order_by(OHLCV.open_time.desc())
+            .limit(1)
+        )
+        candle = result.scalar_one_or_none()
+        if not candle:
+            raise HTTPException(404, f"No price data for {symbol}")
+        price = float(candle.close)
     now = datetime.now(timezone.utc)
     commission = price * req.quantity * 0.001  # 0.1% fee
 
@@ -245,7 +250,7 @@ async def close_position_manually(
     db: AsyncSession = Depends(get_db),
     _user: dict = Depends(require_auth),
 ):
-    """Manually close a position at current DB price. Requires authentication."""
+    """Manually close a position at current live price. Requires authentication."""
     result = await db.execute(
         select(Position).where(Position.id == position_id, Position.is_open == True)
     )
@@ -253,15 +258,11 @@ async def close_position_manually(
     if not position:
         raise HTTPException(status_code=404, detail="Open position not found")
 
-    # Get current price from DB
-    candle_result = await db.execute(
-        select(OHLCV)
-        .where(OHLCV.symbol == position.symbol, OHLCV.interval == "1h")
-        .order_by(OHLCV.open_time.desc())
-        .limit(1)
-    )
-    candle = candle_result.scalar_one_or_none()
-    exit_price = float(candle.close) if candle else float(position.current_price)
+    # Get LIVE price from Binance API
+    try:
+        exit_price = float(await binance_client.get_ticker_price(position.symbol))
+    except Exception:
+        exit_price = float(position.current_price)
 
     # Calculate P&L
     if position.side == "LONG":

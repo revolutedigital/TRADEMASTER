@@ -187,23 +187,16 @@ class BinanceClientWrapper:
 
         return df
 
+    # Track if HTTP mirrors are geo-blocked to avoid spamming 451 requests
+    _http_mirrors_blocked: bool = False
+
     async def get_ticker_price(self, symbol: str) -> Decimal:
         """Get current price for a symbol.
 
-        Priority: 1) authenticated client, 2) Redis cache (from frontend feed),
-        3) public HTTP endpoints (may be geo-blocked).
+        Priority: 1) Redis cache (from frontend feed — fastest for geo-blocked servers),
+        2) authenticated client, 3) public HTTP endpoints (skipped if geo-blocked).
         """
-        import httpx
-
-        # 1. Try authenticated client first (fastest, already connected)
-        if self._client:
-            try:
-                result = await self._execute(self._client.get_symbol_ticker(symbol=symbol))
-                return Decimal(result["price"])
-            except Exception:
-                pass
-
-        # 2. Try Redis-cached price (fed by frontend WebSocket)
+        # 1. Try Redis-cached price first (fed by frontend WebSocket — always available)
         try:
             from app.core.events import event_bus
             if event_bus._redis:
@@ -213,27 +206,43 @@ class BinanceClientWrapper:
         except Exception:
             pass
 
-        # 3. Try public HTTP endpoints (may be geo-blocked from US servers)
-        mirrors = []
-        if settings.binance_testnet:
-            mirrors.append(f"https://testnet.binance.vision/api/v3/ticker/price?symbol={symbol}")
-        mirrors.extend([
-            f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}",
-            f"https://api1.binance.com/api/v3/ticker/price?symbol={symbol}",
-        ])
+        # 2. Try authenticated client
+        if self._client:
+            try:
+                result = await self._execute(self._client.get_symbol_ticker(symbol=symbol))
+                return Decimal(result["price"])
+            except Exception:
+                pass
 
-        last_error = None
-        async with httpx.AsyncClient(timeout=5) as http:
-            for url in mirrors:
-                try:
-                    resp = await http.get(url)
-                    if resp.status_code == 200:
-                        return Decimal(resp.json()["price"])
-                except Exception as e:
-                    last_error = e
-                    continue
+        # 3. Try public HTTP endpoints (skip if previously geo-blocked)
+        if not self._http_mirrors_blocked:
+            import httpx
 
-        raise ExchangeConnectionError(f"Cannot get live price for {symbol}: {last_error}")
+            mirrors = []
+            if settings.binance_testnet:
+                mirrors.append(f"https://testnet.binance.vision/api/v3/ticker/price?symbol={symbol}")
+            mirrors.extend([
+                f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}",
+                f"https://api1.binance.com/api/v3/ticker/price?symbol={symbol}",
+            ])
+
+            last_error = None
+            async with httpx.AsyncClient(timeout=5) as http:
+                for url in mirrors:
+                    try:
+                        resp = await http.get(url)
+                        if resp.status_code == 200:
+                            return Decimal(resp.json()["price"])
+                        if resp.status_code == 451:
+                            # Geo-blocked — stop trying HTTP mirrors entirely
+                            BinanceClientWrapper._http_mirrors_blocked = True
+                            logger.info("http_mirrors_geo_blocked", msg="Disabling HTTP price mirrors (451)")
+                            break
+                    except Exception as e:
+                        last_error = e
+                        continue
+
+        raise ExchangeConnectionError(f"Cannot get live price for {symbol}")
 
     async def get_exchange_info(self, symbol: str | None = None) -> dict:
         """Get exchange trading rules and symbol info."""

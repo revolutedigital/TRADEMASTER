@@ -172,7 +172,23 @@ class BinanceClientWrapper:
         return df
 
     async def get_ticker_price(self, symbol: str) -> Decimal:
-        """Get current price for a symbol."""
+        """Get current price for a symbol.
+
+        Uses the public Binance API (no auth required) so paper trading
+        works even when the authenticated client is unavailable.
+        """
+        # Try public HTTP endpoint first (no auth needed, works everywhere)
+        try:
+            import httpx
+            url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
+            async with httpx.AsyncClient(timeout=5) as http:
+                resp = await http.get(url)
+                if resp.status_code == 200:
+                    return Decimal(resp.json()["price"])
+        except Exception:
+            pass
+
+        # Fallback to authenticated client if available
         result = await self._execute(self._client.get_symbol_ticker(symbol=symbol))
         return Decimal(result["price"])
 

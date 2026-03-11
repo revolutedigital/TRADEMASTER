@@ -1,18 +1,47 @@
 """Market data endpoints."""
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.logging import get_logger
-from app.dependencies import get_db
+from app.dependencies import get_db, require_auth
 from app.models.market import OHLCV
 from app.schemas.market import OHLCVResponse
 
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+
+class PriceFeedRequest(BaseModel):
+    symbol: str
+    price: float
+    timestamp: float | None = None
+
+
+@router.post("/price-feed")
+async def receive_price_feed(
+    req: PriceFeedRequest,
+    _user: dict = Depends(require_auth),
+):
+    """Receive live price from frontend WebSocket and store in Redis.
+
+    Used when backend can't reach Binance directly (geo-restriction).
+    The frontend's browser connects to Binance WS and relays prices here.
+    """
+    from app.core.events import event_bus
+
+    symbol = req.symbol.upper()
+    price = req.price
+
+    # Store latest price in Redis for other services to read
+    if event_bus._redis:
+        await event_bus._redis.set(f"price:{symbol}", str(price), ex=30)
+
+    return {"status": "ok", "symbol": symbol, "price": price}
 
 
 @router.get("/klines/{symbol}", response_model=list[OHLCVResponse])

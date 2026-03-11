@@ -74,24 +74,22 @@ class BinanceClientWrapper:
     async def connect(self) -> None:
         """Initialize the async Binance client.
 
-        For testnet: manually instantiate + patch API_URL before any network call,
-        because python-binance hardcodes api.binance.com which is geo-blocked from US.
+        NOTE: Binance blocks all API access from US-based servers (Railway).
+        The client may fail to connect — this is expected. Paper trading
+        gets live prices from the frontend's browser WebSocket instead.
         """
         import time as _time
 
         try:
             if settings.binance_testnet:
-                # 1. Instantiate without network calls
+                # Instantiate without network calls, then patch URL
                 self._client = AsyncClient(
                     api_key=settings.active_api_key,
                     api_secret=settings.active_api_secret,
                     testnet=True,
                 )
-                # 2. Override REST API URL to testnet BEFORE any request
                 self._client.API_URL = "https://testnet.binance.vision/api"
-                # Also patch the WS stream URL for kline/trade streams
                 self._client.WEBSITE_URL = "https://testnet.binance.vision"
-                # 3. Now do what AsyncClient.create() does: ping + time sync
                 await self._client.ping()
                 res = await self._client.get_server_time()
                 self._client.timestamp_offset = res["serverTime"] - int(_time.time() * 1000)
@@ -107,7 +105,9 @@ class BinanceClientWrapper:
                 api_url=getattr(self._client, "API_URL", "unknown"),
             )
         except Exception as e:
-            logger.error("binance_connection_failed", error=str(e))
+            # Expected on US-based servers — paper trading still works via frontend prices
+            logger.warning("binance_connection_failed", error=str(e))
+            logger.info("binance_offline_mode", msg="Paper trading uses frontend-supplied prices")
             raise ExchangeConnectionError(f"Failed to connect to Binance: {e}") from e
 
     async def disconnect(self) -> None:
@@ -190,7 +190,8 @@ class BinanceClientWrapper:
     async def get_ticker_price(self, symbol: str) -> Decimal:
         """Get current price for a symbol.
 
-        Tries: 1) authenticated client, 2) testnet API, 3) production mirrors.
+        Priority: 1) authenticated client, 2) Redis cache (from frontend feed),
+        3) public HTTP endpoints (may be geo-blocked).
         """
         import httpx
 
@@ -202,19 +203,27 @@ class BinanceClientWrapper:
             except Exception:
                 pass
 
-        # 2. Try public HTTP endpoints
+        # 2. Try Redis-cached price (fed by frontend WebSocket)
+        try:
+            from app.core.events import event_bus
+            if event_bus._redis:
+                cached = await event_bus._redis.get(f"price:{symbol}")
+                if cached:
+                    return Decimal(cached)
+        except Exception:
+            pass
+
+        # 3. Try public HTTP endpoints (may be geo-blocked from US servers)
         mirrors = []
         if settings.binance_testnet:
             mirrors.append(f"https://testnet.binance.vision/api/v3/ticker/price?symbol={symbol}")
-        # Production mirrors (may be geo-blocked from US servers)
         mirrors.extend([
             f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}",
             f"https://api1.binance.com/api/v3/ticker/price?symbol={symbol}",
-            f"https://api2.binance.com/api/v3/ticker/price?symbol={symbol}",
         ])
 
         last_error = None
-        async with httpx.AsyncClient(timeout=10) as http:
+        async with httpx.AsyncClient(timeout=5) as http:
             for url in mirrors:
                 try:
                     resp = await http.get(url)

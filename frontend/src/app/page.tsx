@@ -69,6 +69,24 @@ export default function DashboardPage() {
       .catch(() => {});
   }, []);
 
+  // Feed live price to backend (backend can't reach Binance from US servers)
+  useEffect(() => {
+    if (!currentPrice?.price) return;
+    const interval = setInterval(() => {
+      if (currentPrice?.price) {
+        apiFetch("/api/v1/market/price-feed", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            symbol: selectedSymbol,
+            price: currentPrice.price,
+          }),
+        }).catch(() => {});
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [currentPrice?.price, selectedSymbol]);
+
   const toggleEngine = async () => {
     setEngineLoading(true);
     try {

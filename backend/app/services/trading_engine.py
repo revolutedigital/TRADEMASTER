@@ -74,6 +74,11 @@ class TradingEngine:
                     block_ms=5000,
                 )
 
+                if not events:
+                    # No events (Redis down or no data) — avoid CPU spin
+                    await asyncio.sleep(5)
+                    continue
+
                 for event in events:
                     if event.data.get("is_closed"):
                         await self._process_closed_candle(event)

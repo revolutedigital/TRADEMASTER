@@ -35,6 +35,7 @@ class PaperOrderRequest(BaseModel):
     quantity: float = 0.001  # Amount of the asset
     stop_loss_pct: float | None = 0.02  # 2% stop loss
     take_profit_pct: float | None = 0.04  # 4% take profit
+    price: float | None = None  # Live price from frontend (Binance WS)
 
 
 @router.get("/orders", response_model=list[OrderResponse])
@@ -70,12 +71,15 @@ async def create_paper_order(
     if side not in ("BUY", "SELL"):
         raise HTTPException(400, "side must be BUY or SELL")
 
-    # Get LIVE price from Binance — no fallback, real-time or nothing
-    try:
-        price = float(await binance_client.get_ticker_price(symbol))
-    except Exception as e:
-        logger.error("live_price_fetch_failed", symbol=symbol, error=str(e))
-        raise HTTPException(503, f"Não foi possível obter preço em tempo real para {symbol}. Tente novamente.")
+    # Use frontend live price (from Binance WebSocket) or fetch from Binance API
+    if req.price and req.price > 0:
+        price = req.price
+    else:
+        try:
+            price = float(await binance_client.get_ticker_price(symbol))
+        except Exception as e:
+            logger.error("live_price_fetch_failed", symbol=symbol, error=str(e))
+            raise HTTPException(503, f"Não foi possível obter preço em tempo real para {symbol}. Tente novamente.")
     now = datetime.now(timezone.utc)
     commission = price * req.quantity * 0.001  # 0.1% fee
 

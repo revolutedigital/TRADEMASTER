@@ -46,8 +46,6 @@ export function timeAgo(date: Date | string): string {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
 function getCsrfToken(): string | null {
   if (typeof document === "undefined") return null;
   const match = document.cookie.match(/csrf_token=([^;]+)/);
@@ -55,11 +53,11 @@ function getCsrfToken(): string | null {
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  // Add cache-busting param for GET requests to prevent Next.js/browser caching
+  // Use relative path — Next.js rewrites /api/v1/* to backend (same-origin, no CORS)
   const separator = path.includes("?") ? "&" : "?";
   const url = init?.method && init.method !== "GET"
-    ? `${API_URL}${path}`
-    : `${API_URL}${path}${separator}_t=${Date.now()}`;
+    ? path
+    : `${path}${separator}_t=${Date.now()}`;
 
   // Include CSRF token for mutating requests
   const isMutating = init?.method && ["POST", "PUT", "DELETE", "PATCH"].includes(init.method);
@@ -86,7 +84,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   // Handle authentication errors - try refresh before giving up
   if (res.status === 401) {
     if (typeof window !== "undefined") {
-      const refreshRes = await fetch(`${API_URL}/api/v1/auth/refresh`, {
+      const refreshRes = await fetch("/api/v1/auth/refresh", {
         method: "POST",
         credentials: "include",
       }).catch(() => null);

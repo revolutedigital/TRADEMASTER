@@ -15,8 +15,7 @@ export function ExportButton({ endpoint, filename, label = "Exportar CSV", class
   const handleExport = async () => {
     setLoading(true);
     try {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const response = await fetch(`${API_URL}${endpoint}`, {
+      const response = await fetch(endpoint, {
         credentials: "include",
       });
       if (!response.ok) throw new Error("Falha na exportação");

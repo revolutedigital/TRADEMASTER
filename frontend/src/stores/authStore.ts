@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// All API calls use relative paths — Next.js rewrites /api/v1/* to backend
 
 interface AuthState {
   token: string | null;
@@ -28,7 +28,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: async (username, password) => {
     set({ isLoading: true, error: null });
     try {
-      const res = await fetch(`${API_URL}/api/v1/auth/login`, {
+      const res = await fetch("/api/v1/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
@@ -54,7 +54,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: async () => {
     try {
-      await fetch(`${API_URL}/api/v1/auth/logout`, {
+      await fetch("/api/v1/auth/logout", {
         method: "POST",
         credentials: "include",
       });
@@ -67,7 +67,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   restoreSession: async () => {
     // Try refreshing via httpOnly cookie to restore session on page load
     try {
-      const res = await fetch(`${API_URL}/api/v1/auth/refresh`, {
+      const res = await fetch("/api/v1/auth/refresh", {
         method: "POST",
         credentials: "include",
       });
@@ -84,7 +84,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   refreshToken: async () => {
     try {
-      const res = await fetch(`${API_URL}/api/v1/auth/refresh`, {
+      const res = await fetch("/api/v1/auth/refresh", {
         method: "POST",
         credentials: "include",
       });

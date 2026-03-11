@@ -99,6 +99,7 @@ export default function DashboardPage() {
           quantity: parseFloat(quantity),
           stop_loss_pct: 0.02,
           take_profit_pct: 0.04,
+          price: currentPrice?.price ?? null,
         }),
       });
       const status = result.status as string;

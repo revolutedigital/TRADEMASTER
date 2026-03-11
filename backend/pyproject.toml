@@ -17,15 +17,12 @@ dependencies = [
     "redis[hiredis]>=5.2.0",
     # Exchange
     "python-binance>=1.0.19",
-    "ccxt>=4.4.0",
     # Data & indicators
     "pandas>=2.2.0",
     "numpy>=2.0.0",
     "pandas-ta>=0.3.14b1",
     "scikit-learn>=1.6.0",
     "xgboost>=2.1.0",
-    # Task queue
-    "celery[redis]>=5.4.0",
     # Utilities
     "httpx>=0.28.0",
     "structlog>=24.4.0",

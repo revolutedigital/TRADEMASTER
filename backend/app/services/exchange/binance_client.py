@@ -75,21 +75,25 @@ class BinanceClientWrapper:
         """Initialize the async Binance client."""
         try:
             if settings.binance_testnet:
-                # Use testnet directly — bypasses geo-restrictions on production Binance
-                self._client = await AsyncClient.create(
+                # Manually instantiate to set testnet URL BEFORE ping()
+                # AsyncClient.create() pings api.binance.com which is geo-blocked
+                self._client = AsyncClient(
                     api_key=settings.active_api_key,
                     api_secret=settings.active_api_secret,
                     testnet=True,
                 )
                 self._client.API_URL = "https://testnet.binance.vision/api"
+                # Manual init that create() would do
+                await self._client.ping()
+                res = await self._client.get_server_time()
+                import time
+                self._client.timestamp_offset = res["serverTime"] - int(time.time() * 1000)
             else:
                 self._client = await AsyncClient.create(
                     api_key=settings.active_api_key,
                     api_secret=settings.active_api_secret,
                     testnet=False,
                 )
-            # Verify connection
-            await self._client.get_server_time()
             self._circuit_breaker.reset()
             logger.info(
                 "binance_connected",

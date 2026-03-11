@@ -176,21 +176,38 @@ class BinanceClientWrapper:
 
         Uses the public Binance API (no auth required) so paper trading
         works even when the authenticated client is unavailable.
+        Tries multiple API mirrors for reliability.
         """
-        # Try public HTTP endpoint first (no auth needed, works everywhere)
-        try:
-            import httpx
-            url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
-            async with httpx.AsyncClient(timeout=5) as http:
-                resp = await http.get(url)
-                if resp.status_code == 200:
-                    return Decimal(resp.json()["price"])
-        except Exception:
-            pass
+        import httpx
+
+        # Try multiple Binance API mirrors (public, no auth needed)
+        mirrors = [
+            f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}",
+            f"https://api1.binance.com/api/v3/ticker/price?symbol={symbol}",
+            f"https://api2.binance.com/api/v3/ticker/price?symbol={symbol}",
+            f"https://api3.binance.com/api/v3/ticker/price?symbol={symbol}",
+            f"https://api4.binance.com/api/v3/ticker/price?symbol={symbol}",
+        ]
+        last_error = None
+        async with httpx.AsyncClient(timeout=10) as http:
+            for url in mirrors:
+                try:
+                    resp = await http.get(url)
+                    if resp.status_code == 200:
+                        return Decimal(resp.json()["price"])
+                except Exception as e:
+                    last_error = e
+                    continue
 
         # Fallback to authenticated client if available
-        result = await self._execute(self._client.get_symbol_ticker(symbol=symbol))
-        return Decimal(result["price"])
+        if self._client:
+            try:
+                result = await self._execute(self._client.get_symbol_ticker(symbol=symbol))
+                return Decimal(result["price"])
+            except Exception as e:
+                last_error = e
+
+        raise ExchangeConnectionError(f"Cannot get live price for {symbol}: {last_error}")
 
     async def get_exchange_info(self, symbol: str | None = None) -> dict:
         """Get exchange trading rules and symbol info."""

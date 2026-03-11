@@ -40,33 +40,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         symbols=settings.symbols_list,
     )
 
-    # --- Phase 0: Run Alembic migrations (falls back to create_all) ---
+    # --- Phase 0: Create/update database tables ---
     try:
-        from alembic.config import Config
-        from alembic import command
-        alembic_cfg = Config("alembic.ini")
-        command.upgrade(alembic_cfg, "head")
-        logger.info("database_migrations_applied")
+        from app.models.base import engine, Base
+        import app.models.market  # noqa: F401
+        import app.models.trade  # noqa: F401
+        import app.models.portfolio  # noqa: F401
+        import app.models.signal  # noqa: F401
+        import app.models.audit  # noqa: F401
+        import app.models.api_key  # noqa: F401
+        import app.models.alert  # noqa: F401
+        import app.models.journal  # noqa: F401
+        import app.models.lineage  # noqa: F401
+        import app.models.user  # noqa: F401
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("database_tables_ready")
     except Exception as e:
-        logger.warning("alembic_migration_failed", error=str(e))
-        # Fallback: create tables directly (for development / first-time setup)
-        try:
-            from app.models.base import engine, Base
-            import app.models.market  # noqa: F401
-            import app.models.trade  # noqa: F401
-            import app.models.portfolio  # noqa: F401
-            import app.models.signal  # noqa: F401
-            import app.models.audit  # noqa: F401
-            import app.models.api_key  # noqa: F401
-            import app.models.alert  # noqa: F401
-            import app.models.journal  # noqa: F401
-            import app.models.lineage  # noqa: F401
-            import app.models.user  # noqa: F401
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-            logger.info("database_tables_created_fallback")
-        except Exception as e2:
-            logger.warning("database_tables_failed", error=str(e2))
+        logger.warning("database_setup_failed", error=str(e))
 
     # --- Phase 1: Connect infrastructure ---
     redis_ok = False

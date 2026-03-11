@@ -36,11 +36,13 @@ export interface Order {
   id: string;
   symbol: string;
   side: "BUY" | "SELL";
-  type: "MARKET" | "LIMIT";
+  order_type: "MARKET" | "LIMIT";
   status: "PENDING" | "SUBMITTED" | "PARTIAL" | "FILLED" | "CANCELLED";
   price: number;
   quantity: number;
-  filled_qty: number;
+  filled_quantity: number;
+  avg_fill_price: number | null;
+  commission: number;
   created_at: string;
 }
 

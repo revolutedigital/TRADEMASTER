@@ -34,5 +34,8 @@ class BaseRepository(Generic[T]):
         await db.flush()
 
     async def list_all(self, db: AsyncSession, limit: int = 100) -> list[T]:
-        result = await db.execute(select(self._model).limit(limit))
+        query = select(self._model)
+        if hasattr(self._model, "created_at"):
+            query = query.order_by(self._model.created_at.desc())
+        result = await db.execute(query.limit(limit))
         return list(result.scalars().all())

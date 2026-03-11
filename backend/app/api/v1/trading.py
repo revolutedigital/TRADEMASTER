@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,21 +41,27 @@ class PaperOrderRequest(BaseModel):
 @router.get("/orders", response_model=list[OrderResponse])
 async def get_orders(
     symbol: str | None = None,
+    side: str | None = None,
     status: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     limit: int = 50,
+    offset: int = 0,
     db: AsyncSession = Depends(get_db),
     _user: dict = Depends(require_auth),
     repo: OrderRepository = Depends(get_order_repository),
 ):
-    """Get recent orders. Requires authentication."""
-    if status and status.upper() in ("PENDING", "SUBMITTED", "PARTIALLY_FILLED"):
-        orders = await repo.get_open_orders(db, symbol)
-    elif status and status.upper() == "FILLED":
-        orders = await repo.get_filled_orders(db, symbol, limit)
-    elif symbol:
-        orders = await repo.get_orders_by_symbol(db, symbol.upper(), limit)
-    else:
-        orders = await repo.list_all(db, limit)
+    """Get recent orders with filters. Requires authentication."""
+    orders = await repo.list_filtered(
+        db,
+        symbol=symbol,
+        side=side,
+        status=status,
+        start_date=start_date,
+        end_date=end_date,
+        limit=limit,
+        offset=offset,
+    )
     return orders
 
 

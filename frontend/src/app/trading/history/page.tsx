@@ -90,7 +90,7 @@ export default function TradeHistoryPage() {
           <CardTitle>Filtros</CardTitle>
         </CardHeader>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 px-6">
           {/* Start Date */}
           <div>
             <label className="mb-1 block text-xs text-[var(--color-text-muted)]">
@@ -168,7 +168,7 @@ export default function TradeHistoryPage() {
           </div>
         </div>
 
-        <div className="mt-4 flex items-center gap-2 justify-end">
+        <div className="mt-4 flex items-center gap-2 justify-end px-6 pb-4">
           <Button variant="ghost" size="sm" onClick={handleResetFilters}>
             Limpar
           </Button>
@@ -203,7 +203,7 @@ export default function TradeHistoryPage() {
                 <TableHead>Qtd</TableHead>
                 <TableHead>Preço</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>P&amp;L</TableHead>
+                <TableHead>Taxa</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -242,10 +242,10 @@ export default function TradeHistoryPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="font-mono text-xs">
-                      {order.quantity.toFixed(6)}
+                      {(order.filled_quantity > 0 ? order.filled_quantity : order.quantity).toFixed(6)}
                     </TableCell>
                     <TableCell className="font-mono text-xs">
-                      {formatCurrency(order.price)}
+                      {formatCurrency(order.avg_fill_price ?? order.price)}
                     </TableCell>
                     <TableCell>
                       <Badge
@@ -260,18 +260,9 @@ export default function TradeHistoryPage() {
                         {order.status}
                       </Badge>
                     </TableCell>
-                    <TableCell
-                      className={cn(
-                        "font-mono text-xs font-medium",
-                        order.filled_qty > 0
-                          ? "text-[var(--color-text)]"
-                          : "text-[var(--color-text-muted)]"
-                      )}
-                    >
-                      {order.filled_qty > 0
-                        ? formatCurrency(
-                            (order.price - order.price) * order.filled_qty
-                          )
+                    <TableCell className="font-mono text-xs text-[var(--color-text-muted)]">
+                      {order.commission > 0
+                        ? formatCurrency(order.commission)
                         : "-"}
                     </TableCell>
                   </TableRow>

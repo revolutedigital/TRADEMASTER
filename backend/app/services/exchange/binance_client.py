@@ -72,27 +72,33 @@ class BinanceClientWrapper:
         )
 
     async def connect(self) -> None:
-        """Initialize the async Binance client."""
+        """Initialize the async Binance client.
+
+        For testnet: manually instantiate + patch API_URL before any network call,
+        because python-binance hardcodes api.binance.com which is geo-blocked from US.
+        """
+        import time as _time
+
         try:
             if settings.binance_testnet:
-                # Manually instantiate to set testnet URL BEFORE ping()
-                # AsyncClient.create() pings api.binance.com which is geo-blocked
+                # 1. Instantiate without network calls
                 self._client = AsyncClient(
                     api_key=settings.active_api_key,
                     api_secret=settings.active_api_secret,
                     testnet=True,
                 )
+                # 2. Override REST API URL to testnet BEFORE any request
                 self._client.API_URL = "https://testnet.binance.vision/api"
-                # Manual init that create() would do
+                # Also patch the WS stream URL for kline/trade streams
+                self._client.WEBSITE_URL = "https://testnet.binance.vision"
+                # 3. Now do what AsyncClient.create() does: ping + time sync
                 await self._client.ping()
                 res = await self._client.get_server_time()
-                import time
-                self._client.timestamp_offset = res["serverTime"] - int(time.time() * 1000)
+                self._client.timestamp_offset = res["serverTime"] - int(_time.time() * 1000)
             else:
                 self._client = await AsyncClient.create(
                     api_key=settings.active_api_key,
                     api_secret=settings.active_api_secret,
-                    testnet=False,
                 )
             self._circuit_breaker.reset()
             logger.info(

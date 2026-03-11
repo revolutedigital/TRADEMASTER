@@ -74,14 +74,20 @@ class BinanceClientWrapper:
     async def connect(self) -> None:
         """Initialize the async Binance client."""
         try:
-            self._client = await AsyncClient.create(
-                api_key=settings.active_api_key,
-                api_secret=settings.active_api_secret,
-                testnet=settings.binance_testnet,
-            )
-            # For testnet, explicitly set the API URL to bypass geo-restrictions
             if settings.binance_testnet:
+                # Use testnet directly — bypasses geo-restrictions on production Binance
+                self._client = await AsyncClient.create(
+                    api_key=settings.active_api_key,
+                    api_secret=settings.active_api_secret,
+                    testnet=True,
+                )
                 self._client.API_URL = "https://testnet.binance.vision/api"
+            else:
+                self._client = await AsyncClient.create(
+                    api_key=settings.active_api_key,
+                    api_secret=settings.active_api_secret,
+                    testnet=False,
+                )
             # Verify connection
             await self._client.get_server_time()
             self._circuit_breaker.reset()
@@ -174,20 +180,29 @@ class BinanceClientWrapper:
     async def get_ticker_price(self, symbol: str) -> Decimal:
         """Get current price for a symbol.
 
-        Uses the public Binance API (no auth required) so paper trading
-        works even when the authenticated client is unavailable.
-        Tries multiple API mirrors for reliability.
+        Tries: 1) authenticated client, 2) testnet API, 3) production mirrors.
         """
         import httpx
 
-        # Try multiple Binance API mirrors (public, no auth needed)
-        mirrors = [
+        # 1. Try authenticated client first (fastest, already connected)
+        if self._client:
+            try:
+                result = await self._execute(self._client.get_symbol_ticker(symbol=symbol))
+                return Decimal(result["price"])
+            except Exception:
+                pass
+
+        # 2. Try public HTTP endpoints
+        mirrors = []
+        if settings.binance_testnet:
+            mirrors.append(f"https://testnet.binance.vision/api/v3/ticker/price?symbol={symbol}")
+        # Production mirrors (may be geo-blocked from US servers)
+        mirrors.extend([
             f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}",
             f"https://api1.binance.com/api/v3/ticker/price?symbol={symbol}",
             f"https://api2.binance.com/api/v3/ticker/price?symbol={symbol}",
-            f"https://api3.binance.com/api/v3/ticker/price?symbol={symbol}",
-            f"https://api4.binance.com/api/v3/ticker/price?symbol={symbol}",
-        ]
+        ])
+
         last_error = None
         async with httpx.AsyncClient(timeout=10) as http:
             for url in mirrors:
@@ -198,14 +213,6 @@ class BinanceClientWrapper:
                 except Exception as e:
                     last_error = e
                     continue
-
-        # Fallback to authenticated client if available
-        if self._client:
-            try:
-                result = await self._execute(self._client.get_symbol_ticker(symbol=symbol))
-                return Decimal(result["price"])
-            except Exception as e:
-                last_error = e
 
         raise ExchangeConnectionError(f"Cannot get live price for {symbol}: {last_error}")
 

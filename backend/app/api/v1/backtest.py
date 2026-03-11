@@ -12,10 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_db, require_auth
 from app.models.backtest import BacktestResult as BacktestResultModel
 from app.schemas.trading import BacktestRequest, BacktestResponse
-from app.services.backtest.engine import BacktestEngine
-from app.services.market.data_collector import market_data_collector
-from app.services.ml.features import feature_engineer
-from app.services.ml.pipeline import MLPipeline
 
 router = APIRouter()
 
@@ -44,6 +40,9 @@ async def run_backtest(
     _user: dict = Depends(require_auth),
 ):
     """Run a backtest with ML model signals. Requires authentication."""
+    from app.services.backtest.engine import BacktestEngine
+    from app.services.market.data_collector import market_data_collector
+
     # Load historical data
     df = await market_data_collector.get_latest_candles(
         db=db,
@@ -169,6 +168,9 @@ async def _generate_ml_signals(df: pd.DataFrame, symbol: str) -> pd.Series:
     Runs inference on each row using a sliding window approach.
     Falls back to feature-based heuristic if models are not available.
     """
+    from app.services.ml.pipeline import MLPipeline
+    from app.services.ml.features import feature_engineer
+
     # Try to load ML pipeline
     pipeline = MLPipeline()
     await pipeline.load_models(symbol)

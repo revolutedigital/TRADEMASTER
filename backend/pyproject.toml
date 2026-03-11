@@ -18,12 +18,11 @@ dependencies = [
     # Exchange
     "python-binance>=1.0.19",
     "ccxt>=4.4.0",
-    # Data & ML
+    # Data & indicators
     "pandas>=2.2.0",
     "numpy>=2.0.0",
     "pandas-ta>=0.3.14b1",
     "scikit-learn>=1.6.0",
-    "torch>=2.5.0",
     "xgboost>=2.1.0",
     # Task queue
     "celery[redis]>=5.4.0",
@@ -48,6 +47,7 @@ dev = [
     "fakeredis[lua]>=2.25.0",
 ]
 ml = [
+    "torch>=2.5.0",
     "stable-baselines3>=2.4.0",
     "gymnasium>=1.0.0",
     "transformers>=4.46.0",

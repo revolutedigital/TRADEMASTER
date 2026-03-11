@@ -131,6 +131,8 @@ export default function DashboardPage() {
     try {
       const result = await apiFetch<{ pnl: number }>(`/api/v1/trading/close-position/${posId}`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ price: currentPrice?.price ?? null }),
       });
       const message = `Posição fechada | P&L: $${result.pnl.toFixed(2)}`;
       setLastOrder({

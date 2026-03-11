@@ -237,9 +237,14 @@ async def create_paper_order(
     }
 
 
+class ClosePositionRequest(BaseModel):
+    price: float | None = None  # Live price from frontend (Binance WS)
+
+
 @router.post("/close-position/{position_id}")
 async def close_position_manually(
     position_id: int,
+    req: ClosePositionRequest | None = None,
     db: AsyncSession = Depends(get_db),
     _user: dict = Depends(require_auth),
 ):
@@ -251,12 +256,16 @@ async def close_position_manually(
     if not position:
         raise HTTPException(status_code=404, detail="Open position not found")
 
-    # Get LIVE price from Binance — no fallback
-    try:
-        exit_price = float(await binance_client.get_ticker_price(position.symbol))
-    except Exception as e:
-        logger.error("live_price_fetch_failed", symbol=position.symbol, error=str(e))
-        raise HTTPException(503, f"Não foi possível obter preço em tempo real. Tente novamente.")
+    # Use frontend-provided live price first, then try Binance API
+    exit_price = None
+    if req and req.price and req.price > 0:
+        exit_price = req.price
+    else:
+        try:
+            exit_price = float(await binance_client.get_ticker_price(position.symbol))
+        except Exception as e:
+            logger.error("live_price_fetch_failed", symbol=position.symbol, error=str(e))
+            raise HTTPException(503, f"Não foi possível obter preço em tempo real. Tente novamente.")
 
     # Calculate P&L
     if position.side == "LONG":

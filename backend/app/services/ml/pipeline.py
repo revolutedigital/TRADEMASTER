@@ -12,10 +12,18 @@ from app.core.metrics import metrics
 from app.services.ml.features import feature_engineer
 from app.services.ml.models.base import ModelPrediction
 from app.services.ml.models.ensemble import EnsembleModel
-from app.services.ml.models.lstm_model import LSTMTradingModel
 from app.services.ml.models.xgboost_model import XGBoostTradingModel
-from app.services.ml.models.transformer_model import TransformerTradingModel
 from app.services.ml.preprocessor import Preprocessor
+
+# Torch-dependent models: optional (not installed in production Docker)
+try:
+    from app.services.ml.models.lstm_model import LSTMTradingModel
+    from app.services.ml.models.transformer_model import TransformerTradingModel
+    _TORCH_AVAILABLE = True
+except ImportError:
+    LSTMTradingModel = None  # type: ignore[assignment,misc]
+    TransformerTradingModel = None  # type: ignore[assignment,misc]
+    _TORCH_AVAILABLE = False
 
 logger = get_logger(__name__)
 
@@ -29,9 +37,9 @@ class MLPipeline:
     """
 
     def __init__(self) -> None:
-        self._lstm = LSTMTradingModel()
+        self._lstm = LSTMTradingModel() if _TORCH_AVAILABLE else None
         self._xgboost = XGBoostTradingModel()
-        self._transformer = TransformerTradingModel()
+        self._transformer = TransformerTradingModel() if _TORCH_AVAILABLE else None
         self._ensemble: EnsembleModel | None = None
         self._preprocessor = Preprocessor()
         self._tabular_scaler = None  # For XGBoost
@@ -51,7 +59,7 @@ class MLPipeline:
         models = {}
         weights = {}
 
-        if lstm_path.exists():
+        if lstm_path.exists() and self._lstm is not None:
             self._lstm.load(lstm_path)
             models["lstm"] = self._lstm
             weights["lstm"] = 0.35
@@ -63,7 +71,7 @@ class MLPipeline:
             weights["xgboost"] = 0.35
             logger.info("xgboost_loaded", symbol=symbol)
 
-        if transformer_path.exists():
+        if transformer_path.exists() and self._transformer is not None:
             self._transformer.load(transformer_path)
             models["transformer"] = self._transformer
             weights["transformer"] = 0.30
@@ -125,16 +133,18 @@ class MLPipeline:
 
         # Sequence models (LSTM, Transformer): use sequence scaler
         seq_len = 60
-        if len(df_features) >= seq_len and (self._lstm.is_loaded or self._transformer.is_loaded):
+        lstm_loaded = self._lstm is not None and self._lstm.is_loaded
+        transformer_loaded = self._transformer is not None and self._transformer.is_loaded
+        if len(df_features) >= seq_len and (lstm_loaded or transformer_loaded):
             seq_data = df_features[feature_cols].iloc[-seq_len:].values
             seq_data = np.nan_to_num(seq_data, nan=0.0)
             if self._sequence_scaler:
                 seq_data = self._sequence_scaler.transform(seq_data)
 
-            if self._lstm.is_loaded:
+            if lstm_loaded:
                 features_dict["lstm"] = seq_data
 
-            if self._transformer.is_loaded:
+            if transformer_loaded:
                 features_dict["transformer"] = seq_data
 
         # 3. Ensemble prediction

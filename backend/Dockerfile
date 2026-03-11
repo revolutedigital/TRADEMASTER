@@ -15,9 +15,6 @@ RUN addgroup --system --gid 1001 appgroup && \
 
 # Install Python dependencies first (layer caching)
 COPY backend/pyproject.toml .
-# Install CPU-only PyTorch first (~200MB vs ~2GB GPU version)
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-# Install core app dependencies (torch already satisfied from above)
 RUN pip install --no-cache-dir "."
 
 # Copy application code

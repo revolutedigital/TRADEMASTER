@@ -405,7 +405,15 @@ export default function DashboardPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {positions.slice(0, 10).map((pos) => (
+                {positions.slice(0, 10).map((pos) => {
+                  // Calculate live P&L using real-time price from WebSocket
+                  const livePrice = (pos.symbol === selectedSymbol && currentPrice) ? currentPrice.price : null;
+                  const livePnl = livePrice
+                    ? pos.side === "LONG"
+                      ? (livePrice - pos.entry_price) * pos.quantity
+                      : (pos.entry_price - livePrice) * pos.quantity
+                    : pos.unrealized_pnl;
+                  return (
                   <TableRow key={pos.id}>
                     <TableCell className="font-medium">{pos.symbol}</TableCell>
                     <TableCell>
@@ -419,10 +427,10 @@ export default function DashboardPage() {
                     <TableCell
                       className={cn(
                         "font-mono text-xs tabular-nums",
-                        pos.unrealized_pnl >= 0 ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
+                        livePnl >= 0 ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
                       )}
                     >
-                      {formatCurrency(pos.unrealized_pnl)}
+                      {formatCurrency(livePnl)}
                     </TableCell>
                     <TableCell>
                       <Tooltip content="Fechar posição">
@@ -438,7 +446,8 @@ export default function DashboardPage() {
                       </Tooltip>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           )}

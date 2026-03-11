@@ -87,16 +87,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.warning("binance_connection_failed", error=str(e))
 
-    # --- Phase 3: Start background services ---
-    if redis_ok and binance_ok:
-        await _start_background_services()
-    elif redis_ok:
-        # Binance unavailable (geo-restricted) - start what we can
-        logger.info("starting_partial_services", reason="binance_unavailable")
-        from app.services.ws_broadcaster import ws_broadcaster
-        await ws_broadcaster.start()
-    else:
-        logger.warning("background_services_skipped", redis=redis_ok, binance=binance_ok)
+    # --- Phase 3: Start background services (never crash the app) ---
+    try:
+        if redis_ok and binance_ok:
+            await _start_background_services()
+        elif redis_ok:
+            logger.info("starting_partial_services", reason="binance_unavailable")
+            from app.services.ws_broadcaster import ws_broadcaster
+            await ws_broadcaster.start()
+        else:
+            logger.warning("background_services_skipped", redis=redis_ok, binance=binance_ok)
+    except Exception as e:
+        logger.error("background_services_failed", error=str(e))
 
     logger.info("services_initialized", redis=redis_ok, binance=binance_ok)
 

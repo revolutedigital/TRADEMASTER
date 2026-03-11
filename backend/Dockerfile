@@ -25,7 +25,7 @@ RUN mkdir -p ml_artifacts/models ml_artifacts/scalers && \
     chown -R appuser:appgroup ml_artifacts
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=5 \
     CMD curl -f http://localhost:8000/api/v1/system/health || exit 1
 
 # Switch to non-root user

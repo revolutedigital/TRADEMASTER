@@ -116,13 +116,19 @@ class TradingEngine:
                     db=db, symbol=symbol, interval=interval, limit=300
                 )
 
-            if df.empty or len(df) < 200:
+            if df.empty or len(df) < 30:
                 return
 
-            # 2. ML prediction
-            prediction = await ml_pipeline.predict(df, symbol)
+            # 2. ML prediction (needs 200+ candles for full features)
+            prediction = None
+            if len(df) >= 200:
+                prediction = await ml_pipeline.predict(df, symbol)
+
+            # Fallback: simple technical signal when ML unavailable
             if prediction is None:
-                return
+                prediction = self._simple_signal(df, symbol)
+                if prediction is None:
+                    return
 
             self._last_signal_time[symbol] = now
 
@@ -203,6 +209,74 @@ class TradingEngine:
             logger.error("trade_failed", symbol=symbol, error=str(e), code=e.code)
         except Exception as e:
             logger.error("unexpected_trading_error", symbol=symbol, error=str(e))
+
+    def _simple_signal(self, df, symbol: str):
+        """Simple technical signal when ML models are not available.
+
+        Uses SMA crossover + RSI for basic buy/sell signals.
+        Returns a ModelPrediction-like object or None for HOLD.
+        """
+        import numpy as np
+
+        close = df["close"].values
+        n = len(close)
+
+        if n < 30:
+            return None
+
+        # SMA 10 vs SMA 20
+        sma_10 = np.mean(close[-10:])
+        sma_20 = np.mean(close[-20:])
+
+        # Simple RSI (14 periods or available)
+        rsi_period = min(14, n - 1)
+        deltas = np.diff(close[-rsi_period - 1:])
+        gains = np.where(deltas > 0, deltas, 0)
+        losses = np.where(deltas < 0, -deltas, 0)
+        avg_gain = np.mean(gains) if len(gains) > 0 else 0
+        avg_loss = np.mean(losses) if len(losses) > 0 else 0.0001
+        rs = avg_gain / max(avg_loss, 0.0001)
+        rsi = 100 - (100 / (1 + rs))
+
+        # Signal logic
+        signal_strength = 0.0  # HOLD
+
+        if sma_10 > sma_20 and rsi < 70:
+            # Bullish: short MA above long MA, not overbought
+            signal_strength = 0.3 + min(0.3, (sma_10 - sma_20) / sma_20 * 100)
+        elif sma_10 < sma_20 and rsi > 30:
+            # Bearish: short MA below long MA, not oversold
+            signal_strength = -0.3 - min(0.3, (sma_20 - sma_10) / sma_20 * 100)
+
+        # Only trade on strong signals
+        if abs(signal_strength) < 0.2:
+            return None
+
+        from app.services.ml.models.base import ModelPrediction
+
+        action = 2 if signal_strength > 0 else 0  # BUY or SELL
+        probs = np.array([
+            max(0, -signal_strength),
+            1 - abs(signal_strength),
+            max(0, signal_strength),
+        ])
+        probs = probs / probs.sum()
+
+        logger.info(
+            "simple_signal_generated",
+            symbol=symbol,
+            signal_strength=round(signal_strength, 4),
+            sma_10=round(sma_10, 2),
+            sma_20=round(sma_20, 2),
+            rsi=round(rsi, 2),
+        )
+
+        return ModelPrediction(
+            action=action,
+            probabilities=probs,
+            confidence=abs(signal_strength),
+            signal_strength=signal_strength,
+        )
 
     async def check_positions(self) -> None:
         """Check all open positions for stop losses and trailing updates.

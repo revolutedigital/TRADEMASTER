@@ -45,6 +45,7 @@ const intervals: TimeInterval[] = ["1m", "5m", "15m", "1h", "4h", "1d"];
 
 export default function DashboardPage() {
   const {
+    prices,
     currentPrice,
     currentKlines,
     selectedSymbol,
@@ -69,23 +70,22 @@ export default function DashboardPage() {
       .catch(() => {});
   }, []);
 
-  // Feed live price to backend (backend can't reach Binance from US servers)
+  // Feed ALL live prices to backend (backend can't reach Binance from US servers)
   useEffect(() => {
-    if (!currentPrice?.price) return;
+    if (!prices || Object.keys(prices).length === 0) return;
     const interval = setInterval(() => {
-      if (currentPrice?.price) {
-        apiFetch("/api/v1/market/price-feed", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            symbol: selectedSymbol,
-            price: currentPrice.price,
-          }),
-        }).catch(() => {});
+      for (const [symbol, data] of Object.entries(prices)) {
+        if (data?.price && data.price > 0) {
+          apiFetch("/api/v1/market/price-feed", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ symbol, price: data.price }),
+          }).catch(() => {});
+        }
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [currentPrice?.price, selectedSymbol]);
+  }, [prices]);
 
   const toggleEngine = async () => {
     setEngineLoading(true);

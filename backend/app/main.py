@@ -84,8 +84,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await _start_background_services()
         elif redis_ok:
             logger.info("starting_partial_services", reason="binance_unavailable")
-            from app.services.ws_broadcaster import ws_broadcaster
-            await ws_broadcaster.start()
+            await _start_background_services_offline()
         else:
             logger.warning("background_services_skipped", redis=redis_ok, binance=binance_ok)
     except Exception as e:
@@ -185,6 +184,45 @@ async def _start_background_services() -> None:
     logger.info("all_background_services_started")
 
 
+async def _start_background_services_offline() -> None:
+    """Start services in offline mode: synthetic klines replace Binance WebSocket."""
+    global _background_tasks
+
+    # 1. Synthetic kline generator (Redis prices -> KLINE_UPDATE events)
+    from app.services.market.synthetic_kline_generator import synthetic_kline_generator
+    task = asyncio.create_task(synthetic_kline_generator.start(), name="synthetic_kline_generator")
+    _background_tasks.append(task)
+    logger.info("synthetic_kline_generator_started")
+
+    # 2. Market stream processor (KLINE_UPDATE events -> Database)
+    from app.services.market.stream_processor import market_stream_processor
+    task = asyncio.create_task(market_stream_processor.start(), name="market_stream_processor")
+    _background_tasks.append(task)
+
+    # 3. WebSocket broadcaster (Redis -> Dashboard clients)
+    from app.services.ws_broadcaster import ws_broadcaster
+    await ws_broadcaster.start()
+
+    # 4. Trading engine
+    from app.services.trading_engine import trading_engine
+    if _engine_enabled:
+        task = asyncio.create_task(trading_engine.start(), name="trading_engine")
+        _background_tasks.append(task)
+        logger.info("trading_engine_task_created_offline")
+
+    # 5. Periodic position check (uses Redis-cached prices, no Binance needed)
+    from app.services.scheduler import scheduler
+
+    async def check_positions():
+        from app.services.trading_engine import trading_engine
+        await trading_engine.check_positions()
+
+    scheduler.add_task("position_check", check_positions, interval_seconds=5, run_immediately=True)
+    scheduler.start_all()
+
+    logger.info("all_background_services_started_offline")
+
+
 async def _stop_background_services() -> None:
     """Gracefully stop all background services."""
     from app.services.scheduler import scheduler
@@ -201,6 +239,12 @@ async def _stop_background_services() -> None:
 
     from app.services.exchange.binance_ws import binance_ws_manager
     await binance_ws_manager.stop()
+
+    try:
+        from app.services.market.synthetic_kline_generator import synthetic_kline_generator
+        await synthetic_kline_generator.stop()
+    except Exception:
+        pass
 
     # Cancel any remaining tasks
     for task in _background_tasks:

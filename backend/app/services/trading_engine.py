@@ -135,7 +135,11 @@ class TradingEngine:
             atr = float(df.iloc[-1].get("atr_14", current_price * 0.02))
 
             async with async_session_factory() as db:
-                equity = float(await binance_client.get_balance("USDT"))
+                try:
+                    equity = float(await binance_client.get_balance("USDT"))
+                except Exception:
+                    # Paper mode: use 10000 USDT as default equity
+                    equity = 10000.0
                 total_exposure = await portfolio_tracker.get_total_exposure(db)
                 symbol_exposure = await portfolio_tracker.get_symbol_exposure(db, symbol)
 
@@ -208,8 +212,14 @@ class TradingEngine:
         try:
             prices = {}
             for symbol in settings.symbols_list:
-                price = await binance_client.get_ticker_price(symbol)
-                prices[symbol] = float(price)
+                try:
+                    price = await binance_client.get_ticker_price(symbol)
+                    prices[symbol] = float(price)
+                except Exception:
+                    pass  # Skip symbols with no price available
+
+            if not prices:
+                return  # No prices available, skip this check
 
             async with async_session_factory() as db:
                 # Update prices
@@ -236,7 +246,10 @@ class TradingEngine:
                         )
 
                 # Update circuit breaker and persist to Redis
-                equity = float(await binance_client.get_balance("USDT"))
+                try:
+                    equity = float(await binance_client.get_balance("USDT"))
+                except Exception:
+                    equity = 10000.0  # Paper mode fallback
                 await circuit_breaker.update_and_persist(equity)
 
                 # Take snapshot every check

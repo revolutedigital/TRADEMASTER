@@ -320,6 +320,12 @@ async def start_engine(
         return {"status": "already_running"}
 
     import asyncio
+
+    # Also start synthetic kline generator if not already running
+    from app.services.market.synthetic_kline_generator import synthetic_kline_generator
+    if not synthetic_kline_generator._running:
+        asyncio.create_task(synthetic_kline_generator.start(), name="synthetic_kline_generator")
+
     asyncio.create_task(engine.start(), name="trading_engine")
     return {"status": "started"}
 
@@ -343,6 +349,7 @@ async def engine_status(_user: dict = Depends(require_auth)):
     from app.dependencies import get_trading_engine, get_circuit_breaker
     from app.services.scheduler import scheduler
     from app.services.exchange.binance_ws import binance_ws_manager
+    from app.services.market.synthetic_kline_generator import synthetic_kline_generator
 
     engine = get_trading_engine()
     cb = get_circuit_breaker()
@@ -351,6 +358,94 @@ async def engine_status(_user: dict = Depends(require_auth)):
         "engine_running": engine._running,
         "websocket_streams": len(binance_ws_manager._tasks),
         "websocket_active": binance_ws_manager._running,
+        "synthetic_kline_active": synthetic_kline_generator._running,
+        "synthetic_candles_tracking": list(synthetic_kline_generator._candles.keys()),
         "circuit_breaker": cb.get_status(),
         "scheduled_tasks": scheduler.get_status(),
     }
+
+
+@router.post("/engine/train-model")
+async def train_bootstrap_model(
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """Train a bootstrap XGBoost model using available historical data."""
+    from pathlib import Path
+    import numpy as np
+    from app.services.market.data_collector import market_data_collector
+    from app.services.ml.features import feature_engineer
+    from app.services.ml.models.xgboost_model import XGBoostTradingModel
+    from app.services.ml.preprocessor import Preprocessor
+    from app.services.ml.pipeline import ml_pipeline
+
+    MODELS_DIR = Path("ml_artifacts/models")
+    SCALERS_DIR = Path("ml_artifacts/scalers")
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    SCALERS_DIR.mkdir(parents=True, exist_ok=True)
+
+    results = {}
+    preprocessor = Preprocessor(threshold=0.005)
+
+    for symbol in ["BTCUSDT", "ETHUSDT"]:
+        symbol_lower = symbol.lower()
+
+        # Get historical candles
+        df = await market_data_collector.get_latest_candles(
+            db=db, symbol=symbol, interval="1m", limit=10000
+        )
+
+        if df.empty or len(df) < 300:
+            # Try 1h interval
+            df = await market_data_collector.get_latest_candles(
+                db=db, symbol=symbol, interval="1h", limit=10000
+            )
+
+        if df.empty or len(df) < 300:
+            results[symbol] = {"status": "skipped", "reason": f"Only {len(df)} candles available (need 300+)"}
+            continue
+
+        # Feature engineering
+        df_features = feature_engineer.build_features(df)
+        if df_features.empty:
+            results[symbol] = {"status": "skipped", "reason": "Feature engineering failed"}
+            continue
+
+        feature_cols = feature_engineer.get_feature_columns(df_features)
+
+        # Create targets and split
+        try:
+            df_features = preprocessor.create_target(df_features, horizon=5)
+            split = preprocessor.prepare_tabular(df_features, feature_cols)
+        except Exception as e:
+            results[symbol] = {"status": "error", "reason": str(e)}
+            continue
+
+        # Train XGBoost
+        model = XGBoostTradingModel()
+        training_result = model.train(
+            split.X_train, split.y_train,
+            split.X_val, split.y_val,
+            n_estimators=200,
+            max_depth=4,
+            learning_rate=0.05,
+            feature_names=split.feature_names,
+        )
+
+        # Save model and scaler
+        model.save(MODELS_DIR / f"xgboost_{symbol_lower}.json")
+        Preprocessor.save_scaler(split.scaler, SCALERS_DIR / f"scaler_{symbol_lower}.joblib")
+
+        results[symbol] = {
+            "status": "trained",
+            "rows": len(df),
+            "features": len(feature_cols),
+            "train_accuracy": round(training_result.accuracy, 4),
+            "val_accuracy": round(training_result.val_accuracy, 4),
+        }
+
+    # Reload models in the pipeline
+    for symbol in ["BTCUSDT", "ETHUSDT"]:
+        await ml_pipeline.load_models(symbol)
+
+    return {"results": results, "models_reloaded": True}

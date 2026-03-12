@@ -199,7 +199,7 @@ export default function TradingPage() {
                         {order.side}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-xs">{order.type}</TableCell>
+                    <TableCell className="text-xs">{order.order_type}</TableCell>
                     <TableCell className="font-mono text-xs">
                       {formatCurrency(order.price)}
                     </TableCell>

@@ -188,6 +188,13 @@ async def _start_background_services_offline() -> None:
     """Start services in offline mode: synthetic klines replace Binance WebSocket."""
     global _background_tasks
 
+    # 0. Autonomous price fetcher (CoinGecko/CryptoCompare -> Redis)
+    #    This removes the dependency on having the frontend open
+    from app.services.market.price_fetcher import price_fetcher
+    task = asyncio.create_task(price_fetcher.start(), name="price_fetcher")
+    _background_tasks.append(task)
+    logger.info("price_fetcher_started")
+
     # 1. Synthetic kline generator (Redis prices -> KLINE_UPDATE events)
     from app.services.market.synthetic_kline_generator import synthetic_kline_generator
     task = asyncio.create_task(synthetic_kline_generator.start(), name="synthetic_kline_generator")
@@ -243,6 +250,12 @@ async def _stop_background_services() -> None:
     try:
         from app.services.market.synthetic_kline_generator import synthetic_kline_generator
         await synthetic_kline_generator.stop()
+    except Exception:
+        pass
+
+    try:
+        from app.services.market.price_fetcher import price_fetcher
+        await price_fetcher.stop()
     except Exception:
         pass
 

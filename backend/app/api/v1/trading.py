@@ -327,10 +327,19 @@ async def start_engine(
 
     import asyncio
 
-    # Also start synthetic kline generator if not already running
+    # Also start price fetcher + synthetic kline generator if not running
+    from app.services.market.price_fetcher import price_fetcher
+    if not price_fetcher._running:
+        asyncio.create_task(price_fetcher.start(), name="price_fetcher")
+
     from app.services.market.synthetic_kline_generator import synthetic_kline_generator
     if not synthetic_kline_generator._running:
         asyncio.create_task(synthetic_kline_generator.start(), name="synthetic_kline_generator")
+
+    # Start stream processor if not running
+    from app.services.market.stream_processor import market_stream_processor
+    if not market_stream_processor._running:
+        asyncio.create_task(market_stream_processor.start(), name="market_stream_processor")
 
     asyncio.create_task(engine.start(), name="trading_engine")
     return {"status": "started"}
@@ -356,12 +365,15 @@ async def engine_status(_user: dict = Depends(require_auth)):
     from app.services.scheduler import scheduler
     from app.services.exchange.binance_ws import binance_ws_manager
     from app.services.market.synthetic_kline_generator import synthetic_kline_generator
+    from app.services.market.price_fetcher import price_fetcher
 
     engine = get_trading_engine()
     cb = get_circuit_breaker()
 
     return {
         "engine_running": engine._running,
+        "price_fetcher_active": price_fetcher._running,
+        "price_fetcher_source": price_fetcher._source,
         "websocket_streams": len(binance_ws_manager._tasks),
         "websocket_active": binance_ws_manager._running,
         "synthetic_kline_active": synthetic_kline_generator._running,

@@ -188,36 +188,44 @@ async def _start_background_services_offline() -> None:
     """Start services in offline mode: synthetic klines replace Binance WebSocket."""
     global _background_tasks
 
-    # 0. Autonomous price fetcher (CoinGecko/CryptoCompare -> Redis)
-    #    This removes the dependency on having the frontend open
+    # 0. Bootstrap historical candles (CryptoCompare -> DB)
+    #    Gives the engine 100+ candles immediately instead of waiting 7.5 hours
+    try:
+        from app.services.market.candle_bootstrap import bootstrap_historical_candles
+        bootstrap_results = await bootstrap_historical_candles()
+        logger.info("candle_bootstrap_done", results=bootstrap_results)
+    except Exception as e:
+        logger.warning("candle_bootstrap_failed", error=str(e))
+
+    # 1. Autonomous price fetcher (CoinGecko/CryptoCompare -> Redis)
     from app.services.market.price_fetcher import price_fetcher
     task = asyncio.create_task(price_fetcher.start(), name="price_fetcher")
     _background_tasks.append(task)
     logger.info("price_fetcher_started")
 
-    # 1. Synthetic kline generator (Redis prices -> KLINE_UPDATE events)
+    # 2. Synthetic kline generator (Redis prices -> KLINE_UPDATE events)
     from app.services.market.synthetic_kline_generator import synthetic_kline_generator
     task = asyncio.create_task(synthetic_kline_generator.start(), name="synthetic_kline_generator")
     _background_tasks.append(task)
     logger.info("synthetic_kline_generator_started")
 
-    # 2. Market stream processor (KLINE_UPDATE events -> Database)
+    # 3. Market stream processor (KLINE_UPDATE events -> Database)
     from app.services.market.stream_processor import market_stream_processor
     task = asyncio.create_task(market_stream_processor.start(), name="market_stream_processor")
     _background_tasks.append(task)
 
-    # 3. WebSocket broadcaster (Redis -> Dashboard clients)
+    # 4. WebSocket broadcaster (Redis -> Dashboard clients)
     from app.services.ws_broadcaster import ws_broadcaster
     await ws_broadcaster.start()
 
-    # 4. Trading engine
+    # 5. Trading engine
     from app.services.trading_engine import trading_engine
     if _engine_enabled:
         task = asyncio.create_task(trading_engine.start(), name="trading_engine")
         _background_tasks.append(task)
         logger.info("trading_engine_task_created_offline")
 
-    # 5. Periodic position check (uses Redis-cached prices, no Binance needed)
+    # 6. Periodic position check (uses Redis-cached prices, no Binance needed)
     from app.services.scheduler import scheduler
 
     async def check_positions():

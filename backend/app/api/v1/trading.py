@@ -366,15 +366,35 @@ async def engine_status(_user: dict = Depends(require_auth)):
     from app.services.exchange.binance_ws import binance_ws_manager
     from app.services.market.synthetic_kline_generator import synthetic_kline_generator
     from app.services.market.price_fetcher import price_fetcher
+    from sqlalchemy import func
 
     engine = get_trading_engine()
     cb = get_circuit_breaker()
+
+    # Count candles per symbol for monitoring
+    candle_counts = {}
+    try:
+        from app.models.market import OHLCV
+        from app.models.base import async_session_factory as db_session_maker
+        async with db_session_maker() as sdb:
+            for sym in ["BTCUSDT", "ETHUSDT"]:
+                result = await sdb.execute(
+                    select(func.count()).select_from(OHLCV).where(
+                        OHLCV.symbol == sym,
+                        OHLCV.interval == synthetic_kline_generator._interval_label,
+                    )
+                )
+                candle_counts[sym] = result.scalar() or 0
+    except Exception:
+        pass
 
     return {
         "engine_running": engine._running,
         "price_fetcher_active": price_fetcher._running,
         "price_fetcher_source": price_fetcher._source,
         "candle_interval": synthetic_kline_generator._interval_label,
+        "candle_counts": candle_counts,
+        "min_candles_for_signal": 30,
         "websocket_streams": len(binance_ws_manager._tasks),
         "websocket_active": binance_ws_manager._running,
         "synthetic_kline_active": synthetic_kline_generator._running,

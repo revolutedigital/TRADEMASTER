@@ -113,10 +113,23 @@ class MarketDataCollector:
                 warnings=validation.warnings,
             )
 
+        open_time = _strip_tz(pd.Timestamp(data["open_time"], unit="ms", tz="UTC").to_pydatetime())
+
+        # Dedup: skip if candle with same symbol+interval+open_time already exists
+        existing = await db.execute(
+            select(OHLCV).where(
+                OHLCV.symbol == symbol,
+                OHLCV.interval == interval,
+                OHLCV.open_time == open_time,
+            ).limit(1)
+        )
+        if existing.scalar_one_or_none():
+            return None
+
         candle = OHLCV(
             symbol=symbol,
             interval=interval,
-            open_time=_strip_tz(pd.Timestamp(data["open_time"], unit="ms", tz="UTC").to_pydatetime()),
+            open_time=open_time,
             open=data["open"],
             high=data["high"],
             low=data["low"],

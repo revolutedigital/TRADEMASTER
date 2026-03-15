@@ -67,7 +67,7 @@ class OrderManager:
             from app.models.market import OHLCV
             result = await db.execute(
                 select(OHLCV)
-                .where(OHLCV.symbol == symbol, OHLCV.interval == "1m")
+                .where(OHLCV.symbol == symbol, OHLCV.interval == "15m")
                 .order_by(OHLCV.open_time.desc())
                 .limit(1)
             )
@@ -76,13 +76,14 @@ class OrderManager:
                 raise OrderExecutionError(f"No price data for {symbol}")
             current_price = Decimal(str(candle.close))
 
-        # Apply slippage (adverse direction) using Decimal
+        # Apply bilateral slippage: 50% chance favorable, 50% adverse (realistic)
         slippage_bps = Decimal(str(random.uniform(0, PAPER_SLIPPAGE_BPS)))
         slippage_pct = slippage_bps / Decimal("10000")
+        slippage_direction = random.choice([-1, 1])  # -1 = favorable, +1 = adverse
         if side == "BUY":
-            fill_price = current_price * (Decimal("1") + slippage_pct)
+            fill_price = current_price * (Decimal("1") + slippage_pct * slippage_direction)
         else:
-            fill_price = current_price * (Decimal("1") - slippage_pct)
+            fill_price = current_price * (Decimal("1") - slippage_pct * slippage_direction)
 
         # Round to 2 decimal places (USDT precision)
         fill_price = fill_price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)

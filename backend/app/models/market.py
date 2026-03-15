@@ -27,7 +27,7 @@ class OHLCV(Base, TimestampMixin):
     trade_count: Mapped[int] = mapped_column(Integer, default=0)
 
     __table_args__ = (
-        Index("ix_ohlcv_symbol_interval_time", "symbol", "interval", "open_time"),
+        Index("ix_ohlcv_symbol_interval_time", "symbol", "interval", "open_time", unique=True),
         Index("ix_ohlcv_open_time", "open_time"),
     )
 

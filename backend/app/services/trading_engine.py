@@ -39,7 +39,7 @@ class TradingEngine:
         self._running: bool = False
         self._risk_manager = RiskManager()
         self._last_signal_time: dict[str, datetime] = {}
-        self._min_signal_interval_seconds: float = 10  # 10s between signals per symbol (ML inference takes ~1-3s)
+        self._min_signal_interval_seconds: float = 60  # 60s between signals per symbol (one per candle)
 
     async def start(self) -> None:
         """Start the trading engine loop."""
@@ -211,24 +211,31 @@ class TradingEngine:
             logger.error("unexpected_trading_error", symbol=symbol, error=str(e))
 
     def _simple_signal(self, df, symbol: str):
-        """Simple technical signal when ML models are not available.
+        """Multi-indicator technical signal when ML models are not available.
 
-        Uses SMA crossover + RSI for basic buy/sell signals.
-        Returns a ModelPrediction-like object or None for HOLD.
+        Combines SMA crossover, RSI, MACD, Bollinger Bands, and momentum
+        into a composite score. Designed to generate signals frequently
+        even with low-variance candle data (CoinGecko 10s updates).
         """
         import numpy as np
 
-        close = df["close"].values
+        close = df["close"].values.astype(float)
         n = len(close)
 
         if n < 30:
             return None
 
-        # SMA 10 vs SMA 20
-        sma_10 = np.mean(close[-10:])
-        sma_20 = np.mean(close[-20:])
+        scores = []  # Each indicator contributes a score in [-1, 1]
 
-        # Simple RSI (14 periods or available)
+        # --- 1. SMA crossover (fast 5 vs slow 15) ---
+        sma_5 = np.mean(close[-5:])
+        sma_15 = np.mean(close[-15:])
+        if sma_15 > 0:
+            sma_diff_pct = (sma_5 - sma_15) / sma_15 * 100
+            sma_score = np.clip(sma_diff_pct * 20, -1, 1)  # amplify small diffs
+            scores.append(("sma", sma_score, 0.25))
+
+        # --- 2. RSI (14) ---
         rsi_period = min(14, n - 1)
         deltas = np.diff(close[-rsi_period - 1:])
         gains = np.where(deltas > 0, deltas, 0)
@@ -237,20 +244,54 @@ class TradingEngine:
         avg_loss = np.mean(losses) if len(losses) > 0 else 0.0001
         rs = avg_gain / max(avg_loss, 0.0001)
         rsi = 100 - (100 / (1 + rs))
+        # RSI < 40 = buy, > 60 = sell
+        rsi_score = np.clip((50 - rsi) / 25, -1, 1)
+        scores.append(("rsi", rsi_score, 0.20))
 
-        # Signal logic
-        signal_strength = 0.0  # HOLD
+        # --- 3. MACD (fast=8, slow=17, signal=6) ---
+        if n >= 20:
+            ema_fast = self._ema(close, 8)
+            ema_slow = self._ema(close, 17)
+            macd_line = ema_fast - ema_slow
+            if len(close) >= 6:
+                signal_line = self._ema(np.array([macd_line]), 1)  # simplified
+                macd_hist = macd_line - signal_line
+                # Normalize by price
+                macd_score = np.clip(macd_hist / (close[-1] * 0.0005) if close[-1] > 0 else 0, -1, 1)
+                scores.append(("macd", macd_score, 0.20))
 
-        if sma_10 > sma_20 and rsi < 70:
-            # Bullish: short MA above long MA, not overbought
-            signal_strength = 0.3 + min(0.3, (sma_10 - sma_20) / sma_20 * 100)
-        elif sma_10 < sma_20 and rsi > 30:
-            # Bearish: short MA below long MA, not oversold
-            signal_strength = -0.3 - min(0.3, (sma_20 - sma_10) / sma_20 * 100)
+        # --- 4. Bollinger Bands (20, 2) ---
+        if n >= 20:
+            bb_mean = np.mean(close[-20:])
+            bb_std = np.std(close[-20:])
+            if bb_std > 0:
+                bb_z = (close[-1] - bb_mean) / bb_std
+                # Below -1 = buy, above +1 = sell (mean reversion)
+                bb_score = np.clip(-bb_z / 1.5, -1, 1)
+                scores.append(("bb", bb_score, 0.15))
 
-        # Only trade on strong signals
-        if abs(signal_strength) < 0.2:
+        # --- 5. Momentum (5-period rate of change) ---
+        if close[-6] > 0:
+            momentum = (close[-1] - close[-6]) / close[-6] * 100
+            mom_score = np.clip(momentum * 15, -1, 1)  # amplify
+            scores.append(("mom", mom_score, 0.20))
+
+        # --- Composite signal ---
+        if not scores:
             return None
+
+        total_weight = sum(w for _, _, w in scores)
+        signal_strength = sum(s * w for _, s, w in scores) / total_weight
+
+        # Apply a minimum threshold (very low to allow frequent trading)
+        if abs(signal_strength) < 0.08:
+            return None
+
+        # Scale to match what signal_to_action expects (>= 0.3 or <= -0.3)
+        # We map our 0.08-1.0 range to 0.3-0.8
+        direction = 1 if signal_strength > 0 else -1
+        scaled = 0.3 + abs(signal_strength) * 0.5
+        signal_strength = direction * min(scaled, 0.8)
 
         from app.services.ml.models.base import ModelPrediction
 
@@ -266,8 +307,7 @@ class TradingEngine:
             "simple_signal_generated",
             symbol=symbol,
             signal_strength=round(signal_strength, 4),
-            sma_10=round(sma_10, 2),
-            sma_20=round(sma_20, 2),
+            indicators={name: round(score, 4) for name, score, _ in scores},
             rsi=round(rsi, 2),
         )
 
@@ -277,6 +317,16 @@ class TradingEngine:
             confidence=abs(signal_strength),
             signal_strength=signal_strength,
         )
+
+    @staticmethod
+    def _ema(data: "np.ndarray", period: int) -> float:
+        """Calculate EMA of the last `period` values."""
+        import numpy as np
+        if len(data) < period:
+            return float(np.mean(data))
+        weights = np.exp(np.linspace(-1.0, 0.0, period))
+        weights /= weights.sum()
+        return float(np.dot(data[-period:], weights))
 
     async def check_positions(self) -> None:
         """Check all open positions for stop losses and trailing updates.

@@ -48,7 +48,7 @@ class PriceFetcher:
 
     def __init__(self) -> None:
         self._running: bool = False
-        self._interval: int = 10  # seconds between fetches
+        self._interval: int = 5  # seconds between fetches
         self._client: httpx.AsyncClient | None = None
         self._consecutive_failures: int = 0
         self._source: str = "unknown"

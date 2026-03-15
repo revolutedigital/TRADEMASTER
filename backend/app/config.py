@@ -1,4 +1,6 @@
-from pydantic import Field
+import secrets
+
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -58,6 +60,24 @@ class Settings(BaseSettings):
     # Webhook alerts (Slack/Discord/custom — optional)
     risk_alert_webhook_url: str = ""
     trade_alert_webhook_url: str = ""
+
+    @model_validator(mode="after")
+    def _validate_secrets(self) -> "Settings":
+        if self.app_env == "production":
+            if not self.jwt_secret_key or len(self.jwt_secret_key) < 32:
+                raise ValueError(
+                    "jwt_secret_key must be set (min 32 chars) in production"
+                )
+            if not self.admin_password or len(self.admin_password) < 8:
+                raise ValueError(
+                    "admin_password must be set (min 8 chars) in production"
+                )
+        else:
+            if not self.jwt_secret_key:
+                self.jwt_secret_key = secrets.token_urlsafe(32)
+            if not self.admin_password:
+                self.admin_password = "admin"
+        return self
 
     @property
     def cors_origins(self) -> list[str]:

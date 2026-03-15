@@ -165,30 +165,69 @@ async def authenticate_websocket(websocket) -> dict | None:
     return verify_token(token)
 
 
-# --- Rate Limiter ---
+# --- Rate Limiter (Redis-backed sliding window) ---
 
 class AppRateLimiter:
-    """In-memory rate limiter for API endpoints."""
+    """Redis-backed sliding window rate limiter.
 
-    def __init__(self):
-        self._requests: dict[str, list[float]] = {}
+    Falls back to in-memory dict when Redis is unavailable.
+    Uses sorted sets with timestamp scores for accurate sliding windows.
+    """
 
-    def _cleanup(self, key: str, window_seconds: int) -> None:
-        now = datetime.now(timezone.utc).timestamp()
-        if key in self._requests:
-            self._requests[key] = [
-                t for t in self._requests[key]
-                if now - t < window_seconds
-            ]
+    def __init__(self) -> None:
+        self._redis: "aioredis.Redis | None" = None
+        self._fallback: dict[str, list[float]] = {}
+
+    async def _get_redis(self) -> "aioredis.Redis | None":
+        if self._redis is not None:
+            return self._redis
+        try:
+            import redis.asyncio as aioredis
+            self._redis = aioredis.from_url(
+                settings.redis_url, decode_responses=True
+            )
+            await self._redis.ping()
+            return self._redis
+        except Exception:
+            return None
 
     def is_allowed(self, key: str, max_requests: int, window_seconds: int = 60) -> bool:
-        self._cleanup(key, window_seconds)
-        if key not in self._requests:
-            self._requests[key] = []
-        if len(self._requests[key]) >= max_requests:
+        """Synchronous fallback for callers that can't await."""
+        now = datetime.now(timezone.utc).timestamp()
+        if key not in self._fallback:
+            self._fallback[key] = []
+        cutoff = now - window_seconds
+        self._fallback[key] = [t for t in self._fallback[key] if t > cutoff]
+        if len(self._fallback[key]) >= max_requests:
             return False
-        self._requests[key].append(datetime.now(timezone.utc).timestamp())
+        self._fallback[key].append(now)
         return True
+
+    async def is_allowed_async(self, key: str, max_requests: int, window_seconds: int = 60) -> bool:
+        """Redis sliding-window check. Falls back to in-memory on error."""
+        r = await self._get_redis()
+        if r is None:
+            return self.is_allowed(key, max_requests, window_seconds)
+        try:
+            redis_key = f"ratelimit:{key}"
+            now = datetime.now(timezone.utc).timestamp()
+            cutoff = now - window_seconds
+
+            pipe = r.pipeline()
+            pipe.zremrangebyscore(redis_key, "-inf", cutoff)
+            pipe.zcard(redis_key)
+            pipe.zadd(redis_key, {str(now): now})
+            pipe.expire(redis_key, window_seconds + 1)
+            results = await pipe.execute()
+
+            count = results[1]  # zcard result
+            if count >= max_requests:
+                # Remove the entry we just added (over limit)
+                await r.zrem(redis_key, str(now))
+                return False
+            return True
+        except Exception:
+            return self.is_allowed(key, max_requests, window_seconds)
 
 
 app_rate_limiter = AppRateLimiter()

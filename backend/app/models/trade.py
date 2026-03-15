@@ -3,7 +3,7 @@
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import BigInteger, DateTime, Index, Numeric, String
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
@@ -60,6 +60,8 @@ class Order(Base, TimestampMixin):
     __table_args__ = (
         Index("ix_orders_symbol_status", "symbol", "status"),
         Index("ix_orders_exchange_id", "exchange_order_id"),
+        CheckConstraint("side IN ('BUY', 'SELL')", name="ck_orders_side"),
+        CheckConstraint("quantity > 0", name="ck_orders_quantity_positive"),
     )
 
     def __repr__(self) -> str:
@@ -70,7 +72,7 @@ class Trade(Base, TimestampMixin):
     __tablename__ = "trades"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    order_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    order_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
     exchange_trade_id: Mapped[str | None] = mapped_column(String(64))
     symbol: Mapped[str] = mapped_column(String(20), nullable=False)
     side: Mapped[str] = mapped_column(String(10), nullable=False)
@@ -80,7 +82,12 @@ class Trade(Base, TimestampMixin):
     commission_asset: Mapped[str] = mapped_column(String(10), default="USDT")
     executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    __table_args__ = (Index("ix_trades_symbol_time", "symbol", "executed_at"),)
+    __table_args__ = (
+        Index("ix_trades_symbol_time", "symbol", "executed_at"),
+        CheckConstraint("side IN ('BUY', 'SELL')", name="ck_trades_side"),
+        CheckConstraint("price > 0", name="ck_trades_price_positive"),
+        CheckConstraint("quantity > 0", name="ck_trades_quantity_positive"),
+    )
 
     def __repr__(self) -> str:
         return f"<Trade {self.id} {self.symbol} {self.side} {self.price}>"

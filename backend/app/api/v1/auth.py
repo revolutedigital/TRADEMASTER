@@ -30,7 +30,7 @@ async def login(req: LoginRequest, request: Request, response: Response):
     """Authenticate and return a JWT token. Also sets httpOnly cookie."""
     # Rate limit: 5 attempts per minute per IP
     client_ip = request.client.host if request.client else "unknown"
-    if not app_rate_limiter.is_allowed(f"login:{client_ip}", max_requests=5, window_seconds=60):
+    if not await app_rate_limiter.is_allowed_async(f"login:{client_ip}", max_requests=5, window_seconds=60):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many login attempts. Try again in 1 minute.",

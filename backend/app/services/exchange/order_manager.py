@@ -156,6 +156,9 @@ class OrderManager:
         signal_id: int | None = None,
     ) -> Order:
         """Execute a real market order on Binance."""
+        import uuid
+        client_order_id = f"TM-{uuid.uuid4().hex[:20]}"
+
         order = Order(
             symbol=symbol,
             side=side,
@@ -163,12 +166,15 @@ class OrderManager:
             status=OrderStatus.PENDING,
             quantity=quantity,
             signal_id=signal_id,
+            notes=f"coid:{client_order_id}",
         )
         db.add(order)
         await db.flush()
 
         try:
-            result = await binance_client.place_market_order(symbol, side, quantity)
+            result = await binance_client.place_market_order(
+                symbol, side, quantity, client_order_id=client_order_id
+            )
 
             order.exchange_order_id = str(result["orderId"])
             order.status = OrderStatus(result.get("status", "FILLED"))

@@ -269,17 +269,22 @@ class BinanceClientWrapper:
     # --- Orders ---
 
     async def place_market_order(
-        self, symbol: str, side: str, quantity: float
+        self, symbol: str, side: str, quantity: float,
+        client_order_id: str | None = None,
     ) -> dict:
-        """Place a market order."""
+        """Place a market order with optional client-side idempotency ID."""
         if not self._rate_limiter.can_place_order():
             raise ExchangeRateLimitError("Order rate limit exceeded")
+
+        import uuid
+        coid = client_order_id or f"TM-{uuid.uuid4().hex[:20]}"
 
         params = {
             "symbol": symbol,
             "side": side,
             "type": ORDER_TYPE_MARKET,
             "quantity": f"{quantity:.8f}",
+            "newClientOrderId": coid,
         }
         result = await self._execute(self._client.create_order(**params))
         self._rate_limiter.record_order()
@@ -294,11 +299,15 @@ class BinanceClientWrapper:
         return result
 
     async def place_limit_order(
-        self, symbol: str, side: str, quantity: float, price: float
+        self, symbol: str, side: str, quantity: float, price: float,
+        client_order_id: str | None = None,
     ) -> dict:
-        """Place a limit order."""
+        """Place a limit order with optional client-side idempotency ID."""
         if not self._rate_limiter.can_place_order():
             raise ExchangeRateLimitError("Order rate limit exceeded")
+
+        import uuid
+        coid = client_order_id or f"TM-{uuid.uuid4().hex[:20]}"
 
         params = {
             "symbol": symbol,
@@ -307,6 +316,7 @@ class BinanceClientWrapper:
             "timeInForce": "GTC",
             "quantity": f"{quantity:.8f}",
             "price": f"{price:.8f}",
+            "newClientOrderId": coid,
         }
         result = await self._execute(self._client.create_order(**params))
         self._rate_limiter.record_order()

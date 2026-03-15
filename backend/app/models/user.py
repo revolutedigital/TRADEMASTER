@@ -17,5 +17,11 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     last_login = Column(DateTime(timezone=True))
     preferences = Column(Text)  # JSON preferences
+
+    # TOTP two-factor authentication
+    totp_enabled = Column(Boolean, default=False, nullable=False, server_default="false")
+    totp_secret = Column(String(64), nullable=True)  # Base32-encoded shared secret
+    totp_backup_codes = Column(Text, nullable=True)  # JSON array of backup codes
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

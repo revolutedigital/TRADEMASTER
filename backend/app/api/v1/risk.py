@@ -101,9 +101,18 @@ async def run_stress_tests(
 async def monte_carlo_simulation(
     horizon_days: int = 30,
     n_simulations: int = 10000,
+    method: str = "bootstrap",
     _user: dict = Depends(require_auth),
 ):
-    """Run Monte Carlo simulation for portfolio risk projection."""
+    """Run Monte Carlo simulation for portfolio risk projection.
+
+    Query params:
+        method: "bootstrap" (classic resampling) or "t_distribution"
+                (fat-tailed Student-t with EWMA volatility clustering).
+    """
+    if method not in ("bootstrap", "t_distribution"):
+        method = "bootstrap"
+
     async with async_session_factory() as db:
         result = await db.execute(text(
             "SELECT realized_pnl FROM positions WHERE status='CLOSED' ORDER BY closed_at DESC LIMIT 500"
@@ -122,11 +131,14 @@ async def monte_carlo_simulation(
         pnls = [equity * r for r in [0.01, -0.005, 0.008, -0.003, 0.012, -0.007, 0.005]]
 
     returns = [p / equity for p in pnls]
-    mc_result = monte_carlo.simulate(equity, returns, n_simulations, horizon_days)
+    mc_result = monte_carlo.simulate(
+        equity, returns, n_simulations, horizon_days, method=method,
+    )
     return {
         "portfolio_value": equity,
         "horizon_days": horizon_days,
         "simulations": n_simulations,
+        "method": mc_result.method,
         "median_outcome": round(mc_result.median_outcome, 2),
         "worst_5pct": round(mc_result.worst_5pct, 2),
         "best_5pct": round(mc_result.best_5pct, 2),

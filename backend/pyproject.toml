@@ -22,6 +22,7 @@ dependencies = [
     "numpy>=2.0.0",
     "pandas-ta>=0.3.14b1",
     "scikit-learn>=1.6.0",
+    "scipy>=1.14.0",
     "xgboost>=2.1.0",
     # Utilities
     "httpx>=0.28.0",

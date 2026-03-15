@@ -21,7 +21,7 @@ async def get_feature_flags(_user: dict = Depends(require_auth)):
 @router.put("/feature-flags/{flag_name}")
 async def toggle_feature_flag(flag_name: str, enabled: bool = True, _user: dict = Depends(require_auth)):
     from app.core.feature_flags import feature_flags
-    feature_flags.set_flag(flag_name, enabled)
+    await feature_flags.set_flag(flag_name, enabled)
     return {"flag": flag_name, "enabled": enabled}
 
 

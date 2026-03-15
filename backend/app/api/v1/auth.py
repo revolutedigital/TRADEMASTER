@@ -19,6 +19,7 @@ router = APIRouter()
 class LoginRequest(BaseModel):
     username: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=1, max_length=200)
+    totp_code: str | None = Field(default=None, min_length=6, max_length=6, description="6-digit TOTP code (required when 2FA is enabled)")
 
 
 class TokenResponse(BaseModel):
@@ -56,6 +57,23 @@ async def login(req: LoginRequest, request: Request, response: Response):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
         )
+
+    # --- Optional TOTP 2FA check ---
+    if settings.totp_enabled and settings.totp_secret:
+        if not req.totp_code:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="TOTP code required (2FA is enabled)",
+            )
+        from app.core.totp import TOTPManager
+        if not TOTPManager.verify_totp(settings.totp_secret, req.totp_code):
+            brute_force.record_failure(client_ip)
+            from app.core.audit import audit_logger
+            await audit_logger.log_login(req.username, success=False, ip=client_ip)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid TOTP code",
+            )
 
     brute_force.record_success(client_ip)
     token_data = {"sub": req.username, "role": "admin"}

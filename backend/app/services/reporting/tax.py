@@ -3,11 +3,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import select, extract
+from sqlalchemy import func, select, extract
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.models.trade import Trade
+from app.models.trade import Order, Trade
 from app.models.portfolio import Position
 
 logger = get_logger(__name__)
@@ -28,6 +28,43 @@ class TaxSummary:
 class TaxReporter:
     """Generate tax reports using FIFO method for cost basis."""
 
+    async def _sum_commissions_for_position(
+        self, db: AsyncSession, pos: Position
+    ) -> float:
+        """Sum Order + Trade commissions linked to a position by symbol and time window.
+
+        Since Position has no direct FK to Order/Trade, we match orders by symbol
+        whose created_at falls within [position.opened_at, position.closed_at].
+        We also sum trade-level commissions through the Order->Trade FK.
+        """
+        if not pos.opened_at or not pos.closed_at:
+            return 0.0
+
+        # Sum Order-level commissions
+        order_result = await db.execute(
+            select(func.coalesce(func.sum(Order.commission), 0)).where(
+                Order.symbol == pos.symbol,
+                Order.created_at >= pos.opened_at,
+                Order.created_at <= pos.closed_at,
+            )
+        )
+        order_fees = float(order_result.scalar_one())
+
+        # Sum Trade-level commissions (may differ from order-level, e.g. partial fills)
+        trade_result = await db.execute(
+            select(func.coalesce(func.sum(Trade.commission), 0)).where(
+                Trade.symbol == pos.symbol,
+                Trade.executed_at >= pos.opened_at,
+                Trade.executed_at <= pos.closed_at,
+            )
+        )
+        trade_fees = float(trade_result.scalar_one())
+
+        # Use the higher of the two to avoid under-reporting fees.
+        # Order.commission is the exchange-reported total; Trade.commission is per-fill.
+        # They should match, but if they diverge we take the conservative (larger) value.
+        return max(order_fees, trade_fees)
+
     async def generate_annual_report(self, db: AsyncSession, year: int) -> TaxSummary:
         """Generate tax summary for a given year."""
         # Get all closed positions for the year
@@ -46,7 +83,7 @@ class TaxReporter:
 
         for pos in positions:
             pnl = float(pos.realized_pnl or 0)
-            fees = 0.0  # commission tracked at order level
+            fees = await self._sum_commissions_for_position(db, pos)
             month = pos.closed_at.month if pos.closed_at else 0
 
             if pnl > 0:
@@ -92,6 +129,8 @@ class TaxReporter:
 
         rows = []
         for pos in positions:
+            commission = await self._sum_commissions_for_position(db, pos)
+            realized = float(pos.realized_pnl or 0)
             rows.append({
                 "date_opened": pos.created_at.isoformat() if pos.created_at else "",
                 "date_closed": pos.closed_at.isoformat() if pos.closed_at else "",
@@ -100,9 +139,9 @@ class TaxReporter:
                 "quantity": float(pos.quantity or 0),
                 "entry_price": float(pos.entry_price or 0),
                 "exit_price": float(pos.current_price or 0),
-                "realized_pnl": float(pos.realized_pnl or 0),
-                "commission": 0.0,
-                "net_pnl": float(pos.realized_pnl or 0),
+                "realized_pnl": realized,
+                "commission": round(commission, 8),
+                "net_pnl": round(realized - commission, 8),
             })
 
         return rows

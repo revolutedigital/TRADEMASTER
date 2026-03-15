@@ -1,4 +1,4 @@
-"""Event sourcing: append-only event store for complete audit trail and state replay."""
+"""Event sourcing: append-only event store with PostgreSQL persistence."""
 import json
 import uuid
 from datetime import datetime, timezone
@@ -26,10 +26,12 @@ class DomainEvent:
 
 
 class EventStore:
-    """In-memory event store with persistence hooks.
+    """Event store with in-memory cache and PostgreSQL persistence.
 
-    Stores all domain events for replay, audit, and debugging.
-    Can be backed by PostgreSQL for production persistence.
+    Events are kept in-memory for fast reads and also persisted to the
+    ``stored_events`` table for durability across restarts.
+    Persistence is best-effort: if the DB is unavailable the event is
+    still stored in memory and processing continues.
     """
 
     def __init__(self):
@@ -37,6 +39,82 @@ class EventStore:
         self._snapshots: dict[str, dict] = {}  # aggregate_id -> snapshot
         self._handlers: dict[str, list] = {}  # event_type -> handlers
         self._snapshot_interval = 100  # Snapshot every N events per aggregate
+
+    # ------------------------------------------------------------------
+    # Persistence helpers
+    # ------------------------------------------------------------------
+
+    async def _save_to_db(self, event: DomainEvent) -> None:
+        """Persist a single event to PostgreSQL (best-effort)."""
+        try:
+            from app.models.base import async_session_factory
+            from app.models.event import StoredEvent
+
+            async with async_session_factory() as session:
+                row = StoredEvent(
+                    event_id=event.event_id,
+                    event_type=event.event_type,
+                    aggregate_type=event.aggregate_type,
+                    aggregate_id=event.aggregate_id,
+                    data=json.dumps(event.data),
+                    metadata_=json.dumps(event.metadata),
+                    version=event.version,
+                    event_timestamp=event.timestamp,
+                )
+                session.add(row)
+                await session.commit()
+        except Exception as e:
+            logger.warning("event_persist_failed", event_id=event.event_id, error=str(e))
+
+    async def load_from_db(self, limit: int = 10_000) -> int:
+        """Load recent events from PostgreSQL into in-memory store.
+
+        Call this once at startup to rehydrate state.
+        Returns the number of events loaded.
+        """
+        try:
+            from app.models.base import async_session_factory
+            from app.models.event import StoredEvent
+            from sqlalchemy import select
+
+            async with async_session_factory() as session:
+                stmt = (
+                    select(StoredEvent)
+                    .order_by(StoredEvent.id.desc())
+                    .limit(limit)
+                )
+                result = await session.execute(stmt)
+                rows = list(result.scalars().all())
+
+            # Insert in chronological order (rows are newest-first)
+            loaded = 0
+            existing_ids = {e.event_id for e in self._events}
+            for row in reversed(rows):
+                if row.event_id in existing_ids:
+                    continue
+                event = DomainEvent(
+                    event_id=row.event_id,
+                    event_type=row.event_type,
+                    aggregate_type=row.aggregate_type,
+                    aggregate_id=row.aggregate_id,
+                    data=json.loads(row.data),
+                    metadata=json.loads(row.metadata_) if row.metadata_ else {},
+                    version=row.version,
+                    timestamp=row.event_timestamp,
+                )
+                self._events.append(event)
+                existing_ids.add(row.event_id)
+                loaded += 1
+
+            logger.info("events_loaded_from_db", count=loaded)
+            return loaded
+        except Exception as e:
+            logger.warning("events_load_from_db_failed", error=str(e))
+            return 0
+
+    # ------------------------------------------------------------------
+    # Core API
+    # ------------------------------------------------------------------
 
     def append(
         self,
@@ -46,7 +124,7 @@ class EventStore:
         data: dict,
         metadata: dict | None = None,
     ) -> DomainEvent:
-        """Append a new event to the store."""
+        """Append a new event to the store (in-memory + async DB persist)."""
         # Get version for this aggregate
         agg_events = [e for e in self._events if e.aggregate_id == aggregate_id]
         version = len(agg_events) + 1
@@ -63,6 +141,15 @@ class EventStore:
         )
 
         self._events.append(event)
+
+        # Best-effort async persist to PostgreSQL
+        try:
+            import asyncio
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._save_to_db(event))
+        except RuntimeError:
+            # No running event loop (e.g., during tests) — skip DB persist
+            logger.debug("event_persist_skipped_no_loop", event_id=event.event_id)
 
         # Notify handlers
         for handler in self._handlers.get(event_type, []):

@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     admin_username: str = Field(default="admin")
     admin_password: str = Field(default="")
 
+    # TOTP two-factor authentication (optional)
+    # Set totp_secret via environment to enable 2FA for the admin account.
+    totp_enabled: bool = False
+    totp_secret: str = ""  # Base32-encoded shared secret
+
     # Paper trading mode (no real Binance orders)
     paper_mode: bool = True
 

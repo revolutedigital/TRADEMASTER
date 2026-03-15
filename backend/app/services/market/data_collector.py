@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
@@ -91,7 +92,8 @@ class MarketDataCollector:
     ) -> OHLCV | None:
         """Store a single kline (from WebSocket) into the database.
 
-        Only stores closed candles.
+        Only stores closed candles. Uses INSERT ... ON CONFLICT DO NOTHING
+        to avoid an extra SELECT for duplicate checking.
         """
         if not data.get("is_closed"):
             return None
@@ -114,33 +116,33 @@ class MarketDataCollector:
             )
 
         open_time = _strip_tz(pd.Timestamp(data["open_time"], unit="ms", tz="UTC").to_pydatetime())
+        close_time = _strip_tz(pd.Timestamp(data["close_time"], unit="ms", tz="UTC").to_pydatetime())
 
-        # Dedup: skip if candle with same symbol+interval+open_time already exists
-        existing = await db.execute(
-            select(OHLCV).where(
-                OHLCV.symbol == symbol,
-                OHLCV.interval == interval,
-                OHLCV.open_time == open_time,
-            ).limit(1)
-        )
-        if existing.scalar_one_or_none():
-            return None
+        values = {
+            "symbol": symbol,
+            "interval": interval,
+            "open_time": open_time,
+            "open": data["open"],
+            "high": data["high"],
+            "low": data["low"],
+            "close": data["close"],
+            "volume": data["volume"],
+            "close_time": close_time,
+            "quote_volume": data.get("quote_volume", 0),
+            "trade_count": data.get("trade_count", 0),
+        }
 
-        candle = OHLCV(
-            symbol=symbol,
-            interval=interval,
-            open_time=open_time,
-            open=data["open"],
-            high=data["high"],
-            low=data["low"],
-            close=data["close"],
-            volume=data["volume"],
-            close_time=_strip_tz(pd.Timestamp(data["close_time"], unit="ms", tz="UTC").to_pydatetime()),
-            quote_volume=data.get("quote_volume", 0),
-            trade_count=data.get("trade_count", 0),
+        stmt = (
+            pg_insert(OHLCV)
+            .values(values)
+            .on_conflict_do_nothing(
+                index_elements=["symbol", "interval", "open_time"],
+            )
+            .returning(OHLCV)
         )
-        db.add(candle)
-        return candle
+        result = await db.execute(stmt)
+        row = result.scalar_one_or_none()
+        return row
 
     async def _insert_candles(
         self,
@@ -149,38 +151,41 @@ class MarketDataCollector:
         symbol: str,
         interval: str,
     ) -> int:
-        """Bulk insert candles from a DataFrame, skipping duplicates."""
-        count = 0
-        for _, row in df.iterrows():
-            # Check for existing candle to avoid duplicates
-            open_time = _strip_tz(row["open_time"].to_pydatetime())
-            existing = await db.execute(
-                select(OHLCV).where(
-                    OHLCV.symbol == symbol,
-                    OHLCV.interval == interval,
-                    OHLCV.open_time == open_time,
-                ).limit(1)
-            )
-            if existing.scalar_one_or_none():
-                continue
+        """Bulk insert candles from a DataFrame, skipping duplicates.
 
-            candle = OHLCV(
-                symbol=symbol,
-                interval=interval,
-                open_time=open_time,
-                open=float(row["open"]),
-                high=float(row["high"]),
-                low=float(row["low"]),
-                close=float(row["close"]),
-                volume=float(row["volume"]),
-                close_time=_strip_tz(row["close_time"].to_pydatetime()),
-                quote_volume=float(row["quote_volume"]),
-                trade_count=int(row["trade_count"]),
-            )
-            db.add(candle)
-            count += 1
+        Uses PostgreSQL INSERT ... ON CONFLICT DO NOTHING against the
+        unique index on (symbol, interval, open_time) so we avoid the
+        N+1 SELECT-per-row pattern.
+        """
+        if df.empty:
+            return 0
 
-        return count
+        rows = [
+            {
+                "symbol": symbol,
+                "interval": interval,
+                "open_time": _strip_tz(row["open_time"].to_pydatetime()),
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+                "volume": float(row["volume"]),
+                "close_time": _strip_tz(row["close_time"].to_pydatetime()),
+                "quote_volume": float(row["quote_volume"]),
+                "trade_count": int(row["trade_count"]),
+            }
+            for _, row in df.iterrows()
+        ]
+
+        stmt = (
+            pg_insert(OHLCV)
+            .values(rows)
+            .on_conflict_do_nothing(
+                index_elements=["symbol", "interval", "open_time"],
+            )
+        )
+        result = await db.execute(stmt)
+        return result.rowcount
 
     async def get_latest_candles(
         self,

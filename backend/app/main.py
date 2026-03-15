@@ -54,11 +54,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         import app.models.journal  # noqa: F401
         import app.models.lineage  # noqa: F401
         import app.models.user  # noqa: F401
+        import app.models.event  # noqa: F401
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         logger.info("database_tables_ready")
     except Exception as e:
         logger.warning("database_setup_failed", error=str(e))
+
+    # --- Phase 0b: Rehydrate event store from PostgreSQL ---
+    try:
+        from app.core.event_store import event_store
+        loaded = await event_store.load_from_db()
+        logger.info("event_store_rehydrated", events_loaded=loaded)
+    except Exception as e:
+        logger.warning("event_store_rehydrate_failed", error=str(e))
 
     # --- Phase 1: Connect infrastructure ---
     redis_ok = False
@@ -68,6 +77,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("redis_connected")
     except Exception as e:
         logger.warning("redis_connection_failed", error=str(e))
+
+    # --- Phase 1b: Initialize feature flags (Redis-backed) ---
+    try:
+        from app.core.feature_flags import feature_flags
+        await feature_flags.init()
+        logger.info("feature_flags_initialized")
+    except Exception as e:
+        logger.warning("feature_flags_init_failed", error=str(e))
 
     # --- Phase 2: Connect to Binance ---
     binance_ok = False

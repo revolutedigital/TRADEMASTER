@@ -1,9 +1,12 @@
 """Synthetic kline generator for when Binance WebSocket is unavailable.
 
-Reads live prices from Redis (fed by frontend WebSocket) and builds
-1-minute candles, publishing KLINE_UPDATE events to the event bus.
-This allows the trading engine to function even when the backend
-cannot connect to Binance directly (e.g., geo-restriction).
+Reads live prices from Redis (fed by price_fetcher or frontend) and builds
+15-minute candles, publishing KLINE_UPDATE events to the event bus.
+15m timeframe chosen because:
+- CoinGecko/CryptoCompare update ~every 60s with small variance
+- 1m candles are flat/noisy → useless for technical indicators
+- 15m gives ~180 price samples per candle → real OHLC range
+- 30 candles = 7.5 hours to first signal (acceptable for swing trading)
 """
 
 import asyncio
@@ -18,14 +21,13 @@ logger = get_logger(__name__)
 
 
 class SyntheticKlineGenerator:
-    """Builds candles from Redis-cached spot prices and publishes kline events."""
+    """Builds 15-minute candles from Redis-cached spot prices."""
 
     def __init__(self) -> None:
         self._running: bool = False
-        # Track current candle state per symbol
         self._candles: dict[str, dict] = {}
-        # Publish interval in seconds (1-minute candles)
-        self._interval_seconds: int = 60
+        self._interval_seconds: int = 900  # 15 minutes
+        self._interval_label: str = "15m"
 
     async def start(self) -> None:
         """Start the synthetic kline generation loop."""
@@ -33,6 +35,7 @@ class SyntheticKlineGenerator:
         logger.info(
             "synthetic_kline_generator_starting",
             symbols=settings.symbols_list,
+            interval=self._interval_label,
             interval_seconds=self._interval_seconds,
         )
 
@@ -57,7 +60,6 @@ class SyntheticKlineGenerator:
             return
 
         now_ms = int(time.time() * 1000)
-        # Align to 1-minute boundaries
         candle_start_ms = (now_ms // (self._interval_seconds * 1000)) * (self._interval_seconds * 1000)
         candle_end_ms = candle_start_ms + (self._interval_seconds * 1000) - 1
 
@@ -73,16 +75,14 @@ class SyntheticKlineGenerator:
 
                 candle = self._candles.get(symbol)
 
-                # New candle period — close the old one and start fresh
+                # New candle period — close old, start fresh
                 if candle is None or candle["open_time"] != candle_start_ms:
-                    # Close the previous candle if it exists
                     if candle is not None:
                         await self._close_candle(symbol, candle)
 
-                    # Start new candle
                     self._candles[symbol] = {
                         "symbol": symbol,
-                        "interval": "1m",
+                        "interval": self._interval_label,
                         "open_time": candle_start_ms,
                         "close_time": candle_end_ms,
                         "open": price,
@@ -95,7 +95,6 @@ class SyntheticKlineGenerator:
                         "tick_count": 1,
                     }
                 else:
-                    # Update existing candle
                     candle["high"] = max(candle["high"], price)
                     candle["low"] = min(candle["low"], price)
                     candle["close"] = price
@@ -110,7 +109,7 @@ class SyntheticKlineGenerator:
             type=EventType.KLINE_UPDATE,
             data={
                 "symbol": candle["symbol"],
-                "interval": "1m",
+                "interval": self._interval_label,
                 "is_closed": True,
                 "open_time": candle["open_time"],
                 "open": candle["open"],
@@ -125,13 +124,21 @@ class SyntheticKlineGenerator:
             source="synthetic_generator",
         )
         await event_bus.publish(event)
+
+        # Log range for monitoring candle quality
+        if candle["high"] > 0:
+            range_pct = (candle["high"] - candle["low"]) / candle["high"] * 100
+        else:
+            range_pct = 0
         logger.info(
             "synthetic_candle_closed",
             symbol=symbol,
-            open=candle["open"],
-            high=candle["high"],
-            low=candle["low"],
-            close=candle["close"],
+            interval=self._interval_label,
+            open=round(candle["open"], 2),
+            high=round(candle["high"], 2),
+            low=round(candle["low"], 2),
+            close=round(candle["close"], 2),
+            range_pct=round(range_pct, 4),
             ticks=candle["tick_count"],
         )
 

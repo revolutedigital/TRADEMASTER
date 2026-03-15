@@ -57,6 +57,8 @@ class DrawdownCircuitBreaker:
         self._initial_equity: float = 0
         self._pnl_history: list[DrawdownSnapshot] = []
         self._halted_manually: bool = False
+        self._halted_at: datetime | None = None
+        self._auto_recovery_hours: int = 24
 
     @property
     def state(self) -> CircuitBreakerState:
@@ -101,6 +103,8 @@ class DrawdownCircuitBreaker:
             self._peak_equity = data["peak_equity"]
             self._initial_equity = data["initial_equity"]
             self._halted_manually = data.get("halted_manually", False)
+            halted_at_str = data.get("halted_at")
+            self._halted_at = datetime.fromisoformat(halted_at_str) if halted_at_str else None
 
             # Restore P&L history
             self._pnl_history = [
@@ -137,6 +141,7 @@ class DrawdownCircuitBreaker:
                 "peak_equity": self._peak_equity,
                 "initial_equity": self._initial_equity,
                 "halted_manually": self._halted_manually,
+                "halted_at": self._halted_at.isoformat() if self._halted_at else None,
                 "pnl_history": [
                     {"timestamp": s.timestamp.isoformat(), "pnl": s.pnl}
                     for s in history
@@ -155,6 +160,20 @@ class DrawdownCircuitBreaker:
             return CircuitBreakerState.HALTED
 
         now = datetime.now(timezone.utc)
+
+        # Auto-recovery: if HALTED for > 24h, reset to REDUCED (50% size)
+        if self._state == CircuitBreakerState.HALTED and self._halted_at:
+            elapsed = (now - self._halted_at).total_seconds() / 3600
+            if elapsed >= self._auto_recovery_hours:
+                logger.info(
+                    "circuit_breaker_auto_recovery",
+                    halted_hours=round(elapsed, 1),
+                    equity=current_equity,
+                )
+                self._state = CircuitBreakerState.REDUCED
+                self._halted_at = None
+                self._peak_equity = current_equity  # Reset peak to current
+
         self._peak_equity = max(self._peak_equity, current_equity)
 
         # Record P&L snapshot
@@ -177,6 +196,8 @@ class DrawdownCircuitBreaker:
 
         # Evaluate thresholds (most severe first)
         if total_dd >= self.max_total_drawdown:
+            if self._state != CircuitBreakerState.HALTED:
+                self._halted_at = now  # Record when we entered HALTED
             self._state = CircuitBreakerState.HALTED
         elif daily_dd >= self.max_daily_drawdown or weekly_dd >= self.max_weekly_drawdown:
             self._state = CircuitBreakerState.PAUSED

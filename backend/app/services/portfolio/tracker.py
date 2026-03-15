@@ -193,17 +193,20 @@ class PortfolioTracker:
                         new_stop=round(new_stop, 2),
                     )
 
-            # Check time-based exit
+            # Time-based exit: close ALL positions after max hold time
+            # Both winners and losers — forces discipline, prevents stale positions
             if stop_loss_calculator.should_time_exit(pos.opened_at):
-                # Only exit if position is not in profit
                 if pos.side == "LONG":
-                    in_profit = price > float(pos.entry_price)
+                    pnl = (price - float(pos.entry_price)) * float(pos.quantity)
                 else:
-                    in_profit = price < float(pos.entry_price)
-
-                if not in_profit:
-                    logger.info("time_exit_triggered", position_id=pos.id)
-                    to_close.append((pos, price))
+                    pnl = (float(pos.entry_price) - price) * float(pos.quantity)
+                logger.info(
+                    "time_exit_triggered",
+                    position_id=pos.id,
+                    symbol=pos.symbol,
+                    pnl=round(pnl, 2),
+                )
+                to_close.append((pos, price))
 
         # Close positions
         closed = []

@@ -374,10 +374,13 @@ async def engine_status(_user: dict = Depends(require_auth)):
         "engine_running": engine._running,
         "price_fetcher_active": price_fetcher._running,
         "price_fetcher_source": price_fetcher._source,
+        "candle_interval": synthetic_kline_generator._interval_label,
         "websocket_streams": len(binance_ws_manager._tasks),
         "websocket_active": binance_ws_manager._running,
         "synthetic_kline_active": synthetic_kline_generator._running,
         "synthetic_candles_tracking": list(synthetic_kline_generator._candles.keys()),
+        "daily_trade_count": dict(engine._daily_trade_count),
+        "max_trades_per_day": 6,
         "circuit_breaker": cb.get_status(),
         "scheduled_tasks": scheduler.get_status(),
     }

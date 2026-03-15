@@ -27,7 +27,7 @@ class StopLossCalculator:
         trailing_activation_pct: float = 0.015,
         trailing_distance_pct: float = 0.01,
         risk_reward_ratio: float = 2.0,
-        time_exit_hours: int = 1,
+        time_exit_hours: int = 4,
     ):
         self.atr_multiplier = atr_multiplier
         self.trailing_activation_pct = trailing_activation_pct

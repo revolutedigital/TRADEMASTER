@@ -1,78 +1,100 @@
-"""ML/AI model management and monitoring endpoints."""
-
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-
+"""ML model management and explainability endpoints."""
+from fastapi import APIRouter, Depends, HTTPException
+from app.config import settings
+from app.dependencies import require_auth
 from app.core.logging import get_logger
-from app.dependencies import get_db, require_auth
 
 logger = get_logger(__name__)
+
 router = APIRouter()
-
-
-@router.get("/models")
-async def list_models(db: AsyncSession = Depends(get_db), _user: dict = Depends(require_auth)):
-    """List all registered ML models and their metadata."""
-    try:
-        from app.services.ml.model_registry import model_registry
-        models = await model_registry.list_models(db)
-        return {"models": models}
-    except Exception as e:
-        logger.warning("list_models_failed", error=str(e))
-        return {"models": []}
 
 
 @router.get("/feature-importance/{symbol}")
 async def get_feature_importance(symbol: str, _user: dict = Depends(require_auth)):
-    """Get feature importance rankings for a symbol's model."""
-    try:
-        from app.services.ml.explainability import model_explainer
-        result = model_explainer.get_feature_importance(symbol.upper())
-        return result
-    except Exception as e:
-        logger.warning("feature_importance_failed", symbol=symbol, error=str(e))
-        return {
-            "symbol": symbol.upper(),
-            "features": [],
-            "method": "unavailable",
-            "error": str(e),
-        }
+    """Get feature importance for a symbol's ML models."""
+    symbol = symbol.upper()
+    if symbol not in settings.symbols_list:
+        raise HTTPException(status_code=404, detail=f"Symbol {symbol} not configured")
+
+    from app.services.ml.pipeline import ml_pipeline
+
+    importance = {}
+
+    # Try XGBoost importance
+    models = getattr(ml_pipeline, '_models', {})
+    symbol_models = models.get(symbol, {})
+
+    if 'xgboost' in symbol_models:
+        xgb = symbol_models['xgboost']
+        if hasattr(xgb, '_model') and xgb._model is not None:
+            try:
+                booster = xgb._model.get_booster()
+                raw = booster.get_score(importance_type='gain')
+                total = sum(raw.values()) or 1
+                importance['xgboost'] = {k: round(v / total, 4) for k, v in
+                                         sorted(raw.items(), key=lambda x: x[1], reverse=True)[:15]}
+            except Exception as e:
+                importance['xgboost'] = {"error": str(e)}
+
+    return {
+        "symbol": symbol,
+        "feature_importance": importance,
+        "models_loaded": list(symbol_models.keys()) if symbol_models else [],
+    }
+
+
+@router.get("/calibration/{symbol}")
+async def get_calibration_stats(symbol: str, _user: dict = Depends(require_auth)):
+    """Get confidence calibration statistics for a symbol."""
+    from app.services.ml.calibration import get_calibrator
+
+    calibrator = get_calibrator(symbol.upper())
+    return {
+        "symbol": symbol.upper(),
+        "calibration_stats": calibrator.get_calibration_stats(),
+    }
+
+
+@router.get("/ensemble/weights")
+async def get_ensemble_weights(_user: dict = Depends(require_auth)):
+    """Get current ensemble model weights."""
+    from app.services.ml.ensemble import ensemble_voter
+    return {
+        "weights": ensemble_voter._weights,
+        "default_weights": ensemble_voter.DEFAULT_WEIGHTS,
+    }
 
 
 @router.get("/drift/{symbol}")
-async def get_model_drift(symbol: str):
-    """Check for feature drift in a symbol's model."""
+async def get_drift_status(symbol: str, _user: dict = Depends(require_auth)):
+    """Get model drift detection status for a symbol."""
+    symbol = symbol.upper()
     try:
-        from app.services.ml.pipeline import prediction_pipeline
-        drift_status = prediction_pipeline.check_drift(symbol.upper())
-        return drift_status
-    except Exception as e:
-        logger.warning("drift_check_failed", symbol=symbol, error=str(e))
+        from app.services.ml.drift_detector import drift_detector
+        status = drift_detector.get_status()
         return {
-            "symbol": symbol.upper(),
-            "drift_detected": False,
-            "status": "check_unavailable",
-        }
-
-
-@router.get("/performance")
-async def get_model_performance():
-    """Get overall ML model performance metrics."""
-    try:
-        from app.core.metrics import metrics
-        return {
-            "inference_count": metrics.signals_generated._value if hasattr(metrics.signals_generated, '_value') else 0,
-            "status": "operational",
+            "symbol": symbol,
+            "drift_status": status,
         }
     except Exception as e:
-        return {"status": "unavailable", "error": str(e)}
+        return {"symbol": symbol, "drift_status": {"error": str(e)}}
 
 
-@router.get("/automl/history")
-async def get_automl_history():
-    """Get AutoML evaluation history."""
-    try:
-        from app.services.ml.automl import auto_model_selector
-        return {"history": auto_model_selector.get_history()}
-    except Exception as e:
-        return {"history": [], "error": str(e)}
+@router.get("/models")
+async def list_models(_user: dict = Depends(require_auth)):
+    """List all loaded ML models and their status."""
+    from app.services.ml.pipeline import ml_pipeline
+
+    models = getattr(ml_pipeline, '_models', {})
+    result = {}
+
+    for symbol, symbol_models in models.items():
+        result[symbol] = {
+            model_type: {
+                "loaded": True,
+                "type": type(model).__name__,
+            }
+            for model_type, model in symbol_models.items()
+        }
+
+    return {"models": result, "total_symbols": len(result)}

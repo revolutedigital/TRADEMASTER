@@ -1,80 +1,111 @@
-"""Tax reporting service: FIFO cost-basis calculation."""
-from decimal import Decimal
+"""Tax reporting for trading activity."""
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
+from decimal import Decimal
+
+from sqlalchemy import select, extract
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
+from app.models.trade import Trade
+from app.models.portfolio import Position
 
 logger = get_logger(__name__)
 
 
 @dataclass
-class TaxableEvent:
-    date: datetime
-    symbol: str
-    side: str
-    quantity: Decimal
-    price: Decimal
-    cost_basis: Decimal
-    realized_pnl: Decimal
-    holding_period_days: int
-    is_short_term: bool
+class TaxSummary:
+    year: int
+    total_realized_gains: float
+    total_realized_losses: float
+    net_realized: float
+    total_trades: int
+    total_fees: float
+    net_after_fees: float
+    trades_by_month: dict[int, dict]
 
 
 class TaxReporter:
-    """Calculate realized gains/losses using FIFO method."""
+    """Generate tax reports using FIFO method for cost basis."""
 
-    def calculate_fifo_gains(self, trades: list[dict]) -> list[TaxableEvent]:
-        """Apply FIFO to calculate cost basis and realized gains."""
-        lots: dict[str, list[dict]] = {}
-        events: list[TaxableEvent] = []
+    async def generate_annual_report(self, db: AsyncSession, year: int) -> TaxSummary:
+        """Generate tax summary for a given year."""
+        # Get all closed positions for the year
+        result = await db.execute(
+            select(Position).where(
+                Position.is_open == False,
+                extract("year", Position.closed_at) == year,
+            )
+        )
+        positions = result.scalars().all()
 
-        for trade in sorted(trades, key=lambda t: t["timestamp"]):
-            symbol = trade["symbol"]
-            side = trade["side"]
-            qty = Decimal(str(trade["quantity"]))
-            price = Decimal(str(trade["price"]))
+        total_gains = 0.0
+        total_losses = 0.0
+        total_fees = 0.0
+        trades_by_month: dict[int, dict] = {}
 
-            if side == "BUY":
-                lots.setdefault(symbol, []).append({"qty": qty, "price": price, "date": trade["timestamp"]})
-            elif side == "SELL" and symbol in lots:
-                remaining = qty
-                while remaining > 0 and lots.get(symbol):
-                    lot = lots[symbol][0]
-                    matched = min(remaining, lot["qty"])
-                    cost_basis = lot["price"] * matched
-                    proceeds = price * matched
-                    pnl = proceeds - cost_basis
-                    days = (trade["timestamp"] - lot["date"]).days
+        for pos in positions:
+            pnl = float(pos.realized_pnl or 0)
+            fees = 0.0  # commission tracked at order level
+            month = pos.closed_at.month if pos.closed_at else 0
 
-                    events.append(TaxableEvent(
-                        date=trade["timestamp"],
-                        symbol=symbol,
-                        side="SELL",
-                        quantity=matched,
-                        price=price,
-                        cost_basis=cost_basis,
-                        realized_pnl=pnl,
-                        holding_period_days=days,
-                        is_short_term=days < 365,
-                    ))
+            if pnl > 0:
+                total_gains += pnl
+            else:
+                total_losses += abs(pnl)
 
-                    lot["qty"] -= matched
-                    remaining -= matched
-                    if lot["qty"] <= 0:
-                        lots[symbol].pop(0)
+            total_fees += fees
 
-        return events
+            if month not in trades_by_month:
+                trades_by_month[month] = {"gains": 0, "losses": 0, "trades": 0, "fees": 0}
 
-    def generate_summary(self, events: list[TaxableEvent]) -> dict:
-        total_short = sum(e.realized_pnl for e in events if e.is_short_term)
-        total_long = sum(e.realized_pnl for e in events if not e.is_short_term)
-        return {
-            "total_events": len(events),
-            "short_term_gains": float(total_short),
-            "long_term_gains": float(total_long),
-            "total_gains": float(total_short + total_long),
-        }
+            trades_by_month[month]["trades"] += 1
+            trades_by_month[month]["fees"] += fees
+            if pnl > 0:
+                trades_by_month[month]["gains"] += pnl
+            else:
+                trades_by_month[month]["losses"] += abs(pnl)
+
+        net = total_gains - total_losses
+
+        return TaxSummary(
+            year=year,
+            total_realized_gains=round(total_gains, 2),
+            total_realized_losses=round(total_losses, 2),
+            net_realized=round(net, 2),
+            total_trades=len(positions),
+            total_fees=round(total_fees, 2),
+            net_after_fees=round(net - total_fees, 2),
+            trades_by_month={k: {kk: round(vv, 2) for kk, vv in v.items()}
+                           for k, v in sorted(trades_by_month.items())},
+        )
+
+    async def generate_csv_data(self, db: AsyncSession, year: int) -> list[dict]:
+        """Generate CSV-compatible data for all trades in a year."""
+        result = await db.execute(
+            select(Position).where(
+                Position.is_open == False,
+                extract("year", Position.closed_at) == year,
+            ).order_by(Position.closed_at)
+        )
+        positions = result.scalars().all()
+
+        rows = []
+        for pos in positions:
+            rows.append({
+                "date_opened": pos.created_at.isoformat() if pos.created_at else "",
+                "date_closed": pos.closed_at.isoformat() if pos.closed_at else "",
+                "symbol": pos.symbol,
+                "side": pos.side,
+                "quantity": float(pos.quantity or 0),
+                "entry_price": float(pos.entry_price or 0),
+                "exit_price": float(pos.current_price or 0),
+                "realized_pnl": float(pos.realized_pnl or 0),
+                "commission": 0.0,
+                "net_pnl": float(pos.realized_pnl or 0),
+            })
+
+        return rows
 
 
 tax_reporter = TaxReporter()

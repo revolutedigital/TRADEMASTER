@@ -18,6 +18,7 @@ from app.core.metrics import metrics
 from app.core.idempotency import IdempotencyMiddleware
 from app.core.tracing import setup_tracing
 from app.api.v1.router import api_router
+from app.api.v1 import data_quality as data_quality_router
 from app.api.websocket.streams import router as ws_router
 from app.core.rasp import RASPMiddleware
 from app.core.honeypot import honeypot_router
@@ -383,6 +384,7 @@ def create_app() -> FastAPI:
 
     # API routes
     app.include_router(api_router, prefix="/api/v1")
+    app.include_router(data_quality_router.router, prefix="/api/v1", tags=["data-quality"])
 
     # API v2 routes
     from app.api.v2.router import v2_router

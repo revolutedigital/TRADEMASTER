@@ -1,10 +1,9 @@
-"""Price alert model."""
-from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime
-from app.models.base import Base
+"""Price alert models."""
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Text
+from app.models.base import Base, TimestampMixin
 
 
-class PriceAlert(Base):
+class PriceAlert(Base, TimestampMixin):
     __tablename__ = "price_alerts"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -12,6 +11,6 @@ class PriceAlert(Base):
     condition = Column(String(10), nullable=False)  # "above" or "below"
     target_price = Column(Float, nullable=False)
     is_triggered = Column(Boolean, default=False, nullable=False)
-    triggered_at = Column(DateTime, nullable=True)
+    triggered_at = Column(DateTime(timezone=True), nullable=True)
+    notes = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)

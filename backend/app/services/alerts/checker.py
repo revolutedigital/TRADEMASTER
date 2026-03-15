@@ -1,5 +1,4 @@
-"""Price alert checker - evaluates alerts against current prices."""
-
+"""Price alert monitoring service."""
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -13,74 +12,80 @@ logger = get_logger(__name__)
 
 
 class AlertChecker:
-    """Checks price alerts against current market prices and triggers notifications."""
+    """Check price alerts against current market prices."""
 
-    async def check_alerts(self, db: AsyncSession, current_prices: dict[str, float]) -> list[dict]:
-        """
-        Check all active alerts against current prices.
-
-        Args:
-            db: Database session
-            current_prices: Dict of symbol -> current price
-
-        Returns:
-            List of triggered alert details
-        """
-        triggered = []
-
+    async def check_alerts(self, db: AsyncSession, current_prices: dict[str, Decimal]) -> list[PriceAlert]:
+        """Check all active alerts against current prices. Returns triggered alerts."""
         result = await db.execute(
             select(PriceAlert).where(
-                PriceAlert.is_active == True,  # noqa: E712
-                PriceAlert.is_triggered == False,  # noqa: E712
+                PriceAlert.is_active == True,
+                PriceAlert.is_triggered == False,
             )
         )
         alerts = result.scalars().all()
+        triggered = []
 
         for alert in alerts:
             price = current_prices.get(alert.symbol)
             if price is None:
                 continue
 
+            price_float = float(price)
             should_trigger = False
-            if alert.condition == "above" and price >= float(alert.target_price):
+
+            if alert.condition == "above" and price_float >= alert.target_price:
                 should_trigger = True
-            elif alert.condition == "below" and price <= float(alert.target_price):
+            elif alert.condition == "below" and price_float <= alert.target_price:
                 should_trigger = True
 
             if should_trigger:
-                await db.execute(
-                    update(PriceAlert)
-                    .where(PriceAlert.id == alert.id)
-                    .values(
-                        is_triggered=True,
-                        triggered_at=datetime.now(timezone.utc),
-                    )
-                )
-                triggered.append({
-                    "alert_id": alert.id,
-                    "symbol": alert.symbol,
-                    "condition": alert.condition,
-                    "target_price": float(alert.target_price),
-                    "current_price": price,
-                    "triggered_at": datetime.now(timezone.utc).isoformat(),
-                })
-                logger.info("alert_triggered", alert_id=alert.id, symbol=alert.symbol,
-                           condition=alert.condition, target=float(alert.target_price), price=price)
+                alert.is_triggered = True
+                alert.triggered_at = datetime.now(timezone.utc)
+                triggered.append(alert)
+                logger.info("alert_triggered", symbol=alert.symbol,
+                           condition=alert.condition, target=alert.target_price,
+                           current=price_float)
 
         if triggered:
             await db.commit()
 
         return triggered
 
-    async def get_active_count(self, db: AsyncSession) -> int:
-        """Get count of active, untriggered alerts."""
-        result = await db.execute(
-            select(PriceAlert).where(
-                PriceAlert.is_active == True,  # noqa: E712
-                PriceAlert.is_triggered == False,  # noqa: E712
-            )
+    async def create_alert(
+        self, db: AsyncSession, symbol: str, condition: str,
+        target_price: float, notes: str | None = None,
+    ) -> PriceAlert:
+        """Create a new price alert."""
+        if condition not in ("above", "below"):
+            raise ValueError("condition must be 'above' or 'below'")
+
+        alert = PriceAlert(
+            symbol=symbol.upper(),
+            condition=condition,
+            target_price=target_price,
+            notes=notes,
         )
-        return len(result.scalars().all())
+        db.add(alert)
+        await db.commit()
+        await db.refresh(alert)
+        logger.info("alert_created", symbol=symbol, condition=condition, target=target_price)
+        return alert
+
+    async def get_alerts(self, db: AsyncSession, active_only: bool = True) -> list[PriceAlert]:
+        """Get all alerts, optionally filtered to active only."""
+        query = select(PriceAlert).order_by(PriceAlert.created_at.desc())
+        if active_only:
+            query = query.where(PriceAlert.is_active == True)
+        result = await db.execute(query)
+        return list(result.scalars().all())
+
+    async def delete_alert(self, db: AsyncSession, alert_id: int) -> bool:
+        """Deactivate an alert."""
+        result = await db.execute(
+            update(PriceAlert).where(PriceAlert.id == alert_id).values(is_active=False)
+        )
+        await db.commit()
+        return result.rowcount > 0
 
 
 alert_checker = AlertChecker()

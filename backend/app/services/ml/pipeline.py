@@ -1,5 +1,7 @@
 """ML inference pipeline orchestrator: features -> models -> signal."""
 
+import hashlib
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -45,6 +47,7 @@ class MLPipeline:
         self._tabular_scaler = None  # For XGBoost
         self._sequence_scaler = None  # For LSTM/Transformer
         self._feature_cols: list[str] = []
+        self._expected_feature_hash: str | None = None
 
     async def load_models(self, symbol: str = "BTCUSDT") -> None:
         """Load trained models and scalers from disk."""
@@ -91,6 +94,16 @@ class MLPipeline:
             self._sequence_scaler = Preprocessor.load_scaler(tabular_scaler_path)
             logger.warning("using_tabular_scaler_for_sequences", symbol=symbol)
 
+        # Load feature governance metadata (if exists)
+        governance_path = SCALERS_DIR / f"governance_{symbol_lower}.json"
+        if governance_path.exists():
+            try:
+                gov = json.loads(governance_path.read_text())
+                self._expected_feature_hash = gov.get("feature_hash")
+                logger.info("feature_governance_loaded", hash=self._expected_feature_hash)
+            except Exception:
+                pass
+
         logger.info("ml_pipeline_loaded", models=list(models.keys()))
 
     async def predict(self, df: pd.DataFrame, symbol: str) -> ModelPrediction | None:
@@ -118,6 +131,18 @@ class MLPipeline:
             return None
 
         feature_cols = feature_engineer.get_feature_columns(df_features)
+
+        # 1b. Validate feature schema against training governance
+        if self._expected_feature_hash:
+            current_hash = hashlib.sha256(",".join(sorted(feature_cols)).encode()).hexdigest()[:16]
+            if current_hash != self._expected_feature_hash:
+                logger.error(
+                    "feature_schema_drift",
+                    expected=self._expected_feature_hash,
+                    actual=current_hash,
+                    n_features=len(feature_cols),
+                )
+                return None
 
         # 2. Prepare inputs for each model type
         features_dict = {}

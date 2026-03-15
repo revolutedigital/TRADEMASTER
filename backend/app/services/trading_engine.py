@@ -72,7 +72,7 @@ class TradingEngine:
                 circuit_breaker.initialize(float(balance))
                 logger.info("circuit_breaker_initialized", equity=float(balance))
             except Exception as e:
-                logger.error("failed_to_get_initial_balance", error=str(e))
+                logger.error("failed_to_get_initial_balance", error=str(e), exc_info=True)
                 circuit_breaker.initialize(10000)  # Fallback
 
         # Load ML models
@@ -103,7 +103,7 @@ class TradingEngine:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error("trading_engine_error", error=str(e))
+                logger.error("trading_engine_error", error=str(e), exc_info=True)
                 await asyncio.sleep(5)
 
         logger.info("trading_engine_stopped")
@@ -356,7 +356,7 @@ class TradingEngine:
         except TradeMasterError as e:
             logger.error("trade_failed", symbol=symbol, error=str(e), code=e.code)
         except Exception as e:
-            logger.error("unexpected_trading_error", symbol=symbol, error=str(e))
+            logger.error("unexpected_trading_error", symbol=symbol, error=str(e), exc_info=True)
 
     async def _check_higher_timeframe(self, symbol: str, action: str) -> bool:
         """Multi-timeframe confirmation: 1h trend must align with 15m signal.
@@ -653,17 +653,17 @@ class TradingEngine:
                         reason=sharpe_status.pause_reason,
                     )
             except Exception as e:
-                logger.warning("sharpe_check_failed", error=str(e))
+                logger.warning("sharpe_check_failed", error=str(e), exc_info=True)
 
             # Auto-retrain models if drift detected (runs with cooldown)
             try:
                 from app.services.ml.drift_detector import drift_detector
                 await drift_detector.auto_retrain_if_needed()
             except Exception as e:
-                logger.warning("drift_check_failed", error=str(e))
+                logger.warning("drift_check_failed", error=str(e), exc_info=True)
 
         except Exception as e:
-            logger.error("position_check_error", error=str(e))
+            logger.error("position_check_error", error=str(e), exc_info=True)
 
 
 trading_engine = TradingEngine()

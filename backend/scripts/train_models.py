@@ -5,6 +5,7 @@ trained models in the database via ModelRegistry.
 """
 
 import asyncio
+import hashlib
 import json
 import sys
 from datetime import datetime, timezone
@@ -62,7 +63,8 @@ async def train_for_symbol(symbol: str, interval: str = "1h"):
     logger.info("features_built", n_features=len(feature_cols))
 
     # 3. Create target
-    preprocessor = Preprocessor(threshold=0.005)
+    # 0.7% threshold = 0.5% min move + 0.2% roundtrip commission (0.1% taker × 2)
+    preprocessor = Preprocessor(threshold=0.007)
     df_features = preprocessor.create_target(df_features, horizon=5)
 
     # Log class distribution
@@ -126,8 +128,30 @@ async def train_for_symbol(symbol: str, interval: str = "1h"):
     scaler_path = SCALERS_DIR / f"scaler_{symbol_lower}.joblib"
     Preprocessor.save_scaler(tabular_data.scaler, scaler_path)
 
-    # 7. Evaluate on test set
+    # 6b. Feature governance: save feature set hash + scaler params for validation
+    feature_hash = hashlib.sha256(",".join(sorted(feature_cols)).encode()).hexdigest()[:16]
+    governance_meta = {
+        "feature_hash": feature_hash,
+        "feature_count": len(feature_cols),
+        "feature_names": sorted(feature_cols),
+        "scaler_center": tabular_data.scaler.center_.tolist(),
+        "scaler_scale": tabular_data.scaler.scale_.tolist(),
+        "threshold": 0.007,
+        "horizon": 5,
+        "data_version": f"v{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
+        "training_samples": len(tabular_data.X_train),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    governance_path = SCALERS_DIR / f"governance_{symbol_lower}.json"
+    governance_path.parent.mkdir(parents=True, exist_ok=True)
+    governance_path.write_text(json.dumps(governance_meta, indent=2))
+    logger.info("feature_governance_saved", feature_hash=feature_hash, n_features=len(feature_cols))
+
+    # 7. Evaluate on test set with full classification metrics
     logger.info("evaluating_test_set")
+    from sklearn.metrics import classification_report, confusion_matrix, f1_score
+
+    class_names = ["SELL", "HOLD", "BUY"]
 
     # XGBoost test
     xgb_test_pred = np.array([
@@ -135,6 +159,15 @@ async def train_for_symbol(symbol: str, interval: str = "1h"):
         for i in range(len(tabular_data.X_test))
     ])
     xgb_test_acc = float(np.mean(xgb_test_pred == tabular_data.y_test))
+    xgb_f1_macro = float(f1_score(tabular_data.y_test, xgb_test_pred, average="macro", zero_division=0))
+    xgb_f1_weighted = float(f1_score(tabular_data.y_test, xgb_test_pred, average="weighted", zero_division=0))
+    xgb_cm = confusion_matrix(tabular_data.y_test, xgb_test_pred, labels=[0, 1, 2])
+    xgb_report = classification_report(
+        tabular_data.y_test, xgb_test_pred,
+        target_names=class_names, zero_division=0, output_dict=True,
+    )
+
+    logger.info("xgboost_classification_report", report=xgb_report, confusion_matrix=xgb_cm.tolist())
 
     # LSTM test
     lstm_test_pred = np.array([
@@ -142,12 +175,23 @@ async def train_for_symbol(symbol: str, interval: str = "1h"):
         for i in range(len(seq_data.X_test))
     ])
     lstm_test_acc = float(np.mean(lstm_test_pred == seq_data.y_test))
+    lstm_f1_macro = float(f1_score(seq_data.y_test, lstm_test_pred, average="macro", zero_division=0))
+    lstm_f1_weighted = float(f1_score(seq_data.y_test, lstm_test_pred, average="weighted", zero_division=0))
+    lstm_cm = confusion_matrix(seq_data.y_test, lstm_test_pred, labels=[0, 1, 2])
+    lstm_report = classification_report(
+        seq_data.y_test, lstm_test_pred,
+        target_names=class_names, zero_division=0, output_dict=True,
+    )
+
+    logger.info("lstm_classification_report", report=lstm_report, confusion_matrix=lstm_cm.tolist())
 
     logger.info(
         "test_results",
         symbol=symbol,
         xgboost_test_acc=round(xgb_test_acc, 4),
+        xgboost_f1_macro=round(xgb_f1_macro, 4),
         lstm_test_acc=round(lstm_test_acc, 4),
+        lstm_f1_macro=round(lstm_f1_macro, 4),
     )
 
     # 8. MLflow experiment tracking
@@ -164,13 +208,19 @@ async def train_for_symbol(symbol: str, interval: str = "1h"):
                 "interval": interval,
                 "n_features": len(feature_cols),
                 "n_samples": len(df),
-                "threshold": 0.005,
+                "threshold": 0.007,
                 "horizon": 5,
             })
             mlflow.log_metrics({
                 "train_accuracy": round(xgb_result.accuracy, 4),
                 "val_accuracy": round(xgb_result.val_accuracy, 4),
                 "test_accuracy": round(xgb_test_acc, 4),
+                "test_f1_macro": round(xgb_f1_macro, 4),
+                "test_f1_weighted": round(xgb_f1_weighted, 4),
+                "sell_precision": round(xgb_report["SELL"]["precision"], 4),
+                "sell_recall": round(xgb_report["SELL"]["recall"], 4),
+                "buy_precision": round(xgb_report["BUY"]["precision"], 4),
+                "buy_recall": round(xgb_report["BUY"]["recall"], 4),
             })
             mlflow.log_artifact(str(xgb_path))
 
@@ -191,7 +241,13 @@ async def train_for_symbol(symbol: str, interval: str = "1h"):
                 "train_accuracy": round(lstm_result.accuracy, 4),
                 "val_accuracy": round(lstm_result.val_accuracy, 4),
                 "test_accuracy": round(lstm_test_acc, 4),
+                "test_f1_macro": round(lstm_f1_macro, 4),
+                "test_f1_weighted": round(lstm_f1_weighted, 4),
                 "best_epoch": lstm_result.best_epoch,
+                "sell_precision": round(lstm_report["SELL"]["precision"], 4),
+                "sell_recall": round(lstm_report["SELL"]["recall"], 4),
+                "buy_precision": round(lstm_report["BUY"]["precision"], 4),
+                "buy_recall": round(lstm_report["BUY"]["recall"], 4),
             })
             mlflow.log_artifact(str(lstm_path))
 

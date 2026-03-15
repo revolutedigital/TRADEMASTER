@@ -230,7 +230,7 @@ class OrderManager:
             order.status = OrderStatus.REJECTED
             order.notes = str(e)[:500]
             await db.flush()
-            logger.error("order_execution_failed", order_id=order.id, error=str(e))
+            logger.error("order_execution_failed", order_id=order.id, error=str(e), exc_info=True)
             raise OrderExecutionError(f"Order failed: {e}") from e
 
     async def cancel_order(self, db: AsyncSession, order: Order) -> Order:

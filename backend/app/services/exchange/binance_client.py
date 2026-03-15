@@ -141,8 +141,12 @@ class BinanceClientWrapper:
                 raise InsufficientBalanceError(e.message) from e
             self._circuit_breaker.record_failure()
             raise OrderExecutionError(f"Binance API error [{e.code}]: {e.message}") from e
+        except (OSError, ConnectionError, TimeoutError) as e:
+            self._circuit_breaker.record_failure()
+            raise ExchangeConnectionError(f"Binance connection failed: {e}") from e
         except Exception as e:
             self._circuit_breaker.record_failure()
+            logger.error("binance_unexpected_error", error=str(e), exc_info=True)
             raise ExchangeConnectionError(f"Binance request failed: {e}") from e
 
     # --- Market Data ---

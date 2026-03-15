@@ -43,11 +43,14 @@ class SequenceData:
 class Preprocessor:
     """Transforms feature DataFrames into ML-ready arrays."""
 
-    def __init__(self, threshold: float = 0.005):
+    # Default threshold accounts for roundtrip commission:
+    # 0.5% minimum price move + 0.2% roundtrip fees (0.1% taker × 2) = 0.7%
+    def __init__(self, threshold: float = 0.007):
         """
         Args:
             threshold: Price change threshold for target labels.
                        >threshold = BUY (2), <-threshold = SELL (0), else HOLD (1).
+                       Default 0.7% accounts for 0.5% min move + 0.2% roundtrip commission.
         """
         self.threshold = threshold
 

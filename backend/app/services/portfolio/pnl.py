@@ -79,17 +79,21 @@ class PnLCalculator:
         avg_return = float(returns.mean())
         std_return = float(returns.std()) if len(returns) > 1 else 0
 
-        # Annualize (assume ~252 trading days)
-        sharpe = (avg_return / std_return * np.sqrt(252)) if std_return > 0 else 0
+        # Annualize (assume ~252 trading days), subtract risk-free rate
+        daily_rf = risk_free_rate / 252
+        sharpe = ((avg_return - daily_rf) / std_return * np.sqrt(252)) if std_return > 0 else 0
 
-        # Sortino (only downside deviation)
-        negative_returns = returns[returns < 0]
-        downside_std = float(negative_returns.std()) if len(negative_returns) > 1 else 0
-        sortino = (avg_return / downside_std * np.sqrt(252)) if downside_std > 0 else 0
+        # Sortino: use proper downside deviation (include zeros for positive returns)
+        downside_diff = np.minimum(returns - daily_rf, 0)
+        downside_std = float(np.sqrt(np.mean(downside_diff ** 2))) if len(returns) > 1 else 0
+        sortino = ((avg_return - daily_rf) / downside_std * np.sqrt(252)) if downside_std > 0 else 0
 
-        # Calmar ratio
-        annual_return = total_pnl / initial_equity
-        calmar = annual_return / max_dd_pct if max_dd_pct > 0 else 0
+        # Calmar ratio: annualize the return
+        total_return_pct = total_pnl / initial_equity if initial_equity > 0 else 0
+        n_periods = max(len(pnl_series), 1)
+        years = n_periods / 252
+        annualized_return = ((1 + total_return_pct) ** (1 / years) - 1) if years > 0 else 0
+        calmar = annualized_return / max_dd_pct if max_dd_pct > 0 else 0
 
         # Expectancy
         expectancy = float(pnls.mean())

@@ -1,6 +1,7 @@
 """Risk management gate: every trade must pass through here before execution."""
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from app.config import settings
 from app.core.exceptions import RiskLimitExceededError, DrawdownCircuitBreakerError
@@ -8,6 +9,9 @@ from app.core.logging import get_logger
 from app.services.risk.drawdown import circuit_breaker, CircuitBreakerState
 from app.services.risk.position_sizer import PositionSizer, PositionSize
 from app.services.risk.stop_loss import StopLossCalculator, StopLossLevel
+
+if TYPE_CHECKING:
+    from app.services.portfolio.performance import PerformanceStats
 
 logger = get_logger(__name__)
 
@@ -47,7 +51,7 @@ class RiskManager:
 
     Checks:
     1. Circuit breaker state
-    2. Position sizing (fractional Kelly / fixed fraction)
+    2. Position sizing (fractional Kelly when data available, else fixed fraction)
     3. Exposure limits (single asset + total portfolio)
     4. Minimum notional value
     5. Stop loss assignment
@@ -60,6 +64,8 @@ class RiskManager:
             kelly_fraction=0.15,
         )
         self._stop_loss_calc = StopLossCalculator()
+        self._perf_stats: "PerformanceStats | None" = None
+        self._perf_stats_updated_at: float = 0
 
     def validate_trade(self, proposal: TradeProposal) -> ApprovedTrade:
         """Run all risk checks on a trade proposal.
@@ -82,12 +88,35 @@ class RiskManager:
             )
         checks_passed.append("circuit_breaker")
 
-        # 2. Position sizing
-        position_size = self._position_sizer.volatility_scaled(
-            equity=proposal.current_equity,
-            price=proposal.entry_price,
-            atr=proposal.atr,
-        )
+        # 2. Position sizing — Kelly criterion when we have enough data
+        stop_distance_pct = (proposal.atr * 2) / proposal.entry_price if proposal.entry_price > 0 else 0.02
+        if (
+            self._perf_stats
+            and self._perf_stats.has_enough_data
+            and self._perf_stats.avg_loss > 0
+            and self._perf_stats.win_rate > 0
+        ):
+            position_size = self._position_sizer.fractional_kelly(
+                equity=proposal.current_equity,
+                win_rate=self._perf_stats.win_rate,
+                avg_win=self._perf_stats.avg_win,
+                avg_loss=self._perf_stats.avg_loss,
+                price=proposal.entry_price,
+                stop_distance_pct=stop_distance_pct,
+            )
+            logger.info(
+                "kelly_sizing_used",
+                win_rate=round(self._perf_stats.win_rate, 4),
+                avg_win=round(self._perf_stats.avg_win, 2),
+                avg_loss=round(self._perf_stats.avg_loss, 2),
+                method=position_size.method,
+            )
+        else:
+            position_size = self._position_sizer.volatility_scaled(
+                equity=proposal.current_equity,
+                price=proposal.entry_price,
+                atr=proposal.atr,
+            )
 
         # Apply circuit breaker multiplier (REDUCED = 50%)
         multiplier = circuit_breaker.position_size_multiplier
@@ -154,6 +183,19 @@ class RiskManager:
             risk_checks_passed=checks_passed,
         )
 
+
+    async def refresh_performance_stats(self, db) -> None:
+        """Refresh cached performance stats from DB (called periodically)."""
+        import time
+        from app.services.portfolio.performance import performance_tracker
+
+        # Cache for 5 minutes to avoid hammering DB
+        now = time.time()
+        if now - self._perf_stats_updated_at < 300:
+            return
+
+        self._perf_stats = await performance_tracker.get_stats(db)
+        self._perf_stats_updated_at = now
 
     def get_position_risk(self, position) -> dict:
         """Calculate risk metrics for a single position."""

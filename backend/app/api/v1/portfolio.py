@@ -79,6 +79,32 @@ async def get_portfolio_summary(
     )
 
 
+@router.get("/performance")
+async def get_performance_stats(
+    symbol: str | None = None,
+    lookback_days: int = Query(default=90, ge=7, le=365),
+    db: AsyncSession = Depends(get_db),
+    _user: dict = Depends(require_auth),
+):
+    """Get live performance stats (win rate, avg win/loss, Kelly eligibility)."""
+    from app.services.portfolio.performance import performance_tracker
+
+    stats = await performance_tracker.get_stats(db, symbol=symbol, lookback_days=lookback_days)
+    return {
+        "total_closed": stats.total_closed,
+        "wins": stats.wins,
+        "losses": stats.losses,
+        "win_rate": round(stats.win_rate, 4),
+        "avg_win": round(stats.avg_win, 2),
+        "avg_loss": round(stats.avg_loss, 2),
+        "expectancy": round(stats.expectancy, 2),
+        "profit_factor": round(stats.profit_factor, 4),
+        "kelly_eligible": stats.has_enough_data,
+        "lookback_days": lookback_days,
+        "symbol_filter": symbol,
+    }
+
+
 @router.get("/risk-status")
 async def get_risk_status(_user: dict = Depends(require_auth)):
     """Get current risk management status."""

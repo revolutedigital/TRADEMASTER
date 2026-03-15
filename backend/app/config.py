@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     trading_max_weekly_drawdown: float = 0.07
     trading_max_total_drawdown: float = 0.15
 
+    # Webhook alerts (Slack/Discord/custom — optional)
+    risk_alert_webhook_url: str = ""
+    trade_alert_webhook_url: str = ""
+
     @property
     def cors_origins(self) -> list[str]:
         """Parse frontend_url into a list of origins."""

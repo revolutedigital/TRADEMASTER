@@ -123,6 +123,18 @@ class OrderManager:
             },
         ))
 
+        # Record execution analytics
+        from app.services.exchange.execution_analytics import execution_analytics
+        execution_analytics.record_execution(
+            order_id=order.exchange_order_id,
+            symbol=symbol,
+            side=side,
+            intended_price=current_price,
+            fill_price=fill_price,
+            quantity=qty,
+            latency_ms=0,  # Paper = instant
+        )
+
         logger.info(
             "paper_order_executed",
             order_id=order.id,
@@ -184,6 +196,19 @@ class OrderManager:
                     "paper_mode": False,
                 },
             ))
+
+            # Record execution analytics
+            from app.services.exchange.execution_analytics import execution_analytics
+            if order.avg_fill_price:
+                execution_analytics.record_execution(
+                    order_id=order.exchange_order_id or "",
+                    symbol=symbol,
+                    side=side,
+                    intended_price=Decimal(str(order.avg_fill_price or order.price or 0)),
+                    fill_price=Decimal(str(order.avg_fill_price)),
+                    quantity=Decimal(str(order.filled_quantity)),
+                    latency_ms=0,
+                )
 
             logger.info(
                 "live_order_executed",

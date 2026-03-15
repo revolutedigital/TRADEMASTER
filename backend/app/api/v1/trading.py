@@ -490,3 +490,64 @@ async def train_bootstrap_model(
         await ml_pipeline.load_models(symbol)
 
     return {"results": results, "models_reloaded": True}
+
+
+@router.get("/engine/drift-status")
+async def get_drift_status(_user: dict = Depends(require_auth)):
+    """Get model drift detection status for all symbols."""
+    from app.services.ml.drift_detector import drift_detector
+    return drift_detector.get_status()
+
+
+@router.post("/engine/retrain-if-drifted")
+async def trigger_drift_retrain(_user: dict = Depends(require_auth)):
+    """Manually trigger drift check and retrain if needed."""
+    from app.services.ml.drift_detector import drift_detector
+    retrained = await drift_detector.auto_retrain_if_needed()
+    return {"retrained": retrained}
+
+
+@router.get("/engine/execution-analytics")
+async def get_execution_analytics(
+    symbol: str | None = None,
+    _user: dict = Depends(require_auth),
+):
+    """Get trade execution quality metrics (slippage, latency, fill rate)."""
+    from app.services.exchange.execution_analytics import execution_analytics
+    return execution_analytics.get_best_execution_report()
+
+
+@router.get("/engine/regime-status")
+async def get_regime_status(_user: dict = Depends(require_auth)):
+    """Get current market regime detection for all tracked symbols."""
+    from app.services.ml.regime import regime_detector
+    return {
+        "regimes": regime_detector.get_all(),
+        "description": "Adaptive regime: bull/bear/sideways × low/normal/high volatility",
+    }
+
+
+@router.get("/engine/rolling-sharpe")
+async def get_rolling_sharpe(_user: dict = Depends(require_auth)):
+    """Get rolling Sharpe ratio monitor status (auto-pause indicator)."""
+    from app.services.risk.rolling_sharpe import rolling_sharpe_monitor
+    return rolling_sharpe_monitor.get_status()
+
+
+@router.post("/engine/rolling-sharpe/resume")
+async def force_resume_sharpe(_user: dict = Depends(require_auth)):
+    """Manually resume trading after rolling Sharpe auto-pause."""
+    from app.services.risk.rolling_sharpe import rolling_sharpe_monitor
+    rolling_sharpe_monitor.force_resume()
+    return {"status": "resumed"}
+
+
+@router.get("/engine/ensemble-status")
+async def get_ensemble_status(_user: dict = Depends(require_auth)):
+    """Get ensemble voting configuration and regime-adaptive weight info."""
+    from app.services.ml.ensemble_voter import _REGIME_WEIGHTS, _VOL_ADJUSTMENTS, _REGIME_BIAS
+    return {
+        "regime_weights": {k: {"technical": v[0], "ml": v[1], "regime": v[2]} for k, v in _REGIME_WEIGHTS.items()},
+        "volatility_adjustments": {k: {"tech": v[0], "ml": v[1], "regime": v[2]} for k, v in _VOL_ADJUSTMENTS.items()},
+        "regime_bias": _REGIME_BIAS,
+    }

@@ -220,9 +220,26 @@ class DrawdownCircuitBreaker:
         return self._state
 
     async def update_and_persist(self, current_equity: float) -> CircuitBreakerState:
-        """Update drawdown state and persist to Redis."""
+        """Update drawdown state, persist to Redis, and alert on state changes."""
+        prev_state = self._state
         state = self.update(current_equity)
         await self._save_to_redis()
+
+        # Dispatch alert on state change
+        if state != prev_state:
+            try:
+                from app.services.risk.alerts import risk_alert_dispatcher
+                await risk_alert_dispatcher.send_circuit_breaker_alert(
+                    prev_state=str(prev_state),
+                    new_state=str(state),
+                    daily_dd=self._period_drawdown(24),
+                    weekly_dd=self._period_drawdown(168),
+                    total_dd=(self._peak_equity - current_equity) / self._peak_equity if self._peak_equity > 0 else 0,
+                    equity=current_equity,
+                )
+            except Exception as e:
+                logger.warning("alert_dispatch_failed", error=str(e))
+
         return state
 
     def manual_reset(self, new_equity: float) -> None:

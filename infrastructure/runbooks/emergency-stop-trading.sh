@@ -1,29 +1,41 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "=== EMERGENCY: Stop All Trading ==="
-echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+# Emergency Stop Trading - TradeMaster
+# Usage: ./emergency-stop-trading.sh <BACKEND_URL> <JWT_TOKEN>
 
-API_URL="${API_URL:-http://localhost:8000}"
-TOKEN="${AUTH_TOKEN:-}"
+BACKEND_URL="${1:?Usage: $0 <BACKEND_URL> <JWT_TOKEN>}"
+JWT_TOKEN="${2:?Usage: $0 <BACKEND_URL> <JWT_TOKEN>}"
 
-if [ -z "$TOKEN" ]; then
-    echo "ERROR: AUTH_TOKEN environment variable required"
-    exit 1
-fi
+echo "=== TradeMaster Emergency Stop ==="
+echo "Target: $BACKEND_URL"
+echo "Time: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+echo ""
 
-# 1. Stop trading engine
-echo "[1/3] Stopping trading engine..."
-curl -sf -X POST "$API_URL/api/v1/trading/engine/stop" \
-    -H "Authorization: Bearer $TOKEN" || echo "  WARNING: Could not stop engine"
+# Step 1: Stop trading engine
+echo "[1/4] Stopping trading engine..."
+STOP_RESULT=$(curl -s -X POST "$BACKEND_URL/api/v1/trading/engine/stop" \
+  -H "Cookie: access_token=$JWT_TOKEN" \
+  -H "Content-Type: application/json")
+echo "  Result: $STOP_RESULT"
 
-# 2. Verify engine stopped
-echo "[2/3] Verifying engine stopped..."
-STATUS=$(curl -sf "$API_URL/api/v1/trading/engine/status" \
-    -H "Authorization: Bearer $TOKEN" || echo '{}')
-echo "  Engine status: $STATUS"
+# Step 2: Check open positions
+echo "[2/4] Checking open positions..."
+POSITIONS=$(curl -s "$BACKEND_URL/api/v1/portfolio/positions" \
+  -H "Cookie: access_token=$JWT_TOKEN")
+echo "  Open positions: $POSITIONS"
 
-# 3. Log the emergency stop
-echo "[3/3] Emergency stop complete."
-echo "  IMPORTANT: Review open positions manually at $API_URL/api/v1/portfolio/positions"
-echo "=== Emergency stop complete ==="
+# Step 3: Verify engine stopped
+echo "[3/4] Verifying engine status..."
+STATUS=$(curl -s "$BACKEND_URL/api/v1/system/status" \
+  -H "Cookie: access_token=$JWT_TOKEN")
+echo "  Status: $STATUS"
+
+# Step 4: Health check
+echo "[4/4] Health check..."
+HEALTH=$(curl -s "$BACKEND_URL/api/v1/system/health")
+echo "  Health: $HEALTH"
+
+echo ""
+echo "=== Emergency Stop Complete ==="
+echo "IMPORTANT: Review open positions above and close manually if needed."

@@ -1,50 +1,87 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
 interface ShortcutConfig {
   key: string;
   ctrl?: boolean;
   shift?: boolean;
-  description: string;
+  alt?: boolean;
   action: () => void;
+  description: string;
 }
 
 export function useKeyboardShortcuts() {
   const router = useRouter();
-  const [showHelp, setShowHelp] = useState(false);
 
   const shortcuts: ShortcutConfig[] = [
-    { key: "d", ctrl: true, description: "Go to Dashboard", action: () => router.push("/") },
-    { key: "t", ctrl: true, description: "Go to Trading", action: () => router.push("/trading") },
-    { key: "p", ctrl: true, description: "Go to Portfolio", action: () => router.push("/portfolio") },
-    { key: "b", ctrl: true, description: "Go to Backtest", action: () => router.push("/backtest") },
-    { key: "s", ctrl: true, shift: true, description: "Go to Settings", action: () => router.push("/settings") },
-    { key: "?", description: "Show keyboard shortcuts", action: () => setShowHelp((v) => !v) },
-    { key: "Escape", description: "Close modals", action: () => setShowHelp(false) },
+    {
+      key: "d",
+      ctrl: true,
+      action: () => router.push("/"),
+      description: "Go to Dashboard",
+    },
+    {
+      key: "t",
+      ctrl: true,
+      action: () => router.push("/trading"),
+      description: "Go to Trading",
+    },
+    {
+      key: "p",
+      ctrl: true,
+      shift: true,
+      action: () => router.push("/portfolio"),
+      description: "Go to Portfolio",
+    },
+    {
+      key: "b",
+      ctrl: true,
+      shift: true,
+      action: () => router.push("/backtest"),
+      description: "Go to Backtest",
+    },
+    {
+      key: "s",
+      ctrl: true,
+      shift: true,
+      action: () => router.push("/settings"),
+      description: "Go to Settings",
+    },
   ];
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      // Don't trigger shortcuts when typing in inputs
+      // Don't trigger in input fields
       const target = e.target as HTMLElement;
-      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT" ||
+        target.isContentEditable
+      ) {
         return;
       }
 
       for (const shortcut of shortcuts) {
-        const ctrlMatch = shortcut.ctrl ? (e.ctrlKey || e.metaKey) : true;
+        const ctrlMatch = shortcut.ctrl ? e.ctrlKey || e.metaKey : !e.ctrlKey && !e.metaKey;
         const shiftMatch = shortcut.shift ? e.shiftKey : !e.shiftKey;
-        if (e.key === shortcut.key && ctrlMatch && shiftMatch) {
+        const altMatch = shortcut.alt ? e.altKey : !e.altKey;
+
+        if (
+          e.key.toLowerCase() === shortcut.key.toLowerCase() &&
+          ctrlMatch &&
+          shiftMatch &&
+          altMatch
+        ) {
           e.preventDefault();
           shortcut.action();
           return;
         }
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [router]
+    [shortcuts]
   );
 
   useEffect(() => {
@@ -52,5 +89,5 @@ export function useKeyboardShortcuts() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
-  return { showHelp, setShowHelp, shortcuts };
+  return shortcuts;
 }

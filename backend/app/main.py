@@ -94,9 +94,65 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     yield
 
-    # --- Shutdown ---
+    # --- Graceful Shutdown ---
+    logger.info("graceful_shutdown_started")
+
+    # 1. Stop trading engine first (no new signals)
+    try:
+        from app.services.trading_engine import trading_engine
+        await trading_engine.stop()
+        logger.info("trading_engine_stopped_for_shutdown")
+    except Exception as e:
+        logger.warning("trading_engine_stop_failed", error=str(e))
+
+    # 2. Wait for pending orders to complete (max 30s)
+    try:
+        from app.models.base import async_session_factory
+        from app.models.trade import Order, OrderStatus
+        from sqlalchemy import select
+
+        pending_statuses = [OrderStatus.PENDING, OrderStatus.SUBMITTED, OrderStatus.PARTIALLY_FILLED]
+        deadline = asyncio.get_event_loop().time() + 30
+        while asyncio.get_event_loop().time() < deadline:
+            async with async_session_factory() as db:
+                result = await db.execute(
+                    select(Order).where(Order.status.in_(pending_statuses))
+                )
+                pending = list(result.scalars().all())
+            if not pending:
+                logger.info("all_pending_orders_resolved")
+                break
+            logger.info("waiting_for_pending_orders", count=len(pending))
+            await asyncio.sleep(2)
+        else:
+            logger.warning("pending_orders_timeout", message="30s deadline exceeded")
+    except Exception as e:
+        logger.warning("pending_orders_check_failed", error=str(e))
+
+    # 3. Take final portfolio snapshot
+    try:
+        from app.models.base import async_session_factory
+        from app.services.portfolio.tracker import portfolio_tracker
+        from app.services.exchange.binance_client import binance_client as bc
+
+        async with async_session_factory() as db:
+            try:
+                balance = float(await bc.get_balance("USDT"))
+            except Exception:
+                balance = 0.0
+            positions = await portfolio_tracker.get_open_positions(db)
+            unrealized = sum(float(p.unrealized_pnl) for p in positions)
+            equity = balance + unrealized
+            await portfolio_tracker.take_snapshot(db, equity=equity, balance=balance)
+            await db.commit()
+        logger.info("final_portfolio_snapshot_saved", equity=equity, balance=balance)
+    except Exception as e:
+        logger.warning("final_snapshot_failed", error=str(e))
+
+    # 4. Stop remaining background services
     await _stop_background_services()
 
+    # 5. Disconnect external services
     try:
         from app.services.exchange.binance_client import binance_client
         await binance_client.disconnect()
@@ -108,7 +164,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception:
         pass
 
-    logger.info("trademaster_shutdown")
+    logger.info("graceful_shutdown_complete")
 
 
 async def _start_background_services() -> None:

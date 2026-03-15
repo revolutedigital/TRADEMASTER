@@ -1,6 +1,7 @@
 """Kelly Criterion for optimal position sizing."""
-from decimal import Decimal
+
 from dataclasses import dataclass
+from decimal import Decimal
 
 from app.core.logging import get_logger
 
@@ -9,31 +10,24 @@ logger = get_logger(__name__)
 
 @dataclass
 class KellyResult:
-    full_kelly: float
-    fractional_kelly: float
-    recommended_size: float
-    recommended_size_usd: float
-    fraction_used: float
+    full_kelly: float          # Full Kelly fraction
+    half_kelly: float          # Conservative half-Kelly
+    quarter_kelly: float       # Ultra-conservative quarter-Kelly
+    optimal_size_usd: float    # Dollar amount at half-Kelly
+    edge: float                # Expected edge per trade
+    recommended_fraction: float  # What we actually recommend (capped)
 
 
 class KellyCalculator:
-    """Calculate optimal position sizes using the Kelly Criterion.
+    """Compute optimal bet size using the Kelly Criterion.
 
-    Full Kelly is theoretically optimal but has high variance.
-    Fractional Kelly (default 0.5) reduces variance significantly
-    while retaining ~75% of the growth rate.
+    Full Kelly: f* = (p * b - q) / b
+    Where: p = win_rate, q = 1-p, b = avg_win / avg_loss (win/loss ratio)
+
+    We use half-Kelly by default as full Kelly is too aggressive for trading.
     """
 
-    def full_kelly_fraction(self, win_rate: float, avg_win: float, avg_loss: float) -> float:
-        """Calculate full Kelly fraction.
-
-        Kelly% = W/L - (1-W)/A
-        where W=win_rate, L=avg_loss, A=avg_win
-        """
-        if avg_loss == 0 or avg_win == 0:
-            return 0.0
-        kelly = (win_rate / avg_loss) - ((1 - win_rate) / avg_win)
-        return max(0.0, kelly)
+    MAX_FRACTION = 0.25  # Never risk more than 25% of portfolio
 
     def calculate(
         self,
@@ -41,29 +35,72 @@ class KellyCalculator:
         avg_win: float,
         avg_loss: float,
         portfolio_value: float,
-        fraction: float = 0.5,
     ) -> KellyResult:
-        """Calculate recommended position size."""
-        full = self.full_kelly_fraction(win_rate, avg_win, avg_loss)
-        fractional = full * fraction
-        size_usd = portfolio_value * max(0, fractional)
+        """Calculate Kelly fraction and optimal position size.
 
-        result = KellyResult(
-            full_kelly=round(full, 4),
-            fractional_kelly=round(fractional, 4),
-            recommended_size=round(fractional, 4),
-            recommended_size_usd=round(size_usd, 2),
-            fraction_used=fraction,
-        )
+        Args:
+            win_rate: Historical win rate (0-1)
+            avg_win: Average winning trade P&L (positive)
+            avg_loss: Average losing trade P&L (positive, absolute value)
+            portfolio_value: Current portfolio value in USD
+        """
+        if avg_loss <= 0 or win_rate <= 0 or win_rate >= 1:
+            return KellyResult(
+                full_kelly=0,
+                half_kelly=0,
+                quarter_kelly=0,
+                optimal_size_usd=0,
+                edge=0,
+                recommended_fraction=0,
+            )
+
+        p = win_rate
+        q = 1 - p
+        b = avg_win / avg_loss  # Win/loss ratio
+
+        # Kelly fraction: f* = (p * b - q) / b
+        full = (p * b - q) / b
+
+        # Edge: expected value per dollar risked
+        edge = p * b - q
+
+        if full <= 0:
+            # Negative edge — don't trade
+            logger.warning("kelly_negative_edge", win_rate=win_rate, ratio=b, edge=edge)
+            return KellyResult(
+                full_kelly=full,
+                half_kelly=0,
+                quarter_kelly=0,
+                optimal_size_usd=0,
+                edge=edge,
+                recommended_fraction=0,
+            )
+
+        half = full * 0.5
+        quarter = full * 0.25
+
+        # Cap at MAX_FRACTION
+        recommended = min(half, self.MAX_FRACTION)
+        optimal_usd = portfolio_value * recommended
 
         logger.info(
             "kelly_calculated",
-            win_rate=win_rate,
-            full_kelly=result.full_kelly,
-            fractional=result.fractional_kelly,
-            size_usd=result.recommended_size_usd,
+            win_rate=round(win_rate, 3),
+            ratio=round(b, 3),
+            full_kelly=round(full, 4),
+            half_kelly=round(half, 4),
+            recommended=round(recommended, 4),
+            optimal_usd=round(optimal_usd, 2),
         )
-        return result
+
+        return KellyResult(
+            full_kelly=full,
+            half_kelly=half,
+            quarter_kelly=quarter,
+            optimal_size_usd=optimal_usd,
+            edge=edge,
+            recommended_fraction=recommended,
+        )
 
 
 kelly_calculator = KellyCalculator()

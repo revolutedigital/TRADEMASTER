@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_auth
-from app.core.feature_flags import feature_flags
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -14,14 +13,51 @@ _START_TIME = time.time()
 
 
 @router.get("/feature-flags")
-async def list_feature_flags(_auth: dict = Depends(require_auth)):
-    return feature_flags.list_flags()
+async def get_feature_flags(_user: dict = Depends(require_auth)):
+    from app.core.feature_flags import feature_flags
+    return {"flags": feature_flags.get_all()}
 
 
-@router.post("/feature-flags/{flag}/toggle")
-async def toggle_feature_flag(flag: str, _auth: dict = Depends(require_auth)):
-    new_state = feature_flags.toggle(flag)
-    return {"flag": flag, "enabled": new_state}
+@router.put("/feature-flags/{flag_name}")
+async def toggle_feature_flag(flag_name: str, enabled: bool = True, _user: dict = Depends(require_auth)):
+    from app.core.feature_flags import feature_flags
+    feature_flags.set_flag(flag_name, enabled)
+    return {"flag": flag_name, "enabled": enabled}
+
+
+@router.get("/audit/logs")
+async def get_audit_logs(
+    limit: int = 50,
+    action: str | None = None,
+    _user: dict = Depends(require_auth),
+):
+    """Get recent audit log entries."""
+    from app.models.base import async_session_factory
+    from app.models.audit import AuditLog
+    from sqlalchemy import select
+
+    async with async_session_factory() as db:
+        query = select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit)
+        if action:
+            query = query.where(AuditLog.action == action)
+        result = await db.execute(query)
+        logs = result.scalars().all()
+
+    return {
+        "count": len(logs),
+        "logs": [
+            {
+                "id": log.id,
+                "user_id": log.user_id,
+                "action": log.action,
+                "resource": log.resource,
+                "details": log.details,
+                "ip_address": log.ip_address,
+                "created_at": log.created_at.isoformat() if log.created_at else None,
+            }
+            for log in logs
+        ],
+    }
 
 
 @router.get("/health/deep")

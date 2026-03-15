@@ -33,6 +33,18 @@ class FeeTracker:
         )
         return {row[0]: float(row[1] or 0) for row in result.all()}
 
+    async def get_fee_impact_on_returns(self, db: AsyncSession) -> float:
+        """Calculate what percentage of gross returns were consumed by fees."""
+        from app.models.portfolio import Position
+        pnl_result = await db.execute(
+            select(func.sum(Position.realized_pnl)).where(Position.status == "CLOSED")
+        )
+        gross_pnl = float(pnl_result.scalar() or 0)
+        total_fees = float(await self.get_total_fees(db))
+        if gross_pnl + total_fees == 0:
+            return 0.0
+        return total_fees / (abs(gross_pnl) + total_fees) * 100
+
     async def generate_report(self, db: AsyncSession) -> FeeReport:
         total = await self.get_total_fees(db)
         by_symbol = await self.get_fees_by_symbol(db)
@@ -45,6 +57,8 @@ class FeeTracker:
 
         count_result = await db.execute(select(func.count(Order.id)))
         trade_count = count_result.scalar() or 1
+
+        fee_impact = await self.get_fee_impact_on_returns(db)
 
         return FeeReport(
             total_fees=float(total),

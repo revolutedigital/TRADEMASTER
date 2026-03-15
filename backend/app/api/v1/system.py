@@ -255,7 +255,7 @@ async def _run_initialization(intervals: str, days_back: int) -> None:
             feature_cols = feature_engineer.get_feature_columns(df_features)
 
             # Create target
-            preprocessor = Preprocessor(threshold=0.005)
+            preprocessor = Preprocessor(threshold=0.007)
             df_features = preprocessor.create_target(df_features, horizon=5)
 
             # Train XGBoost

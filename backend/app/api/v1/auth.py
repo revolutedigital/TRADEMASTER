@@ -10,6 +10,7 @@ from app.core.security import (
     generate_csrf_token,
     verify_token,
     app_rate_limiter,
+    brute_force,
 )
 
 router = APIRouter()
@@ -36,12 +37,27 @@ async def login(req: LoginRequest, request: Request, response: Response):
             detail="Too many login attempts. Try again in 1 minute.",
         )
 
+    # Brute-force protection: progressive delays + lockout
+    bf_allowed, bf_wait = brute_force.check(client_ip)
+    if not bf_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Account locked. Try again in {bf_wait} seconds.",
+        )
+    if bf_wait > 0:
+        import asyncio
+        await asyncio.sleep(bf_wait)
+
     if req.username != settings.admin_username or req.password != settings.admin_password:
+        brute_force.record_failure(client_ip)
+        from app.core.audit import audit_logger
+        await audit_logger.log_login(req.username, success=False, ip=client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
         )
 
+    brute_force.record_success(client_ip)
     token_data = {"sub": req.username, "role": "admin"}
     access_token = create_access_token(data=token_data)
     refresh_token = create_refresh_token(data=token_data)
@@ -67,6 +83,9 @@ async def login(req: LoginRequest, request: Request, response: Response):
         httponly=False, max_age=settings.jwt_access_token_expire_minutes * 60,
         path="/", **_ck,
     )
+
+    from app.core.audit import audit_logger
+    await audit_logger.log_login(req.username, success=True, ip=client_ip)
 
     # Also return token in body for backward compatibility
     return TokenResponse(access_token=access_token)

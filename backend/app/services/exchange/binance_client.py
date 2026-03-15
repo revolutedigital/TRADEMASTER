@@ -130,8 +130,13 @@ class BinanceClientWrapper:
             raise ExchangeConnectionError("Client not initialized. Call connect() first.")
 
         try:
+            import time as _time
+            _t0 = _time.monotonic()
             result = await coro
+            _elapsed = _time.monotonic() - _t0
             self._circuit_breaker.record_success()
+            from app.core.metrics import metrics
+            metrics.exchange_api_latency.observe(_elapsed)
             return result
         except BinanceAPIException as e:
             if e.code == -1003:  # Rate limit

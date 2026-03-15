@@ -231,3 +231,66 @@ class AppRateLimiter:
 
 
 app_rate_limiter = AppRateLimiter()
+
+
+# --- Brute-Force Protection ---
+
+class BruteForceProtection:
+    """Progressive delay + account lockout for login attempts.
+
+    Escalation:
+    - 1-4 fails: no delay
+    - 5-7 fails: 1s delay
+    - 8-9 fails: 5s delay
+    - 10+ fails: 15-minute lockout
+    """
+
+    def __init__(self) -> None:
+        self._attempts: dict[str, list[float]] = {}
+        self._lockouts: dict[str, float] = {}
+
+    def _cleanup(self, key: str) -> None:
+        now = datetime.now(timezone.utc).timestamp()
+        # Remove attempts older than 15 min
+        if key in self._attempts:
+            cutoff = now - 900
+            self._attempts[key] = [t for t in self._attempts[key] if t > cutoff]
+
+    def check(self, identifier: str) -> tuple[bool, int]:
+        """Check if login is allowed.
+
+        Returns:
+            (is_allowed, wait_seconds)
+        """
+        now = datetime.now(timezone.utc).timestamp()
+
+        # Check lockout
+        if identifier in self._lockouts:
+            unlock_at = self._lockouts[identifier]
+            if now < unlock_at:
+                return False, int(unlock_at - now)
+            del self._lockouts[identifier]
+
+        self._cleanup(identifier)
+        fails = len(self._attempts.get(identifier, []))
+
+        if fails >= 10:
+            self._lockouts[identifier] = now + 900  # 15 min
+            return False, 900
+        if fails >= 8:
+            return True, 5
+        if fails >= 5:
+            return True, 1
+        return True, 0
+
+    def record_failure(self, identifier: str) -> None:
+        if identifier not in self._attempts:
+            self._attempts[identifier] = []
+        self._attempts[identifier].append(datetime.now(timezone.utc).timestamp())
+
+    def record_success(self, identifier: str) -> None:
+        self._attempts.pop(identifier, None)
+        self._lockouts.pop(identifier, None)
+
+
+brute_force = BruteForceProtection()

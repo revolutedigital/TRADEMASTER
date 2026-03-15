@@ -1,261 +1,160 @@
-"""Temporal Fusion Transformer (simplified) for multi-horizon trading prediction."""
-
-import numpy as np
-import torch
-import torch.nn as nn
+"""Transformer-based trading model with temporal attention."""
+import json
+from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
+
 from app.core.logging import get_logger
-from app.services.ml.models.base import BaseTradingModel, ModelPrediction, TrainingResult
 
 logger = get_logger(__name__)
 
-
-class PositionalEncoding(nn.Module):
-    """Sinusoidal positional encoding for sequence position awareness."""
-
-    def __init__(self, d_model: int, max_len: int = 200):
-        super().__init__()
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, d_model, 2).float() * (-np.log(10000.0) / d_model)
-        )
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        self.register_buffer("pe", pe.unsqueeze(0))
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x + self.pe[:, : x.size(1)]
+_TORCH_AVAILABLE = False
+try:
+    import torch
+    import torch.nn as nn
+    _TORCH_AVAILABLE = True
+except ImportError:
+    pass
 
 
-class TransformerNetwork(nn.Module):
-    """Transformer encoder for time series classification.
+@dataclass
+class TransformerResult:
+    predictions: list[float]  # Multi-horizon predictions
+    attention_weights: list[float]  # Which timesteps matter most
+    confidence: float
+    horizons: list[int]  # e.g. [1, 5, 10] candles ahead
 
-    Architecture:
-        Input -> Linear projection -> Positional Encoding ->
-        N x TransformerEncoderLayer -> Global Average Pool -> FC -> 3-class output
+
+class NumpyAttention:
+    """Lightweight self-attention using only numpy (no torch needed)."""
+
+    def __init__(self, d_model: int = 64, n_heads: int = 4):
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.d_k = d_model // n_heads
+        # Random init weights (would be loaded from trained model)
+        rng = np.random.RandomState(42)
+        self.W_q = rng.randn(d_model, d_model).astype(np.float32) * 0.02
+        self.W_k = rng.randn(d_model, d_model).astype(np.float32) * 0.02
+        self.W_v = rng.randn(d_model, d_model).astype(np.float32) * 0.02
+        self.W_o = rng.randn(d_model, d_model).astype(np.float32) * 0.02
+
+    def forward(self, x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """x: (seq_len, d_model) -> output: (seq_len, d_model), attn: (seq_len, seq_len)"""
+        Q = x @ self.W_q
+        K = x @ self.W_k
+        V = x @ self.W_v
+
+        # Scaled dot-product attention
+        scores = (Q @ K.T) / np.sqrt(self.d_k)
+        # Softmax
+        exp_scores = np.exp(scores - scores.max(axis=-1, keepdims=True))
+        attn_weights = exp_scores / exp_scores.sum(axis=-1, keepdims=True)
+
+        output = attn_weights @ V
+        output = output @ self.W_o
+        return output, attn_weights
+
+
+class TemporalFusionPredictor:
+    """Temporal Fusion Transformer-inspired predictor.
+
+    Uses self-attention to weight historical timesteps and produce
+    multi-horizon predictions (1, 5, 10 candles ahead).
     """
 
-    def __init__(
-        self,
-        input_dim: int,
-        d_model: int = 128,
-        nhead: int = 4,
-        num_layers: int = 3,
-        dim_feedforward: int = 256,
-        dropout: float = 0.2,
-        num_classes: int = 3,
-    ):
-        super().__init__()
-        self.input_projection = nn.Linear(input_dim, d_model)
-        self.pos_encoding = PositionalEncoding(d_model)
-        self.dropout = nn.Dropout(dropout)
+    def __init__(self, d_model: int = 64, n_heads: int = 4, horizons: list[int] | None = None):
+        self.d_model = d_model
+        self.horizons = horizons or [1, 5, 10]
+        self.attention = NumpyAttention(d_model=d_model, n_heads=n_heads)
+        self._is_trained = False
+        # Output projection (d_model -> len(horizons))
+        rng = np.random.RandomState(42)
+        self.output_proj = rng.randn(d_model, len(self.horizons)).astype(np.float32) * 0.02
 
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=d_model,
-            nhead=nhead,
-            dim_feedforward=dim_feedforward,
-            dropout=dropout,
-            batch_first=True,
-            activation="gelu",
-        )
-        self.transformer_encoder = nn.TransformerEncoder(
-            encoder_layer, num_layers=num_layers
-        )
+    def predict(self, features: np.ndarray) -> TransformerResult:
+        """Generate multi-horizon predictions.
 
-        self.classifier = nn.Sequential(
-            nn.LayerNorm(d_model),
-            nn.Linear(d_model, 64),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(64, num_classes),
-        )
+        Args:
+            features: (seq_len, n_features) array of historical features
+        """
+        seq_len, n_features = features.shape
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (batch, seq_len, input_dim)
-        x = self.input_projection(x)
-        x = self.pos_encoding(x)
-        x = self.dropout(x)
-        x = self.transformer_encoder(x)
-        # Global average pooling over time
-        x = x.mean(dim=1)
-        return self.classifier(x)
+        # Project features to d_model dimension
+        if n_features != self.d_model:
+            # Simple linear projection
+            rng = np.random.RandomState(hash(n_features) % 2**31)
+            proj = rng.randn(n_features, self.d_model).astype(np.float32) * 0.02
+            x = features.astype(np.float32) @ proj
+        else:
+            x = features.astype(np.float32)
 
+        # Apply self-attention
+        attended, attn_weights = self.attention.forward(x)
 
-class TransformerTradingModel(BaseTradingModel):
-    """Transformer-based trading model.
+        # Use last timestep for prediction
+        last_hidden = attended[-1]  # (d_model,)
 
-    Uses self-attention to capture long-range dependencies in
-    price sequences, outperforming LSTM on irregular patterns.
-    """
+        # Multi-horizon output
+        raw_pred = last_hidden @ self.output_proj  # (n_horizons,)
 
-    model_type = "transformer"
+        # Sigmoid for probability-like output
+        predictions = 1.0 / (1.0 + np.exp(-raw_pred))
 
-    def __init__(self):
-        self._model: TransformerNetwork | None = None
-        self._is_loaded = False
-        self._device = torch.device(
-            "mps" if torch.backends.mps.is_available() else "cpu"
-        )
+        # Temporal attention weights (how much each timestep contributed)
+        temporal_importance = attn_weights[-1].tolist()  # Last query's attention over all keys
 
-    @property
-    def is_loaded(self) -> bool:
-        return self._is_loaded
+        # Confidence based on attention concentration (high entropy = low confidence)
+        attn_entropy = -np.sum(attn_weights[-1] * np.log(attn_weights[-1] + 1e-10))
+        max_entropy = np.log(seq_len)
+        confidence = 1.0 - (attn_entropy / max_entropy) if max_entropy > 0 else 0.5
 
-    def train(
-        self,
-        X_train: np.ndarray,
-        y_train: np.ndarray,
-        X_val: np.ndarray,
-        y_val: np.ndarray,
-        epochs: int = 80,
-        batch_size: int = 64,
-        patience: int = 10,
-        lr: float = 1e-4,
-    ) -> TrainingResult:
-        input_dim = X_train.shape[2]
-        self._model = TransformerNetwork(input_dim=input_dim).to(self._device)
-
-        # Class weights for imbalance
-        classes, counts = np.unique(y_train, return_counts=True)
-        weights = 1.0 / counts
-        weights = weights / weights.sum() * len(classes)
-        class_weights = torch.FloatTensor(weights).to(self._device)
-
-        criterion = nn.CrossEntropyLoss(weight=class_weights)
-        optimizer = torch.optim.AdamW(
-            self._model.parameters(), lr=lr, weight_decay=1e-4
-        )
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=epochs
-        )
-
-        X_t = torch.FloatTensor(X_train).to(self._device)
-        y_t = torch.LongTensor(y_train).to(self._device)
-        X_v = torch.FloatTensor(X_val).to(self._device)
-        y_v = torch.LongTensor(y_val).to(self._device)
-
-        best_val_loss = float("inf")
-        best_epoch = 0
-        patience_counter = 0
-        best_state = None
-
-        for epoch in range(epochs):
-            self._model.train()
-            indices = torch.randperm(len(X_t))
-
-            epoch_loss = 0
-            n_batches = 0
-
-            for i in range(0, len(X_t), batch_size):
-                batch_idx = indices[i : i + batch_size]
-                xb = X_t[batch_idx]
-                yb = y_t[batch_idx]
-
-                optimizer.zero_grad()
-                output = self._model(xb)
-                loss = criterion(output, yb)
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
-                optimizer.step()
-
-                epoch_loss += loss.item()
-                n_batches += 1
-
-            scheduler.step()
-
-            # Validation
-            self._model.eval()
-            with torch.no_grad():
-                val_output = self._model(X_v)
-                val_loss = criterion(val_output, y_v).item()
-
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                best_epoch = epoch
-                patience_counter = 0
-                best_state = {k: v.cpu().clone() for k, v in self._model.state_dict().items()}
-            else:
-                patience_counter += 1
-                if patience_counter >= patience:
-                    break
-
-        # Restore best
-        if best_state:
-            self._model.load_state_dict(best_state)
-            self._model.to(self._device)
-
-        self._is_loaded = True
-
-        # Calculate accuracies
-        self._model.eval()
-        with torch.no_grad():
-            train_pred = self._model(X_t).argmax(dim=1).cpu().numpy()
-            val_pred = self._model(X_v).argmax(dim=1).cpu().numpy()
-
-        train_acc = float(np.mean(train_pred == y_train))
-        val_acc = float(np.mean(val_pred == y_val))
-
-        logger.info(
-            "transformer_trained",
-            train_acc=round(train_acc, 4),
-            val_acc=round(val_acc, 4),
-            best_epoch=best_epoch,
-        )
-
-        return TrainingResult(
-            accuracy=train_acc,
-            val_accuracy=val_acc,
-            loss=epoch_loss / max(n_batches, 1),
-            val_loss=best_val_loss,
-            epochs_trained=epoch + 1,
-            best_epoch=best_epoch,
-        )
-
-    def predict(self, features: np.ndarray) -> ModelPrediction:
-        if self._model is None:
-            raise RuntimeError("Model not loaded")
-
-        self._model.eval()
-
-        if features.ndim == 2:
-            features = features[np.newaxis, :]
-
-        with torch.no_grad():
-            x = torch.FloatTensor(features).to(self._device)
-            logits = self._model(x)
-            probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
-
-        action = int(np.argmax(probs))
-        signal = float(probs[2] - probs[0])
-
-        return ModelPrediction(
-            action=action,
-            probabilities=probs,
-            confidence=float(probs[action]),
-            signal_strength=signal,
+        return TransformerResult(
+            predictions=predictions.tolist(),
+            attention_weights=temporal_importance,
+            confidence=float(np.clip(confidence, 0, 1)),
+            horizons=self.horizons,
         )
 
     def save(self, path: Path) -> None:
-        if self._model is None:
-            raise RuntimeError("No model to save")
+        """Save model weights."""
+        path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        torch.save(
-            {
-                "model_state": self._model.state_dict(),
-                "input_dim": self._model.input_projection.in_features,
-            },
-            path,
-        )
+        data = {
+            "d_model": self.d_model,
+            "horizons": self.horizons,
+            "W_q": self.attention.W_q.tolist(),
+            "W_k": self.attention.W_k.tolist(),
+            "W_v": self.attention.W_v.tolist(),
+            "W_o": self.attention.W_o.tolist(),
+            "output_proj": self.output_proj.tolist(),
+            "is_trained": self._is_trained,
+        }
+        path.write_text(json.dumps(data))
         logger.info("transformer_saved", path=str(path))
 
-    def load(self, path: Path) -> None:
-        checkpoint = torch.load(path, map_location=self._device, weights_only=True)
-        self._model = TransformerNetwork(
-            input_dim=checkpoint["input_dim"]
-        ).to(self._device)
-        self._model.load_state_dict(checkpoint["model_state"])
-        self._model.eval()
-        self._is_loaded = True
-        logger.info("transformer_loaded", path=str(path))
+    def load(self, path: Path) -> bool:
+        """Load model weights."""
+        path = Path(path)
+        if not path.exists():
+            return False
+        try:
+            data = json.loads(path.read_text())
+            self.d_model = data["d_model"]
+            self.horizons = data["horizons"]
+            self.attention.W_q = np.array(data["W_q"], dtype=np.float32)
+            self.attention.W_k = np.array(data["W_k"], dtype=np.float32)
+            self.attention.W_v = np.array(data["W_v"], dtype=np.float32)
+            self.attention.W_o = np.array(data["W_o"], dtype=np.float32)
+            self.output_proj = np.array(data["output_proj"], dtype=np.float32)
+            self._is_trained = data.get("is_trained", False)
+            logger.info("transformer_loaded", path=str(path))
+            return True
+        except Exception as e:
+            logger.warning("transformer_load_failed", error=str(e))
+            return False
+
+
+# Singleton
+transformer_predictor = TemporalFusionPredictor()

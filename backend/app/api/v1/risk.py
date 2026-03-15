@@ -1,7 +1,7 @@
 """Risk management API endpoints: VaR, correlation, stress testing, Monte Carlo, Kelly."""
 
 import numpy as np
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -173,4 +173,133 @@ async def kelly_sizing(_user: dict = Depends(require_auth)):
         "recommended_fraction": round(kelly_result.recommended_fraction, 4),
         "optimal_size_usd": round(kelly_result.optimal_size_usd, 2),
         "edge_per_trade": round(kelly_result.edge, 4),
+    }
+
+
+@router.get("/scenarios")
+async def list_scenarios(_user: dict = Depends(require_auth)):
+    """List available crisis scenarios for stress testing."""
+    from app.services.risk.scenario_backtester import CRISIS_SCENARIOS
+    return {
+        "scenarios": [
+            {"name": name, "description": s["description"], "duration_days": s["duration_days"]}
+            for name, s in CRISIS_SCENARIOS.items()
+        ]
+    }
+
+
+@router.get("/scenario/{scenario_name}")
+async def run_scenario(scenario_name: str, _user: dict = Depends(require_auth)):
+    """Run a specific crisis scenario against current portfolio."""
+    from app.services.risk.scenario_backtester import scenario_backtester
+    from app.services.portfolio.tracker import portfolio_tracker
+    from app.models.base import async_session_factory
+
+    async with async_session_factory() as db:
+        positions = await portfolio_tracker.get_open_positions(db)
+        summary = await portfolio_tracker.get_summary(db)
+
+    pos_data = [
+        {"symbol": p.symbol, "quantity": float(p.quantity),
+         "current_price": float(p.current_price or 0), "side": p.side}
+        for p in positions
+    ]
+    equity = float(summary.get("total_equity", 10000))
+
+    try:
+        result = scenario_backtester.run_scenario(scenario_name, pos_data, equity)
+        return {
+            "scenario": result.scenario_name,
+            "description": result.description,
+            "impact_pct": result.portfolio_impact_pct,
+            "impact_usd": result.portfolio_impact_usd,
+            "max_drawdown_pct": result.max_drawdown_pct,
+            "recovery_candles": result.recovery_candles,
+            "assets_affected": result.assets_most_affected,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/scenario-stress-test")
+async def scenario_stress_test(_user: dict = Depends(require_auth)):
+    """Run stress test at various market drop levels."""
+    from app.services.risk.scenario_backtester import scenario_backtester
+    from app.services.portfolio.tracker import portfolio_tracker
+    from app.models.base import async_session_factory
+
+    async with async_session_factory() as db:
+        positions = await portfolio_tracker.get_open_positions(db)
+        summary = await portfolio_tracker.get_summary(db)
+
+    pos_data = [
+        {"symbol": p.symbol, "quantity": float(p.quantity),
+         "current_price": float(p.current_price or 0), "side": p.side}
+        for p in positions
+    ]
+    equity = float(summary.get("total_equity", 10000))
+
+    results = scenario_backtester.stress_test(pos_data, equity)
+    return {"equity": equity, "stress_levels": results}
+
+
+@router.get("/systemic")
+async def get_systemic_risk(_user: dict = Depends(require_auth)):
+    """Get systemic risk analysis across all tracked assets."""
+    from app.services.risk.systemic import systemic_risk_monitor
+    from app.models.base import async_session_factory
+    from app.services.market.data_collector import market_data_collector
+    from app.config import settings
+
+    price_series = {}
+    async with async_session_factory() as db:
+        for symbol in settings.symbols_list:
+            df = await market_data_collector.get_latest_candles(
+                db=db, symbol=symbol, interval="1h", limit=100,
+            )
+            if not df.empty:
+                price_series[symbol] = df["close"].values.astype(float)
+
+    if not price_series:
+        return {"risk_level": "unknown", "message": "No market data available"}
+
+    report = systemic_risk_monitor.analyze(price_series)
+    return {
+        "risk_level": report.risk_level,
+        "risk_score": report.risk_score,
+        "correlation_avg": report.correlation_avg,
+        "volatility_regime": report.volatility_regime,
+        "signals": report.signals,
+        "timestamp": report.timestamp,
+    }
+
+
+@router.get("/hedging")
+async def get_hedging_suggestions(_user: dict = Depends(require_auth)):
+    """Get hedging suggestions for current portfolio."""
+    from app.services.risk.hedging import hedging_suggester
+    from app.services.portfolio.tracker import portfolio_tracker
+    from app.models.base import async_session_factory
+
+    async with async_session_factory() as db:
+        positions = await portfolio_tracker.get_open_positions(db)
+        summary = await portfolio_tracker.get_summary(db)
+
+    pos_data = [
+        {"symbol": p.symbol, "quantity": float(p.quantity),
+         "current_price": float(p.current_price or 0), "side": p.side,
+         "unrealized_pnl": float(p.unrealized_pnl or 0)}
+        for p in positions
+    ]
+    equity = float(summary.get("total_equity", 10000))
+
+    suggestions = hedging_suggester.analyze_and_suggest(pos_data, equity)
+    return {
+        "suggestions": [
+            {"action": s.action, "symbol": s.symbol, "size_pct": s.size_pct,
+             "reason": s.reason, "urgency": s.urgency,
+             "estimated_risk_reduction_pct": s.estimated_risk_reduction_pct}
+            for s in suggestions
+        ],
+        "total_suggestions": len(suggestions),
     }

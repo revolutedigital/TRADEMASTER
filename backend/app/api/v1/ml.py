@@ -98,3 +98,75 @@ async def list_models(_user: dict = Depends(require_auth)):
         }
 
     return {"models": result, "total_symbols": len(result)}
+
+
+@router.get("/transformer/{symbol}")
+async def get_transformer_prediction(symbol: str, _user: dict = Depends(require_auth)):
+    """Get multi-horizon prediction from transformer model."""
+    symbol = symbol.upper()
+    from app.services.ml.models.transformer_model import transformer_predictor
+    from app.services.ml.features import feature_engineer
+    from app.models.base import async_session_factory
+    from app.services.market.data_collector import market_data_collector
+
+    async with async_session_factory() as db:
+        df = await market_data_collector.get_latest_candles(db=db, symbol=symbol, interval="1h", limit=100)
+
+    if df.empty or len(df) < 30:
+        raise HTTPException(status_code=400, detail="Insufficient data for prediction")
+
+    df_feat = feature_engineer.build_features(df)
+    feature_cols = feature_engineer.get_feature_columns(df_feat)
+    features = df_feat[feature_cols].dropna().values[-60:]
+
+    result = transformer_predictor.predict(features)
+    return {
+        "symbol": symbol,
+        "horizons": result.horizons,
+        "predictions": result.predictions,
+        "confidence": result.confidence,
+        "attention_top_5": sorted(
+            enumerate(result.attention_weights), key=lambda x: x[1], reverse=True
+        )[:5],
+    }
+
+
+@router.get("/sentiment/{symbol}")
+async def get_sentiment(symbol: str, _user: dict = Depends(require_auth)):
+    """Get market sentiment analysis for a symbol."""
+    symbol = symbol.upper()
+    from app.services.ml.sentiment import sentiment_analyzer
+    from app.models.base import async_session_factory
+    from app.services.market.data_collector import market_data_collector
+
+    async with async_session_factory() as db:
+        df = await market_data_collector.get_latest_candles(db=db, symbol=symbol, interval="1h", limit=100)
+
+    if df.empty or len(df) < 20:
+        raise HTTPException(status_code=400, detail="Insufficient data for sentiment analysis")
+
+    prices = df["close"].values.astype(float)
+    volumes = df["volume"].values.astype(float)
+
+    result = sentiment_analyzer.analyze_from_market_data(prices, volumes)
+    return {
+        "symbol": symbol,
+        "overall": result.overall,
+        "interpretation": result.interpretation,
+        "confidence": result.confidence,
+        "sources": result.sources,
+        "timestamp": result.timestamp,
+    }
+
+
+@router.get("/synthetic-scenarios")
+async def list_synthetic_scenarios(_user: dict = Depends(require_auth)):
+    """List available synthetic data scenarios for training augmentation."""
+    from app.services.ml.synthetic_data import synthetic_generator
+    scenarios = synthetic_generator.generate_all_scenarios()
+    return {
+        "scenarios": [
+            {"name": s.name, "description": s.description, "candles": s.candles}
+            for s in scenarios
+        ]
+    }

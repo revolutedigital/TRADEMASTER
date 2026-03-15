@@ -143,14 +143,40 @@ async def get_market_sentiment():
     """Get market sentiment indicators."""
     try:
         from app.services.ml.sentiment import sentiment_analyzer
-        result = await sentiment_analyzer.get_composite_sentiment()
-        return result
+        from app.models.base import async_session_factory
+        from app.services.market.data_collector import market_data_collector
+        import numpy as np
+
+        async with async_session_factory() as db:
+            df = await market_data_collector.get_latest_candles(
+                db=db, symbol="BTCUSDT", interval="1h", limit=100,
+            )
+
+        if not df.empty and len(df) >= 20:
+            prices = df["close"].values.astype(float)
+            volumes = df["volume"].values.astype(float)
+            result = sentiment_analyzer.analyze_from_market_data(prices, volumes)
+            return {
+                "overall": result.overall,
+                "interpretation": result.interpretation,
+                "confidence": result.confidence,
+                "sources": result.sources,
+                "timestamp": result.timestamp,
+            }
+
+        return {
+            "overall": 0.0,
+            "interpretation": "neutral",
+            "confidence": 0.0,
+            "sources": {},
+            "timestamp": None,
+        }
     except Exception as e:
         logger.warning("sentiment_fetch_failed", error=str(e))
         return {
-            "fear_greed_index": 50,
-            "fear_greed_label": "Neutral",
-            "funding_rates": {},
-            "long_short_ratio": {},
-            "open_interest": {},
+            "overall": 0.0,
+            "interpretation": "neutral",
+            "confidence": 0.0,
+            "sources": {},
+            "timestamp": None,
         }

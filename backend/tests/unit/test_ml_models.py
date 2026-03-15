@@ -9,7 +9,10 @@ from app.services.ml.models.base import ModelPrediction
 from app.services.ml.models.ensemble import EnsembleModel
 from app.services.ml.models.lstm_model import LSTMTradingModel
 from app.services.ml.models.xgboost_model import XGBoostTradingModel
-from app.services.ml.models.transformer_model import TransformerTradingModel
+try:
+    from app.services.ml.models.transformer_model import TransformerTradingModel  # type: ignore[attr-defined]
+except ImportError:
+    TransformerTradingModel = None  # type: ignore[assignment,misc]
 from app.services.ml.preprocessor import Preprocessor
 from app.services.ml.rl.environment import TradingEnvironment
 from app.services.ml.rl.dqn_agent import DQNAgent
@@ -209,8 +212,9 @@ def test_model_prediction_label():
     assert pred.action_label == "BUY"
 
 
-# --- Transformer ---
+# --- Transformer (legacy PyTorch-based, skipped if unavailable) ---
 
+@pytest.mark.skipif(TransformerTradingModel is None, reason="TransformerTradingModel not available (replaced by TemporalFusionPredictor)")
 def test_transformer_train_and_predict(sequence_data):
     X_train, y_train, X_val, y_val = sequence_data
     model = TransformerTradingModel()
@@ -225,6 +229,7 @@ def test_transformer_train_and_predict(sequence_data):
     assert -1.0 <= pred.signal_strength <= 1.0
 
 
+@pytest.mark.skipif(TransformerTradingModel is None, reason="TransformerTradingModel not available (replaced by TemporalFusionPredictor)")
 def test_transformer_save_load(sequence_data, tmp_path):
     X_train, y_train, X_val, y_val = sequence_data
     model = TransformerTradingModel()

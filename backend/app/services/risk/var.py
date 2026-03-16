@@ -44,6 +44,41 @@ class VaRCalculator:
         var = portfolio_value * volatility * abs(z_score) * np.sqrt(holding_period_days)
         return float(var)
 
+    def cornish_fisher_var(
+        self,
+        returns: list[float] | np.ndarray,
+        confidence: float = 0.95,
+        portfolio_value: float = 1.0,
+    ) -> float:
+        """VaR with Cornish-Fisher expansion for non-normal distributions.
+
+        Adjusts the standard normal quantile using observed skewness and
+        excess kurtosis, giving a more accurate tail-risk estimate when the
+        return distribution departs from normality.
+        """
+        if len(returns) < 10:
+            return 0.0
+
+        from scipy.stats import norm, skew, kurtosis
+
+        arr = np.array(returns)
+        z = norm.ppf(1 - confidence)
+        s = float(skew(arr))
+        k = float(kurtosis(arr, fisher=True))  # excess kurtosis
+
+        # Cornish-Fisher expansion
+        z_cf = (
+            z
+            + (z**2 - 1) * s / 6
+            + (z**3 - 3 * z) * k / 24
+            - (2 * z**3 - 5 * z) * s**2 / 36
+        )
+
+        mu = float(np.mean(arr))
+        sigma = float(np.std(arr))
+        var = -(mu + z_cf * sigma)
+        return float(max(var, 0.0) * portfolio_value)
+
     def conditional_var(
         self,
         returns: list[float] | np.ndarray,
@@ -82,6 +117,7 @@ class VaRCalculator:
             return {
                 "historical_var": 0.0,
                 "conditional_var": 0.0,
+                "cornish_fisher_var": 0.0,
                 "confidence": confidence,
                 "portfolio_value": portfolio_value,
                 "data_points": len(arr),
@@ -90,6 +126,7 @@ class VaRCalculator:
         return {
             "historical_var": round(self.historical_var(arr, confidence, portfolio_value), 2),
             "conditional_var": round(self.conditional_var(arr, confidence, portfolio_value), 2),
+            "cornish_fisher_var": round(self.cornish_fisher_var(arr, confidence, portfolio_value), 2),
             "confidence": confidence,
             "portfolio_value": portfolio_value,
             "data_points": len(arr),

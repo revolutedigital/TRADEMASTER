@@ -1,69 +1,87 @@
-name: Deploy
+name: CD - Deploy
 
 on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
     branches: [main]
-  workflow_dispatch:
 
 jobs:
-  deploy:
-    name: Deploy to Railway
+  deploy-backend:
     runs-on: ubuntu-latest
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.head_branch == 'main')
-
+    if: github.event.workflow_run.conclusion == 'success'
+    environment: production
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Railway CLI
         run: npm install -g @railway/cli
 
-      # ---- Canary Deployment ----
-      - name: Deploy Canary Backend
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: railway up -s backend-canary --detach
-        continue-on-error: true
-
-      - name: Canary Health Check
+      - name: Health check before deploy
         run: |
-          echo "Waiting for canary to become healthy..."
-          for i in $(seq 1 10); do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://backend-canary-trademaster.up.railway.app/api/v1/system/health || echo "000")
-            echo "Attempt $i: HTTP $STATUS"
-            if [ "$STATUS" = "200" ]; then
-              echo "Canary is healthy!"
-              exit 0
-            fi
-            sleep 15
-          done
-          echo "::error::Canary health check failed after 10 attempts"
-          exit 1
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://backendtrademaster.up.railway.app/api/v1/system/health)
+          echo "Pre-deploy health: $STATUS"
 
-      - name: Canary Smoke Tests
-        run: |
-          # Verify key endpoints respond correctly
-          curl -f -s https://backend-canary-trademaster.up.railway.app/api/v1/system/health | jq '.status' | grep -q '"healthy"'
-          echo "Canary smoke tests passed"
-
-      # ---- Production Deployment ----
-      - name: Deploy Backend
+      - name: Deploy backend to Railway
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: railway up -s backend --detach
-        continue-on-error: true
 
-      - name: Deploy Frontend
+      - name: Wait for deployment
+        run: sleep 60
+
+      - name: Post-deploy health check
+        run: |
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://backendtrademaster.up.railway.app/api/v1/system/health)
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed (attempt $i)"
+              exit 0
+            fi
+            echo "Health check failed (attempt $i, status=$STATUS), retrying in 30s..."
+            sleep 30
+          done
+          echo "CRITICAL: Health check failed after 5 attempts"
+          exit 1
+
+      - name: Verify detailed health
+        run: |
+          curl -sf https://backendtrademaster.up.railway.app/api/v1/system/health/detailed | python3 -m json.tool
+
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
+    environment: production
+    needs: deploy-backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy frontend to Railway
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: railway up -s frontend --detach
-        continue-on-error: true
 
-      - name: Verify Health
+      - name: Post-deploy verification
         run: |
-          sleep 30
-          curl -f https://backendtrademaster.up.railway.app/api/v1/system/health || echo "Health check pending"
+          sleep 45
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://trademaster.up.railway.app)
+          echo "Frontend status: $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "WARNING: Frontend may not be ready yet"
+          fi
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: [deploy-backend, deploy-frontend]
+    if: always()
+    steps:
+      - name: Deployment summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Backend: ${{ needs.deploy-backend.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Frontend: ${{ needs.deploy-frontend.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: ${{ github.event.workflow_run.head_sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Time: $(date -u)" >> $GITHUB_STEP_SUMMARY

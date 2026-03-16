@@ -22,9 +22,11 @@ from app.api.v1.admin import router as admin_router
 from app.api.v1.ml import router as ml_router
 from app.api.v1.tax import router as tax_router
 from app.api.v1.events import router as events_router
+from app.api.v1.dashboard import router as dashboard_router
 
 api_router = APIRouter()
 
+api_router.include_router(dashboard_router, tags=["dashboard"])
 api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
 api_router.include_router(system_router, prefix="/system", tags=["system"])
 api_router.include_router(market_router, prefix="/market", tags=["market"])

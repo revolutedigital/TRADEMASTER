@@ -32,6 +32,8 @@ class WalkForwardWindow:
     test_end: int
     train_trades: int
     test_trades: int
+    train_return_pct: float
+    train_sharpe: float
     test_win_rate: float
     test_return_pct: float
     test_sharpe: float
@@ -132,6 +134,8 @@ def run_walk_forward(
             test_end=test_end,
             train_trades=train_result.metrics.total_trades,
             test_trades=test_result.metrics.total_trades,
+            train_return_pct=train_result.metrics.total_return_pct,
+            train_sharpe=train_result.metrics.sharpe_ratio,
             test_win_rate=test_result.metrics.win_rate,
             test_return_pct=test_result.metrics.total_return_pct,
             test_sharpe=test_result.metrics.sharpe_ratio,
@@ -180,10 +184,17 @@ def run_walk_forward(
     profitable_windows = sum(1 for w in traded_windows if w.test_return_pct > 0)
     consistency = profitable_windows / len(traded_windows)
 
-    # Overfitting score: how much worse is test vs train
-    # 1.0 = no overfitting, <1.0 = test underperforms train
-    train_returns = [w.train_trades for w in windows]  # Proxy
-    overfitting = min(1.0, avg_return / 0.01) if avg_return > 0 else 0
+    # Overfitting score: measures Sharpe ratio degradation from in-sample
+    # to out-of-sample.  Score near 0 = no overfitting, near/above 1 = severe.
+    # Formula: 1 - (avg OOS Sharpe / avg IS Sharpe)
+    is_sharpes = [w.train_sharpe for w in traded_windows if w.train_sharpe > 0]
+    oos_sharpes = [w.test_sharpe for w in traded_windows if w.train_sharpe > 0]
+    avg_is_sharpe = float(np.mean(is_sharpes)) if is_sharpes else 0.0
+    avg_oos_sharpe = float(np.mean(oos_sharpes)) if oos_sharpes else 0.0
+    if avg_is_sharpe > 0:
+        overfitting = max(0.0, min(1.0, 1.0 - (avg_oos_sharpe / avg_is_sharpe)))
+    else:
+        overfitting = 1.0 if avg_oos_sharpe <= 0 else 0.0
 
     result = WalkForwardResult(
         windows=windows,

@@ -21,59 +21,58 @@ class TestChaosResilience:
         with patch.object(bus, 'connect', side_effect=ConnectionError("Connection refused")):
             with pytest.raises(ConnectionError):
                 await bus.connect()
-        # Verify publish fails gracefully
-        result = await bus.publish("test.event", {"data": "test"})
-        # Should not raise, just log warning
+        # Verify publish fails gracefully (returns None when not connected)
+        from app.core.events import Event
+        result = await bus.publish(Event(type="test.event", data={"data": "test"}))
+        assert result is None  # Should not raise, just return None
 
-    async def test_database_timeout_returns_error(self):
-        """API should return 503 when database is unreachable."""
-        from app.models.base import async_session
-        with patch('app.models.base.async_session', side_effect=Exception("Connection timeout")):
-            # Simulated - verify circuit breaker would activate
-            from app.core.resilience import ServiceCircuitBreaker
-            cb = ServiceCircuitBreaker(failure_threshold=3, recovery_timeout=30.0)
-            for _ in range(3):
-                cb.record_failure()
-            assert not cb.allow_request()
+    async def test_database_timeout_activates_circuit_breaker(self):
+        """Circuit breaker should activate after repeated DB failures."""
+        from app.core.resilience import ServiceCircuitBreaker
+        cb = ServiceCircuitBreaker(failure_threshold=3, recovery_timeout=30.0)
+        # Simulate 3 consecutive DB timeouts
+        for _ in range(3):
+            cb.record_failure()
+        # Circuit should be open - is_available returns False
+        assert not cb.is_available
 
     async def test_binance_api_failure_activates_circuit_breaker(self):
         """Circuit breaker should open after consecutive Binance API failures."""
         from app.core.resilience import ServiceCircuitBreaker
         cb = ServiceCircuitBreaker(failure_threshold=3, recovery_timeout=60.0)
-        
+
         # Simulate consecutive failures
         for i in range(3):
-            assert cb.allow_request()
+            assert cb.is_available
             cb.record_failure()
-        
+
         # Circuit should be open now
-        assert not cb.allow_request()
+        assert not cb.is_available
 
     async def test_concurrent_request_handling(self):
         """System should handle burst of concurrent requests."""
         from app.core.resilience import ServiceCircuitBreaker
         cb = ServiceCircuitBreaker(failure_threshold=10, recovery_timeout=30.0)
-        
+
         async def simulate_request(i):
-            if cb.allow_request():
+            if cb.is_available:
                 if i % 3 == 0:  # 33% failure rate
                     cb.record_failure()
                 else:
                     cb.record_success()
                 return True
             return False
-        
+
         results = await asyncio.gather(*[simulate_request(i) for i in range(50)])
         # Most requests should succeed
         assert sum(results) > 30
 
     async def test_memory_pressure_handling(self):
         """Verify system handles large data gracefully."""
-        # Simulate processing a large number of candles
         from app.services.ml.features import feature_engineer
         import pandas as pd
         import numpy as np
-        
+
         # Create a large DataFrame (10k rows)
         n = 10000
         df = pd.DataFrame({
@@ -85,7 +84,7 @@ class TestChaosResilience:
         })
         df['high'] = df[['open', 'high', 'close']].max(axis=1) + 100
         df['low'] = df[['open', 'low', 'close']].min(axis=1) - 100
-        
+
         # Should process without memory errors
         result = feature_engineer.build_features(df)
         assert len(result) > 0
@@ -96,10 +95,10 @@ class TestChaosResilience:
         for i in range(10):
             task = asyncio.create_task(asyncio.sleep(0.1), name=f"test_task_{i}")
             tasks.append(task)
-        
+
         # Cancel all tasks (simulating shutdown)
         for task in tasks:
             task.cancel()
-        
+
         results = await asyncio.gather(*tasks, return_exceptions=True)
         assert all(isinstance(r, asyncio.CancelledError) for r in results)

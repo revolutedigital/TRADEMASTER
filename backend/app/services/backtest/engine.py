@@ -163,7 +163,7 @@ class BacktestEngine:
             if signals is not None:
                 signal = float(signals.iloc[i]) if i < len(signals) else 0
             else:
-                signal = 0  # model inference would go here
+                signal = self._predict_signal(model, df, i)
 
             # Open new position if no existing one
             if position is None and atr > 0:
@@ -240,6 +240,42 @@ class BacktestEngine:
                 "fees": self.taker_fee,
             },
         )
+
+    def _predict_signal(
+        self,
+        model: BaseTradingModel | EnsembleModel | None,
+        df: pd.DataFrame,
+        idx: int,
+    ) -> float:
+        """Generate a trading signal from an ML model prediction.
+
+        Extracts features for the current bar, calls model.predict(), and
+        converts the output into a signal value in [-1.0, +1.0].
+
+        Falls back to 0 (HOLD) if anything goes wrong.
+        """
+        if model is None:
+            return 0.0
+
+        try:
+            # Build feature row from the current OHLCV window
+            feature_cols = feature_engineer.get_feature_columns(df)
+            row_features = df.iloc[idx][feature_cols].values.astype(np.float64)
+
+            # Replace NaN/inf with 0 so the model doesn't choke
+            row_features = np.nan_to_num(row_features, nan=0.0, posinf=0.0, neginf=0.0)
+
+            if isinstance(model, EnsembleModel):
+                # EnsembleModel.predict expects dict[model_name -> features]
+                features_dict = {name: row_features for name in model.models}
+                prediction = model.predict(features_dict)
+            else:
+                prediction = model.predict(row_features)
+
+            return float(prediction.signal_strength)
+        except Exception as exc:
+            logger.debug("model_predict_fallback", idx=idx, error=str(exc))
+            return 0.0
 
     def _close_trade(
         self, side: str, entry: float, exit_price: float, qty: float

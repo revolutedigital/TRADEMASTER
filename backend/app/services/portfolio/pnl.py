@@ -83,7 +83,14 @@ class PnLCalculator:
         daily_rf = risk_free_rate / 252
         sharpe = ((avg_return - daily_rf) / std_return * np.sqrt(252)) if std_return > 0 else 0
 
-        # Sortino: use proper downside deviation (include zeros for positive returns)
+        # Sortino ratio using the standard Sortino & Price (1994) convention:
+        # The downside deviation is the second-order lower partial moment (LPM2),
+        # calculated as sqrt(mean((min(r - target, 0))^2)) over ALL observations.
+        # This means returns above the target contribute zero to the sum but ARE
+        # included in the denominator (the count). This is intentional and correct:
+        # it represents the continuous downside risk of holding the position, not
+        # just the risk conditional on a loss occurring.  Most financial libraries
+        # (empyrical, quantstats, pyfolio) use this same convention.
         downside_diff = np.minimum(returns - daily_rf, 0)
         downside_std = float(np.sqrt(np.mean(downside_diff ** 2))) if len(returns) > 1 else 0
         sortino = ((avg_return - daily_rf) / downside_std * np.sqrt(252)) if downside_std > 0 else 0

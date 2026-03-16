@@ -69,6 +69,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.warning("event_store_rehydrate_failed", error=str(e))
 
+    # --- Phase 0c: Rehydrate lineage tracker from PostgreSQL ---
+    try:
+        from app.services.data.lineage_tracker import lineage_tracker
+        loaded = await lineage_tracker.load_from_db()
+        logger.info("lineage_tracker_rehydrated", nodes_loaded=loaded)
+    except Exception as e:
+        logger.warning("lineage_tracker_rehydrate_failed", error=str(e))
+
+    # --- Phase 0d: Rehydrate schema registry from PostgreSQL ---
+    try:
+        from app.core.schema_registry import schema_registry
+        loaded = await schema_registry.load_from_db()
+        logger.info("schema_registry_rehydrated", schemas_loaded=loaded)
+    except Exception as e:
+        logger.warning("schema_registry_rehydrate_failed", error=str(e))
+
     # --- Phase 1: Connect infrastructure ---
     redis_ok = False
     try:
@@ -306,7 +322,32 @@ async def _start_background_services_offline() -> None:
         from app.services.trading_engine import trading_engine
         await trading_engine.check_positions()
 
+    # Fill reconciliation every 5 minutes (offline-safe: skips exchange call if unavailable)
+    async def reconcile_fills():
+        from app.core.resilience import reconciler
+        from app.models.base import async_session_factory as sf
+        from app.repositories.position_repo import PositionRepository
+        try:
+            async with sf() as session:
+                repo = PositionRepository()
+                open_positions = await repo.get_open(session)
+                local_orders = [
+                    {"exchange_order_id": str(p.exchange_order_id), "status": "OPEN"}
+                    for p in open_positions if hasattr(p, "exchange_order_id") and p.exchange_order_id
+                ]
+                # In offline mode, try exchange but don't fail if unavailable
+                exchange_orders: list = []
+                try:
+                    from app.services.exchange.binance_client import binance_client as bc
+                    exchange_orders = await bc.get_open_orders()
+                except Exception:
+                    pass  # Exchange unavailable in offline mode
+                await reconciler.reconcile_orders(local_orders, exchange_orders)
+        except Exception as e:
+            logger.warning("fill_reconciliation_failed", error=str(e))
+
     scheduler.add_task("position_check", check_positions, interval_seconds=5, run_immediately=True)
+    scheduler.add_task("fill_reconciliation", reconcile_fills, interval_seconds=300, run_immediately=False)
     scheduler.start_all()
 
     logger.info("all_background_services_started_offline")

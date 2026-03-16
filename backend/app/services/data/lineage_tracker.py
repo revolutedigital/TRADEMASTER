@@ -5,8 +5,12 @@ raw data -> features -> model training -> predictions -> trades.
 
 Provides a DAG-based representation for dependency analysis, impact
 assessment, compliance auditing, and future-data-leak detection.
+
+Persistence: nodes, edges, and audit log are persisted to PostgreSQL
+so lineage data survives server restarts and Railway redeployments.
 """
 
+import asyncio
 import json
 import uuid
 from collections import defaultdict, deque
@@ -180,11 +184,201 @@ class EndToEndLineageTracker:
     Automatically records relationships as data flows from raw market
     feeds through feature engineering, model training, prediction
     generation, and trade execution.
+
+    All mutations are persisted to PostgreSQL on a best-effort basis so
+    lineage data survives server restarts and Railway redeployments.
     """
 
     def __init__(self) -> None:
         self._dag = LineageDAG()
         self._audit_log: list[dict] = []
+
+    # ------------------------------------------------------------------
+    # DB persistence helpers (best-effort, fire-and-forget)
+    # ------------------------------------------------------------------
+
+    def _persist_node_bg(self, node: LineageNode) -> None:
+        """Schedule best-effort DB persistence for a single node."""
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._save_node_to_db(node))
+        except RuntimeError:
+            pass  # No running event loop (e.g. during tests)
+
+    async def _save_node_to_db(self, node: LineageNode) -> None:
+        """Persist a single node to PostgreSQL."""
+        try:
+            from sqlalchemy import text
+            from app.models.base import async_session_factory
+
+            async with async_session_factory() as session:
+                await session.execute(
+                    text("""
+                        INSERT INTO lineage_nodes
+                            (id, node_type, name, created_at, version, metadata)
+                        VALUES
+                            (:id, :node_type, :name, :created_at, :version, :metadata)
+                        ON CONFLICT (id) DO UPDATE SET
+                            metadata = EXCLUDED.metadata,
+                            version = EXCLUDED.version
+                    """),
+                    {
+                        "id": node.id,
+                        "node_type": node.node_type.value,
+                        "name": node.name,
+                        "created_at": node.created_at,
+                        "version": node.version,
+                        "metadata": json.dumps(node.metadata),
+                    },
+                )
+                await session.commit()
+        except Exception as exc:
+            logger.debug("lineage_node_persist_failed", node_id=node.id, error=str(exc))
+
+    def _persist_edge_bg(self, edge: LineageEdge) -> None:
+        """Schedule best-effort DB persistence for a single edge."""
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._save_edge_to_db(edge))
+        except RuntimeError:
+            pass
+
+    async def _save_edge_to_db(self, edge: LineageEdge) -> None:
+        """Persist a single edge to PostgreSQL."""
+        try:
+            from sqlalchemy import text
+            from app.models.base import async_session_factory
+
+            async with async_session_factory() as session:
+                await session.execute(
+                    text("""
+                        INSERT INTO lineage_edges
+                            (source_id, target_id, edge_type, created_at, metadata)
+                        VALUES
+                            (:source_id, :target_id, :edge_type, :created_at, :metadata)
+                        ON CONFLICT ON CONSTRAINT uq_lineage_edge DO NOTHING
+                    """),
+                    {
+                        "source_id": edge.source_id,
+                        "target_id": edge.target_id,
+                        "edge_type": edge.edge_type.value,
+                        "created_at": edge.created_at,
+                        "metadata": json.dumps(edge.metadata),
+                    },
+                )
+                await session.commit()
+        except Exception as exc:
+            logger.debug("lineage_edge_persist_failed", error=str(exc))
+
+    def _persist_audit_bg(self, entry: dict) -> None:
+        """Schedule best-effort DB persistence for a single audit entry."""
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._save_audit_to_db(entry))
+        except RuntimeError:
+            pass
+
+    async def _save_audit_to_db(self, entry: dict) -> None:
+        """Persist a single audit log entry to PostgreSQL."""
+        try:
+            from sqlalchemy import text
+            from app.models.base import async_session_factory
+
+            async with async_session_factory() as session:
+                await session.execute(
+                    text("""
+                        INSERT INTO lineage_audit_log
+                            (id, action, node_id, timestamp, details)
+                        VALUES
+                            (:id, :action, :node_id, :timestamp, :details)
+                        ON CONFLICT (id) DO NOTHING
+                    """),
+                    {
+                        "id": entry["id"],
+                        "action": entry["action"],
+                        "node_id": entry["node_id"],
+                        "timestamp": entry["timestamp"],
+                        "details": json.dumps(entry),
+                    },
+                )
+                await session.commit()
+        except Exception as exc:
+            logger.debug("lineage_audit_persist_failed", error=str(exc))
+
+    # ------------------------------------------------------------------
+    # Load from DB (called on startup)
+    # ------------------------------------------------------------------
+
+    async def load_from_db(self) -> int:
+        """Restore lineage DAG from PostgreSQL.
+
+        Returns the number of nodes loaded.
+        """
+        try:
+            from sqlalchemy import text
+            from app.models.base import async_session_factory
+
+            loaded_nodes = 0
+
+            async with async_session_factory() as session:
+                # Load nodes
+                result = await session.execute(text("SELECT id, node_type, name, created_at, version, metadata FROM lineage_nodes"))
+                rows = result.fetchall()
+                for row in rows:
+                    node = LineageNode(
+                        id=row[0],
+                        node_type=NodeType(row[1]),
+                        name=row[2],
+                        created_at=row[3] if isinstance(row[3], datetime) else datetime.fromisoformat(str(row[3])),
+                        version=row[4] or "1",
+                        metadata=json.loads(row[5]) if row[5] else {},
+                    )
+                    self._dag.add_node(node)
+                    loaded_nodes += 1
+
+                # Load edges
+                result = await session.execute(text("SELECT source_id, target_id, edge_type, created_at, metadata FROM lineage_edges"))
+                rows = result.fetchall()
+                loaded_edges = 0
+                for row in rows:
+                    try:
+                        edge = LineageEdge(
+                            source_id=row[0],
+                            target_id=row[1],
+                            edge_type=EdgeType(row[2]),
+                            created_at=row[3] if isinstance(row[3], datetime) else datetime.fromisoformat(str(row[3])),
+                            metadata=json.loads(row[4]) if row[4] else {},
+                        )
+                        self._dag.add_edge(edge)
+                        loaded_edges += 1
+                    except (ValueError, KeyError) as exc:
+                        logger.debug("lineage_edge_load_skipped", error=str(exc))
+
+                # Load audit log
+                result = await session.execute(text("SELECT id, action, node_id, timestamp, details FROM lineage_audit_log ORDER BY timestamp"))
+                rows = result.fetchall()
+                for row in rows:
+                    try:
+                        entry = json.loads(row[4]) if row[4] else {}
+                        entry.setdefault("id", row[0])
+                        entry.setdefault("action", row[1])
+                        entry.setdefault("node_id", row[2])
+                        entry.setdefault("timestamp", row[3])
+                        self._audit_log.append(entry)
+                    except Exception:
+                        pass
+
+            logger.info(
+                "lineage_loaded_from_db",
+                nodes=loaded_nodes,
+                edges=loaded_edges,
+                audit_entries=len(self._audit_log),
+            )
+            return loaded_nodes
+
+        except Exception as exc:
+            logger.warning("lineage_load_from_db_failed", error=str(exc))
+            return 0
 
     # ------------------------------------------------------------------
     # Node registration helpers
@@ -200,6 +394,7 @@ class EndToEndLineageTracker:
         )
         self._dag.add_node(node)
         self._append_audit("register_data_source", node)
+        self._persist_node_bg(node)
         logger.info("lineage_source_registered", source=source_id, name=name)
         return node
 
@@ -220,6 +415,7 @@ class EndToEndLineageTracker:
             metadata=metadata,
         )
         self._dag.add_node(node)
+        self._persist_node_bg(node)
         self._add_edge(source_id, data_id, EdgeType.DERIVED_FROM)
         self._append_audit("register_raw_data", node)
         return node
@@ -241,6 +437,7 @@ class EndToEndLineageTracker:
             metadata=metadata,
         )
         self._dag.add_node(node)
+        self._persist_node_bg(node)
         for parent_id in derived_from:
             self._add_edge(parent_id, feature_id, EdgeType.DERIVED_FROM)
         self._append_audit("register_feature", node)
@@ -263,6 +460,7 @@ class EndToEndLineageTracker:
             metadata=metadata,
         )
         self._dag.add_node(node)
+        self._persist_node_bg(node)
         for feature_id in trained_on:
             self._add_edge(feature_id, model_id, EdgeType.TRAINED_ON)
         self._append_audit("register_model", node)
@@ -284,6 +482,7 @@ class EndToEndLineageTracker:
             metadata=metadata,
         )
         self._dag.add_node(node)
+        self._persist_node_bg(node)
         self._add_edge(model_id, prediction_id, EdgeType.PREDICTED_BY)
         for fid in input_feature_ids:
             self._add_edge(fid, prediction_id, EdgeType.DEPENDS_ON)
@@ -304,6 +503,7 @@ class EndToEndLineageTracker:
             metadata=metadata,
         )
         self._dag.add_node(node)
+        self._persist_node_bg(node)
         self._add_edge(prediction_id, trade_id, EdgeType.TRIGGERED)
         self._append_audit("register_trade", node)
         return node
@@ -474,17 +674,16 @@ class EndToEndLineageTracker:
         }
 
     # ------------------------------------------------------------------
-    # Persistence
+    # Bulk persistence (full graph flush)
     # ------------------------------------------------------------------
 
     async def persist(self) -> None:
         """Save the full lineage graph to PostgreSQL for durable storage."""
         try:
             from sqlalchemy import text
+            from app.models.base import async_session_factory
 
-            from app.models.base import async_session
-
-            async with async_session() as session:
+            async with async_session_factory() as session:
                 # Persist nodes
                 for node in self._dag._nodes.values():
                     await session.execute(
@@ -516,7 +715,7 @@ class EndToEndLineageTracker:
                                     (source_id, target_id, edge_type, created_at, metadata)
                                 VALUES
                                     (:source_id, :target_id, :edge_type, :created_at, :metadata)
-                                ON CONFLICT (source_id, target_id, edge_type) DO NOTHING
+                                ON CONFLICT ON CONSTRAINT uq_lineage_edge DO NOTHING
                             """),
                             {
                                 "source_id": edge.source_id,
@@ -569,6 +768,7 @@ class EndToEndLineageTracker:
                 metadata=metadata,
             )
             self._dag.add_edge(edge)
+            self._persist_edge_bg(edge)
         else:
             logger.debug(
                 "lineage_edge_skipped",
@@ -578,14 +778,16 @@ class EndToEndLineageTracker:
             )
 
     def _append_audit(self, action: str, node: LineageNode) -> None:
-        self._audit_log.append({
+        entry = {
             "id": uuid.uuid4().hex,
             "action": action,
             "node_id": node.id,
             "node_type": node.node_type.value,
             "node_name": node.name,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        }
+        self._audit_log.append(entry)
+        self._persist_audit_bg(entry)
 
 
 lineage_tracker = EndToEndLineageTracker()

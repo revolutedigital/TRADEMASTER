@@ -1,5 +1,19 @@
 import { describe, it, expect } from "vitest";
-import { formatCurrency, formatPercent, formatNumber, formatCompactNumber, timeAgo } from "@/lib/utils";
+import { cn, formatCurrency, formatPercent, formatNumber, formatCompactNumber, timeAgo } from "@/lib/utils";
+
+describe("cn", () => {
+  it("merges class names", () => {
+    expect(cn("px-2", "py-1")).toBe("px-2 py-1");
+  });
+
+  it("handles conditional classes", () => {
+    expect(cn("base", false && "hidden", "end")).toBe("base end");
+  });
+
+  it("merges tailwind conflicts (last wins)", () => {
+    expect(cn("px-2", "px-4")).toBe("px-4");
+  });
+});
 
 describe("formatCurrency", () => {
   it("formats positive numbers", () => {

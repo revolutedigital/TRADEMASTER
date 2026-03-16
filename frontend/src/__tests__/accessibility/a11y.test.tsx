@@ -1,10 +1,9 @@
 /**
- * Accessibility testing for all pages.
- * Uses @testing-library/react with jest-axe for WCAG compliance checks.
+ * Accessibility testing for components.
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 
 // Mock next/navigation
 vi.mock("next/navigation", () => ({
@@ -12,24 +11,28 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/",
 }));
 
-// Mock stores
-vi.mock("@/stores/authStore", () => ({
-  useAuthStore: () => ({ isAuthenticated: true, user: { username: "test" } }),
+// Mock next/link
+vi.mock("next/link", () => ({
+  default: ({ children, href, ...props }: { children: React.ReactNode; href: string; [key: string]: unknown }) => (
+    <a href={href} {...props}>{children}</a>
+  ),
 }));
+
+// Mock Logo
+vi.mock("@/components/ui/logo", () => ({
+  Logo: ({ size }: { size?: string }) => <div data-testid="logo">TradeMaster</div>,
+}));
+
+import { Sidebar } from "@/components/ui/sidebar";
 
 describe("Accessibility Tests", () => {
   it("sidebar has correct ARIA roles", () => {
-    // Import dynamically to avoid SSR issues
-    const { Sidebar } = require("@/components/sidebar");
-    const { container } = render(<Sidebar />);
-    
-    // Navigation should have proper role
-    const nav = container.querySelector("nav");
+    render(<Sidebar />);
+    const nav = screen.getByRole("navigation", { name: /main navigation/i });
     expect(nav).toBeTruthy();
   });
 
   it("form inputs have associated labels", () => {
-    // Verify login form has proper labels
     const { container } = render(
       <form>
         <label htmlFor="username">Username</label>
@@ -39,10 +42,10 @@ describe("Accessibility Tests", () => {
         <button type="submit">Login</button>
       </form>
     );
-    
+
     const labels = container.querySelectorAll("label");
     expect(labels.length).toBeGreaterThanOrEqual(2);
-    
+
     const inputs = container.querySelectorAll("input");
     inputs.forEach((input) => {
       expect(input.getAttribute("aria-label") || input.getAttribute("id")).toBeTruthy();
@@ -54,10 +57,10 @@ describe("Accessibility Tests", () => {
       <div>
         <button aria-label="Close modal">X</button>
         <button>Save Changes</button>
-        <button aria-label="Toggle sidebar">☰</button>
+        <button aria-label="Toggle sidebar">&#9776;</button>
       </div>
     );
-    
+
     const buttons = container.querySelectorAll("button");
     buttons.forEach((btn) => {
       const hasName = btn.textContent?.trim() || btn.getAttribute("aria-label");
@@ -72,7 +75,7 @@ describe("Accessibility Tests", () => {
         <img src="/icon.png" alt="Status indicator" />
       </div>
     );
-    
+
     const images = container.querySelectorAll("img");
     images.forEach((img) => {
       expect(img.getAttribute("alt")).toBeTruthy();
@@ -80,7 +83,6 @@ describe("Accessibility Tests", () => {
   });
 
   it("color contrast meets WCAG AA", () => {
-    // Verify key color combinations
     const contrastPairs = [
       { fg: "#ffffff", bg: "#0a0e17", name: "white on dark" },
       { fg: "#9ca3af", bg: "#141922", name: "gray on card" },
@@ -89,7 +91,6 @@ describe("Accessibility Tests", () => {
     ];
 
     for (const pair of contrastPairs) {
-      // Calculate relative luminance
       const getLuminance = (hex: string) => {
         const r = parseInt(hex.slice(1, 3), 16) / 255;
         const g = parseInt(hex.slice(3, 5), 16) / 255;
@@ -101,9 +102,8 @@ describe("Accessibility Tests", () => {
       const l1 = getLuminance(pair.fg);
       const l2 = getLuminance(pair.bg);
       const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
-      
-      // WCAG AA requires 4.5:1 for normal text
-      expect(ratio).toBeGreaterThanOrEqual(3.0); // Relaxed for large text
+
+      expect(ratio).toBeGreaterThanOrEqual(3.0);
     }
   });
 
@@ -117,9 +117,9 @@ describe("Accessibility Tests", () => {
         </section>
       </div>
     );
-    
+
     const h1s = container.querySelectorAll("h1");
-    expect(h1s.length).toBe(1); // Only one h1 per page
+    expect(h1s.length).toBe(1);
   });
 
   it("interactive elements are keyboard focusable", () => {
@@ -130,10 +130,10 @@ describe("Accessibility Tests", () => {
         <input type="text" tabIndex={0} />
       </div>
     );
-    
+
     const focusable = container.querySelectorAll("button, a[href], input, select, textarea, [tabindex]");
     expect(focusable.length).toBeGreaterThan(0);
-    
+
     focusable.forEach((el) => {
       const tabIndex = el.getAttribute("tabindex");
       if (tabIndex !== null) {

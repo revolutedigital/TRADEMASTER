@@ -76,3 +76,4 @@ frontend/out/
 *.pem
 *.key
 credentials.json
+frontend/coverage/

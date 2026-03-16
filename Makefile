@@ -1,4 +1,4 @@
-.PHONY: help test test-unit test-contract test-property test-cov lint lint-fix format staging staging-down dev-backend dev-frontend build deploy health emergency-stop run run-docker run-all stop migrate migrate-create seed train mutation-test security-scan db-backup db-restore clean install
+.PHONY: help test test-unit test-contract test-property test-cov lint lint-fix format staging staging-down dev-backend dev-frontend build deploy health emergency-stop run run-docker run-all stop migrate migrate-create seed train mutation-test security-scan db-backup db-restore clean install load-test load-test-headless
 
 # ---- Help ----
 
@@ -134,3 +134,12 @@ clean: ## Clean up generated files
 
 install: ## Install backend dependencies
 	cd backend && pip install -e ".[dev,ml]"
+
+# ---- Load Testing ----
+
+load-test: ## Run load tests with Locust web UI (http://localhost:8089)
+	locust -f tests/load/locustfile.py --host http://localhost:8000
+
+load-test-headless: ## Run headless load test (50 users, 5/s ramp, 5min)
+	locust -f tests/load/locustfile.py --host http://localhost:8000 \
+		--headless -u 50 -r 5 --run-time 5m

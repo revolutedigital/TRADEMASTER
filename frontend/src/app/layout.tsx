@@ -10,6 +10,7 @@ import { CommandPalette } from "@/components/ui/command-palette";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { OfflineBanner } from "@/components/ui/offline-banner";
 import { ServiceWorkerRegister } from "@/components/sw-register";
+import { SkipNav } from "@/components/ui/skip-nav";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const jetbrains = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
@@ -42,12 +43,7 @@ export default function RootLayout({
       <body className={`${inter.variable} ${jetbrains.variable} ${inter.className}`}>
         <OfflineBanner />
         <ServiceWorkerRegister />
-        <a
-          href="#main-content"
-          className="sr-only focus:not-sr-only focus:absolute focus:z-[200] focus:p-4 focus:m-2 focus:rounded-lg focus:bg-[var(--color-surface)] focus:text-[var(--color-text)] focus:border focus:border-[var(--color-primary)] focus:shadow-lg"
-        >
-          Skip to main content
-        </a>
+        <SkipNav />
         <AuthGuard>
           <ToastProvider>
             <Providers>

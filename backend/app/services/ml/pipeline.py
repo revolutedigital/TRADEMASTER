@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -124,6 +125,8 @@ class MLPipeline:
             logger.warning("insufficient_data", rows=len(df))
             return None
 
+        t_start = time.perf_counter()
+
         # 1. Feature engineering
         df_features = feature_engineer.build_features(df)
 
@@ -146,6 +149,7 @@ class MLPipeline:
 
         # 2. Prepare inputs for each model type
         features_dict = {}
+        features_for_hash = None
 
         # XGBoost: single row, tabular scaler
         if self._xgboost.is_loaded:
@@ -155,6 +159,7 @@ class MLPipeline:
             if self._tabular_scaler:
                 feature_values = self._tabular_scaler.transform(feature_values)
             features_dict["xgboost"] = feature_values[0]  # (n_features,)
+            features_for_hash = feature_values[0]
 
         # Sequence models (LSTM, Transformer): use sequence scaler
         seq_len = 60
@@ -172,8 +177,14 @@ class MLPipeline:
             if transformer_loaded:
                 features_dict["transformer"] = seq_data
 
+            if features_for_hash is None:
+                features_for_hash = seq_data[-1]
+
         # 3. Ensemble prediction
         prediction = self._ensemble.predict(features_dict)
+
+        # Measure latency
+        latency_ms = (time.perf_counter() - t_start) * 1000
 
         # 4. Publish signal event
         await event_bus.publish(Event(
@@ -193,12 +204,39 @@ class MLPipeline:
         metrics.ml_signal_distribution.inc(labels={"signal_type": prediction.action_label})
         metrics.signals_generated.inc()
 
+        # 6. Log prediction to database for tracking (fire-and-forget, don't block)
+        try:
+            from app.services.ml.tracking import ml_tracker, MLTracker
+            from app.models.base import async_session_factory
+
+            f_hash = (
+                MLTracker.hash_features(features_for_hash) if features_for_hash is not None else None
+            )
+
+            async with async_session_factory() as db:
+                pred_id = await ml_tracker.log_prediction(
+                    db,
+                    model_type="ensemble",
+                    symbol=symbol,
+                    signal=prediction.action_label,
+                    confidence=prediction.confidence,
+                    features_hash=f_hash,
+                    latency_ms=latency_ms,
+                )
+                await db.commit()
+
+            prediction.tracking_id = pred_id  # type: ignore[attr-defined]
+        except Exception as e:
+            # Never let tracking failure break the prediction pipeline
+            logger.warning("prediction_tracking_failed", error=str(e))
+
         logger.info(
             "prediction_generated",
             symbol=symbol,
             action=prediction.action_label,
             strength=round(prediction.signal_strength, 4),
             confidence=round(prediction.confidence, 4),
+            latency_ms=round(latency_ms, 2),
         )
 
         return prediction

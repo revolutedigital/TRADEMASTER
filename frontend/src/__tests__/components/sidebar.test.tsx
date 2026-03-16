@@ -1,9 +1,12 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+
+// Track the mock function so we can change it per test
+let mockPathname = "/";
 
 // Mock next/navigation
 vi.mock("next/navigation", () => ({
-  usePathname: vi.fn(() => "/"),
+  usePathname: () => mockPathname,
 }));
 
 // Mock next/link
@@ -13,47 +16,49 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+// Mock the Logo component
+vi.mock("@/components/ui/logo", () => ({
+  Logo: ({ size }: { size?: string }) => <div data-testid="logo" data-size={size}>TradeMaster Logo</div>,
+}));
+
 import { Sidebar, MobileSidebar } from "@/components/ui/sidebar";
 
 describe("Sidebar", () => {
-  it("renders the TradeMaster logo text", () => {
-    render(<Sidebar />);
-    expect(screen.getByText("TradeMaster")).toBeInTheDocument();
+  beforeEach(() => {
+    mockPathname = "/";
   });
 
-  it("renders all navigation links", () => {
+  it("renders the Logo component", () => {
     render(<Sidebar />);
-    expect(screen.getByText("Dashboard")).toBeInTheDocument();
+    expect(screen.getByTestId("logo")).toBeInTheDocument();
+  });
+
+  it("renders all navigation links (PT-BR labels)", () => {
+    render(<Sidebar />);
+    expect(screen.getByText("Painel")).toBeInTheDocument();
     expect(screen.getByText("Trading")).toBeInTheDocument();
-    expect(screen.getByText("Portfolio")).toBeInTheDocument();
-    expect(screen.getByText("Signals")).toBeInTheDocument();
+    expect(screen.getByText("Sinais")).toBeInTheDocument();
     expect(screen.getByText("Backtest")).toBeInTheDocument();
-    expect(screen.getByText("Settings")).toBeInTheDocument();
+    expect(screen.getByText("ML/IA")).toBeInTheDocument();
+    expect(screen.getByText("Alertas")).toBeInTheDocument();
   });
 
-  it("highlights Dashboard as active on root path", () => {
+  it("highlights Painel as active on root path", () => {
     render(<Sidebar />);
-    const dashboardLink = screen.getByText("Dashboard").closest("a");
-    expect(dashboardLink).toHaveAttribute("aria-current", "page");
+    const painelLink = screen.getByText("Painel").closest("a");
+    expect(painelLink).toHaveAttribute("aria-current", "page");
   });
 
   it("highlights correct link based on pathname", () => {
-    const { usePathname } = require("next/navigation");
-    (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/trading");
-
+    mockPathname = "/signals";
     render(<Sidebar />);
-    const tradingLink = screen.getByText("Trading").closest("a");
-    expect(tradingLink).toHaveAttribute("aria-current", "page");
+    const sinaisLink = screen.getByText("Sinais").closest("a");
+    expect(sinaisLink).toHaveAttribute("aria-current", "page");
   });
 
-  it("renders Testnet Mode status", () => {
+  it("renders Modo Testnet status", () => {
     render(<Sidebar />);
-    expect(screen.getByText("Testnet Mode")).toBeInTheDocument();
-  });
-
-  it("renders API Docs external link", () => {
-    render(<Sidebar />);
-    expect(screen.getByText("API Docs")).toBeInTheDocument();
+    expect(screen.getByText("Modo Testnet")).toBeInTheDocument();
   });
 
   it("has correct navigation role and label", () => {
@@ -61,11 +66,36 @@ describe("Sidebar", () => {
     const nav = screen.getByRole("navigation", { name: /main navigation/i });
     expect(nav).toBeInTheDocument();
   });
+
+  it("renders Configuracoes link", () => {
+    render(<Sidebar />);
+    expect(screen.getByText(/Configura/)).toBeInTheDocument();
+  });
 });
 
 describe("MobileSidebar", () => {
-  it("renders hamburger button", () => {
+  beforeEach(() => {
+    mockPathname = "/";
+  });
+
+  it("renders hamburger button with accessible label", () => {
     render(<MobileSidebar />);
-    expect(screen.getByRole("button", { name: /open navigation/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/abrir menu/i)).toBeInTheDocument();
+  });
+
+  it("opens mobile sidebar on button click", () => {
+    render(<MobileSidebar />);
+    const btn = screen.getByLabelText(/abrir menu/i);
+    fireEvent.click(btn);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("closes mobile sidebar with close button", () => {
+    render(<MobileSidebar />);
+    fireEvent.click(screen.getByLabelText(/abrir menu/i));
+    const closeBtn = screen.getByLabelText(/fechar menu/i);
+    fireEvent.click(closeBtn);
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.className).toContain("-translate-x-full");
   });
 });

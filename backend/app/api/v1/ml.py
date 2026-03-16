@@ -1,7 +1,11 @@
-"""ML model management and explainability endpoints."""
-from fastapi import APIRouter, Depends, HTTPException
+"""ML model management, explainability, and tracking endpoints."""
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config import settings
-from app.dependencies import require_auth
+from app.dependencies import get_db, require_auth
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -170,3 +174,93 @@ async def list_synthetic_scenarios(_user: dict = Depends(require_auth)):
             for s in scenarios
         ]
     }
+
+
+# ========================================
+# ML Tracking endpoints
+# ========================================
+
+
+@router.get("/tracking/runs")
+async def list_training_runs(
+    model_type: Optional[str] = Query(None, description="Filter by model type"),
+    symbol: Optional[str] = Query(None, description="Filter by symbol"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    _user: dict = Depends(require_auth),
+):
+    """List ML training runs with optional filters."""
+    from app.services.ml.tracking import ml_tracker
+
+    runs = await ml_tracker.get_training_runs(
+        db, model_type=model_type, symbol=symbol, limit=limit, offset=offset
+    )
+    return {"runs": runs, "count": len(runs), "limit": limit, "offset": offset}
+
+
+@router.get("/tracking/accuracy/{symbol}")
+async def get_rolling_accuracy(
+    symbol: str,
+    model_type: Optional[str] = Query(None, description="Model type (default: ensemble)"),
+    window: int = Query(100, ge=10, le=1000),
+    db: AsyncSession = Depends(get_db),
+    _user: dict = Depends(require_auth),
+):
+    """Get rolling prediction accuracy for a symbol."""
+    from app.services.ml.tracking import ml_tracker
+
+    symbol = symbol.upper()
+    if symbol not in settings.symbols_list:
+        raise HTTPException(status_code=404, detail=f"Symbol {symbol} not configured")
+
+    mt = model_type or "ensemble"
+    accuracy = await ml_tracker.get_rolling_accuracy(db, mt, symbol, window=window)
+
+    return {
+        "symbol": symbol,
+        "model_type": mt,
+        "window": window,
+        "rolling_accuracy": round(accuracy, 4),
+    }
+
+
+@router.get("/tracking/comparison/{symbol}")
+async def get_model_comparison(
+    symbol: str,
+    db: AsyncSession = Depends(get_db),
+    _user: dict = Depends(require_auth),
+):
+    """Compare all model types for a symbol by accuracy, confidence, and latency."""
+    from app.services.ml.tracking import ml_tracker
+
+    symbol = symbol.upper()
+    if symbol not in settings.symbols_list:
+        raise HTTPException(status_code=404, detail=f"Symbol {symbol} not configured")
+
+    comparisons = await ml_tracker.get_model_comparison(db, symbol)
+    return {"symbol": symbol, "models": comparisons}
+
+
+@router.post("/tracking/predictions/{prediction_id}/outcome")
+async def update_prediction_outcome(
+    prediction_id: int,
+    actual_outcome: str = Query(..., description="Actual outcome: BUY, SELL, or HOLD"),
+    outcome_pnl: Optional[float] = Query(None, description="Realized P&L"),
+    db: AsyncSession = Depends(get_db),
+    _user: dict = Depends(require_auth),
+):
+    """Update a prediction with its actual outcome for accuracy tracking."""
+    from app.services.ml.tracking import ml_tracker
+
+    actual_outcome = actual_outcome.upper()
+    if actual_outcome not in ("BUY", "SELL", "HOLD"):
+        raise HTTPException(status_code=400, detail="outcome must be BUY, SELL, or HOLD")
+
+    updated = await ml_tracker.update_prediction_outcome(
+        db, prediction_id, actual_outcome, outcome_pnl=outcome_pnl
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Prediction not found")
+
+    return {"prediction_id": prediction_id, "actual_outcome": actual_outcome, "updated": True}

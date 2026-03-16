@@ -43,7 +43,7 @@ class Gauge:
     help: str
     _value: float = 0.0
 
-    def set(self, value: float) -> None:
+    def set(self, value: float, labels: dict[str, str] | None = None) -> None:
         self._value = value
 
     def inc(self, value: float = 1.0) -> None:
@@ -58,6 +58,40 @@ class Gauge:
             f"# TYPE {self.name} gauge\n"
             f"{self.name} {self._value}"
         )
+
+
+@dataclass
+class LabeledGauge:
+    """Gauge metric with label support."""
+
+    name: str
+    help: str
+    _values: dict[str, float] = field(default_factory=dict)
+
+    def set(self, value: float, labels: dict[str, str] | None = None) -> None:
+        if labels:
+            key = ",".join(f'{k}="{v}"' for k, v in sorted(labels.items()))
+            self._values[key] = value
+        else:
+            self._values[""] = value
+
+    def get(self, labels: dict[str, str] | None = None) -> float:
+        if labels:
+            key = ",".join(f'{k}="{v}"' for k, v in sorted(labels.items()))
+            return self._values.get(key, 0.0)
+        return self._values.get("", 0.0)
+
+    def to_prometheus(self) -> str:
+        lines = [f"# HELP {self.name} {self.help}", f"# TYPE {self.name} gauge"]
+        if self._values:
+            for key, val in self._values.items():
+                if key:
+                    lines.append(f"{self.name}{{{key}}} {val}")
+                else:
+                    lines.append(f"{self.name} {val}")
+        else:
+            lines.append(f"{self.name} 0")
+        return "\n".join(lines)
 
 
 @dataclass
@@ -149,6 +183,25 @@ class MetricsRegistry:
             "ml_model_accuracy_live", "Live model accuracy (rolling 100 predictions)"
         )
 
+        # ML tracking metrics (production)
+        self.ml_predictions_total = Counter(
+            "ml_predictions_total", "Total ML predictions by model_type and signal"
+        )
+        self.ml_prediction_latency = Histogram(
+            "ml_prediction_latency_ms",
+            "ML prediction latency in milliseconds",
+            buckets=[1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500],
+        )
+        self.ml_model_accuracy_rolling = LabeledGauge(
+            "ml_model_accuracy_rolling",
+            "Rolling model accuracy by model_type and symbol (last 100 predictions)",
+        )
+        self.ml_confidence_distribution = Histogram(
+            "ml_confidence_distribution",
+            "Distribution of prediction confidence scores",
+            buckets=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0],
+        )
+
         # WebSocket
         self.ws_connections = Gauge(
             "websocket_active_connections", "Active WebSocket connections"
@@ -182,6 +235,10 @@ class MetricsRegistry:
             self.ml_prediction_confidence,
             self.ml_signal_distribution,
             self.ml_model_accuracy_live,
+            self.ml_predictions_total,
+            self.ml_prediction_latency,
+            self.ml_model_accuracy_rolling,
+            self.ml_confidence_distribution,
             self.ws_connections,
             self.binance_rate_usage,
             self.exchange_api_latency,

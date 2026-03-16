@@ -1,6 +1,8 @@
 """System endpoints: health check, status, metrics, initialization."""
 
 import asyncio
+import resource
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -15,6 +17,9 @@ from app.dependencies import require_auth
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+# Module-level start time for uptime tracking
+_START_TIME = time.time()
 
 # Track initialization state
 _init_status = {"seeding": False, "training": False, "error": None}
@@ -47,67 +52,111 @@ async def health_check():
 
 @router.get("/health/detailed")
 async def health_detailed():
-    """Detailed health check covering database, redis, binance, and ML models."""
-    from app.services.exchange.binance_client import binance_client
-
+    """Detailed health check covering database, redis, binance, ML models, trading engine, and system resources."""
     checks: dict[str, dict] = {}
     overall_healthy = True
 
-    # Database check
+    # Database check (with latency measurement)
     try:
         from app.models.base import async_session_factory
         from sqlalchemy import text
+
+        t0 = time.monotonic()
         async with async_session_factory() as db:
             result = await db.execute(text("SELECT 1"))
             result.scalar()
-        checks["database"] = {"status": "healthy", "latency_ms": None}
+        db_latency = round((time.monotonic() - t0) * 1000, 2)
+        checks["database"] = {"status": "up", "latency_ms": db_latency}
     except Exception as e:
-        checks["database"] = {"status": "unhealthy", "error": str(e)}
+        checks["database"] = {"status": "down", "error": str(e)}
         overall_healthy = False
 
-    # Redis check
+    # Redis check (with latency measurement)
     try:
-        from app.core.cache import redis_client
-        if redis_client:
-            pong = await redis_client.ping()
-            checks["redis"] = {"status": "healthy" if pong else "unhealthy"}
+        from app.core.events import event_bus
+
+        if event_bus._redis is not None:
+            t0 = time.monotonic()
+            pong = await event_bus._redis.ping()
+            redis_latency = round((time.monotonic() - t0) * 1000, 2)
+            checks["redis"] = {
+                "status": "up" if pong else "down",
+                "latency_ms": redis_latency,
+            }
         else:
-            checks["redis"] = {"status": "not_configured"}
-    except Exception as e:
-        checks["redis"] = {"status": "unhealthy", "error": str(e)}
-        overall_healthy = False
-
-    # Binance check
-    try:
-        connected = binance_client._client is not None
-        checks["binance"] = {
-            "status": "healthy" if connected else "disconnected",
-            "testnet": settings.binance_testnet,
-        }
-        if not connected:
+            checks["redis"] = {"status": "down", "error": "not connected"}
             overall_healthy = False
     except Exception as e:
-        checks["binance"] = {"status": "unhealthy", "error": str(e)}
+        checks["redis"] = {"status": "down", "error": str(e)}
         overall_healthy = False
 
     # ML models check
     try:
         from app.services.ml.pipeline import ml_pipeline
+
         loaded_models = getattr(ml_pipeline, "_models", {})
-        n_loaded = len(loaded_models) if isinstance(loaded_models, dict) else 0
+        model_names = list(loaded_models.keys()) if isinstance(loaded_models, dict) else []
+        last_pred = getattr(ml_pipeline, "_last_prediction_time", None)
         checks["ml_models"] = {
-            "status": "healthy" if n_loaded > 0 else "no_models_loaded",
-            "models_loaded": n_loaded,
+            "loaded": model_names,
+            "last_prediction": last_pred.isoformat() if last_pred else None,
         }
     except Exception as e:
-        checks["ml_models"] = {"status": "unhealthy", "error": str(e)}
+        checks["ml_models"] = {"loaded": [], "last_prediction": None, "error": str(e)}
+
+    # Trading engine check
+    try:
+        from app.services.trading_engine import trading_engine
+        from app.services.portfolio.tracker import portfolio_tracker
+        from app.models.base import async_session_factory as sf
+
+        engine_running = getattr(trading_engine, "_running", False)
+        open_count = 0
+        try:
+            async with sf() as db:
+                positions = await portfolio_tracker.get_open_positions(db)
+                open_count = len(positions)
+        except Exception:
+            pass
+        checks["trading_engine"] = {
+            "status": "running" if engine_running else "stopped",
+            "open_positions": open_count,
+        }
+    except Exception as e:
+        checks["trading_engine"] = {"status": "error", "open_positions": 0, "error": str(e)}
+
+    # System resources
+    system_info: dict = {}
+    try:
+        # Memory usage via resource module (works on macOS and Linux without psutil)
+        rusage = resource.getrusage(resource.RUSAGE_SELF)
+        # ru_maxrss is in bytes on Linux, kilobytes on macOS
+        import platform
+        if platform.system() == "Darwin":
+            memory_mb = round(rusage.ru_maxrss / (1024 * 1024), 2)
+        else:
+            memory_mb = round(rusage.ru_maxrss / 1024, 2)
+        system_info["memory_mb"] = memory_mb
+    except Exception:
+        system_info["memory_mb"] = None
+
+    try:
+        # CPU usage: try psutil if available, otherwise report None
+        import psutil  # type: ignore[import-untyped]
+        system_info["cpu_percent"] = psutil.cpu_percent(interval=0)
+    except ImportError:
+        system_info["cpu_percent"] = None
+    except Exception:
+        system_info["cpu_percent"] = None
 
     return {
         "status": "healthy" if overall_healthy else "degraded",
+        "uptime_seconds": round(time.time() - _START_TIME, 2),
+        "version": getattr(settings, "app_version", "1.0.0"),
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "version": "0.1.0",
         "env": settings.app_env,
-        "checks": checks,
+        "dependencies": checks,
+        "system": system_info,
     }
 
 

@@ -3,7 +3,7 @@
  * Detects unintended visual/structural changes.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 // Mock next/navigation
 vi.mock("next/navigation", () => ({
@@ -24,8 +24,8 @@ describe("Component Snapshots", () => {
       component: "OfflineBanner",
       props: {},
       children: [
-        { type: "div", className: "bg-yellow-500/10 text-yellow-400 p-2 text-center text-sm" },
-        { text: "You are currently offline. Some features may be unavailable." },
+        { type: "div", className: "fixed top-0 left-0 right-0 z-50 bg-amber-600 px-4 py-2 text-center" },
+        { text: "You are offline. Some features may be unavailable." },
       ],
     };
     expect(JSON.stringify(tree, null, 2)).toMatchSnapshot();
@@ -46,16 +46,15 @@ describe("Component Snapshots", () => {
 
   it("Sidebar navigation structure matches snapshot", () => {
     const navItems = [
-      { label: "Dashboard", href: "/", icon: "LayoutDashboard" },
-      { label: "Trading", href: "/trading", icon: "TrendingUp" },
-      { label: "Portfolio", href: "/portfolio", icon: "PieChart" },
+      { label: "Painel", href: "/", icon: "LayoutDashboard" },
+      { label: "Trading", href: "/trading", icon: "CandlestickChart" },
+      { label: "Portfolio", href: "/portfolio", icon: "Briefcase" },
+      { label: "Sinais", href: "/signals", icon: "Zap" },
       { label: "Backtest", href: "/backtest", icon: "FlaskConical" },
-      { label: "Signals", href: "/signals", icon: "Radio" },
-      { label: "Alerts", href: "/alerts", icon: "Bell" },
-      { label: "Journal", href: "/trading/journal", icon: "BookOpen" },
-      { label: "ML Models", href: "/ml", icon: "Brain" },
-      { label: "Sentiment", href: "/sentiment", icon: "Activity" },
-      { label: "Settings", href: "/settings", icon: "Settings" },
+      { label: "ML/IA", href: "/ml", icon: "Brain" },
+      { label: "Sentimento", href: "/sentiment", icon: "BarChart3" },
+      { label: "Alertas", href: "/alerts", icon: "Bell" },
+      { label: "Configuracoes", href: "/settings", icon: "Settings" },
     ];
     expect(JSON.stringify(navItems, null, 2)).toMatchSnapshot();
   });

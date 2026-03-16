@@ -25,6 +25,12 @@ vi.mock("@/hooks/usePortfolio", () => ({
   })),
 }));
 
+vi.mock("@/stores/onboardingStore", () => ({
+  useOnboardingStore: vi.fn((selector: (s: { completed: boolean }) => boolean) =>
+    selector({ completed: true })
+  ),
+}));
+
 // Mock apiFetch
 vi.mock("@/lib/utils", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/utils")>();
@@ -39,20 +45,29 @@ vi.mock("@/components/charts/candlestick-chart", () => ({
   CandlestickChart: () => <div data-testid="candlestick-chart">Chart</div>,
 }));
 
+// Mock LivePrice
+vi.mock("@/components/ui/live-price", () => ({
+  LivePrice: ({ price }: { price: number }) => <span>{price}</span>,
+}));
+
+// Mock OnboardingWizard
+vi.mock("@/components/onboarding/wizard", () => ({
+  OnboardingWizard: () => null,
+}));
+
 import DashboardPage from "@/app/page";
 
 describe("DashboardPage", () => {
-  it("renders Dashboard heading", () => {
+  it("renders Painel heading", () => {
     render(<DashboardPage />);
-    expect(screen.getByText("Dashboard")).toBeInTheDocument();
+    expect(screen.getByText("Painel")).toBeInTheDocument();
   });
 
-  it("renders stat cards with portfolio data", () => {
+  it("renders stat cards with portfolio data (PT-BR labels)", () => {
     render(<DashboardPage />);
-    expect(screen.getByText("Total Equity")).toBeInTheDocument();
-    expect(screen.getByText("Daily P&L")).toBeInTheDocument();
-    expect(screen.getByText("Open Positions")).toBeInTheDocument();
-    expect(screen.getByText("Risk Status")).toBeInTheDocument();
+    expect(screen.getByText(/Patrim.*Total/)).toBeInTheDocument();
+    expect(screen.getByText(/P&L Di.*rio/)).toBeInTheDocument();
+    expect(screen.getByText("Status de Risco")).toBeInTheDocument();
   });
 
   it("renders symbol selector buttons", () => {
@@ -74,31 +89,33 @@ describe("DashboardPage", () => {
   it("renders Paper Trading panel", () => {
     render(<DashboardPage />);
     expect(screen.getByText("Paper Trading")).toBeInTheDocument();
-    expect(screen.getByText("Simulated")).toBeInTheDocument();
+    expect(screen.getByText("Simulado")).toBeInTheDocument();
   });
 
-  it("renders Buy and Sell buttons", () => {
+  it("renders Comprar and Vender buttons", () => {
     render(<DashboardPage />);
-    expect(screen.getByText(/buy.*long/i)).toBeInTheDocument();
-    expect(screen.getByText(/sell.*short/i)).toBeInTheDocument();
+    expect(screen.getByText("Comprar")).toBeInTheDocument();
+    expect(screen.getByText("Vender")).toBeInTheDocument();
   });
 
-  it("renders Open Positions section", () => {
+  it("renders Posicoes Abertas section", () => {
     render(<DashboardPage />);
-    expect(screen.getByText("Open Positions")).toBeInTheDocument();
-    expect(screen.getByText("No open positions")).toBeInTheDocument();
+    // Use getAllByText since "Posicoes Abertas" may appear as stat card label + section header
+    const elements = screen.getAllByText(/Posi.*Abertas/);
+    expect(elements.length).toBeGreaterThan(0);
+    expect(screen.getByText(/Sem posi.*abertas/)).toBeInTheDocument();
   });
 
-  it("renders Recent Signals section", () => {
+  it("renders Sinais Recentes section", () => {
     render(<DashboardPage />);
-    expect(screen.getByText("Recent Signals")).toBeInTheDocument();
+    expect(screen.getByText(/Sinais Recentes/)).toBeInTheDocument();
   });
 
   it("renders risk info in trading panel", () => {
     render(<DashboardPage />);
     expect(screen.getByText("Stop Loss")).toBeInTheDocument();
     expect(screen.getByText("Take Profit")).toBeInTheDocument();
-    expect(screen.getByText("Fee")).toBeInTheDocument();
+    expect(screen.getByText("Taxa")).toBeInTheDocument();
   });
 
   it("renders candlestick chart", () => {

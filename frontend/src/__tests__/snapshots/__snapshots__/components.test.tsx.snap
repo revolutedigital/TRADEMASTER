@@ -1,0 +1,152 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Component Snapshots > Dashboard stat card structure matches snapshot 1`] = `
+"[
+  {
+    "title": "Total Equity",
+    "format": "currency"
+  },
+  {
+    "title": "Daily P&L",
+    "format": "currency_signed"
+  },
+  {
+    "title": "Win Rate",
+    "format": "percentage"
+  },
+  {
+    "title": "Open Positions",
+    "format": "number"
+  }
+]"
+`;
+
+exports[`Component Snapshots > OfflineBanner matches snapshot 1`] = `
+"{
+  "component": "OfflineBanner",
+  "props": {},
+  "children": [
+    {
+      "type": "div",
+      "className": "fixed top-0 left-0 right-0 z-50 bg-amber-600 px-4 py-2 text-center"
+    },
+    {
+      "text": "You are offline. Some features may be unavailable."
+    }
+  ]
+}"
+`;
+
+exports[`Component Snapshots > Sidebar navigation structure matches snapshot 1`] = `
+"[
+  {
+    "label": "Painel",
+    "href": "/",
+    "icon": "LayoutDashboard"
+  },
+  {
+    "label": "Trading",
+    "href": "/trading",
+    "icon": "CandlestickChart"
+  },
+  {
+    "label": "Portfolio",
+    "href": "/portfolio",
+    "icon": "Briefcase"
+  },
+  {
+    "label": "Sinais",
+    "href": "/signals",
+    "icon": "Zap"
+  },
+  {
+    "label": "Backtest",
+    "href": "/backtest",
+    "icon": "FlaskConical"
+  },
+  {
+    "label": "ML/IA",
+    "href": "/ml",
+    "icon": "Brain"
+  },
+  {
+    "label": "Sentimento",
+    "href": "/sentiment",
+    "icon": "BarChart3"
+  },
+  {
+    "label": "Alertas",
+    "href": "/alerts",
+    "icon": "Bell"
+  },
+  {
+    "label": "Configuracoes",
+    "href": "/settings",
+    "icon": "Settings"
+  }
+]"
+`;
+
+exports[`Component Snapshots > Toast notification matches snapshot 1`] = `
+"{
+  "component": "Toast",
+  "props": {
+    "type": "success",
+    "message": "Trade executed"
+  },
+  "children": [
+    {
+      "type": "div",
+      "className": "toast-container"
+    },
+    {
+      "type": "span",
+      "text": "Trade executed"
+    },
+    {
+      "type": "button",
+      "text": "×"
+    }
+  ]
+}"
+`;
+
+exports[`Component Snapshots > Trading form structure matches snapshot 1`] = `
+"{
+  "fields": [
+    {
+      "name": "symbol",
+      "type": "select",
+      "options": [
+        "BTCUSDT",
+        "ETHUSDT"
+      ]
+    },
+    {
+      "name": "side",
+      "type": "radio",
+      "options": [
+        "BUY",
+        "SELL"
+      ]
+    },
+    {
+      "name": "quantity",
+      "type": "number",
+      "step": "0.001"
+    },
+    {
+      "name": "orderType",
+      "type": "select",
+      "options": [
+        "MARKET",
+        "LIMIT"
+      ]
+    }
+  ],
+  "actions": [
+    "Submit",
+    "Cancel"
+  ]
+}"
+`;

@@ -132,14 +132,19 @@ class SpotProtectionReconciler:
             elif protected == "CLOSED":
                 closed_positions += 1
 
-        try:
-            inventory_report = await self._inventory_reconciler.reconcile(
-                positions,
-                execution_mode=execution_mode.value,
-            )
-            issues.extend(inventory_report.issues)
-        except Exception as exc:
-            issues.append(f"could not reconcile Binance Spot account inventory: {exc}")
+        # Testnet accounts start with a broad set of faucet balances. They are
+        # not evidence of an untracked TradeMaster position. The strict full
+        # account-inventory comparison is a LIVE-only guard; Testnet still
+        # reconciles every tracked position and TradeMaster-owned OCO order.
+        if execution_mode == TradingExecutionMode.LIVE:
+            try:
+                inventory_report = await self._inventory_reconciler.reconcile(
+                    positions,
+                    execution_mode=execution_mode.value,
+                )
+                issues.extend(inventory_report.issues)
+            except Exception as exc:
+                issues.append(f"could not reconcile Binance Spot account inventory: {exc}")
 
         await db.flush()
         report = ProtectionReconciliationReport(

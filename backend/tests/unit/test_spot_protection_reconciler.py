@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.config import TradingExecutionMode
 from app.models.portfolio import Position
 from app.services.exchange.live_execution_readiness import live_protection_readiness
 from app.services.exchange.spot_protection_reconciler import SpotProtectionReconciler
@@ -176,3 +177,27 @@ async def test_reconciler_marks_unfilled_or_missing_oco_as_unsafe() -> None:
     assert position.is_open is True
     assert position.protection_status == "MISSING"
     assert live_protection_readiness.is_ready(45) is False
+
+
+@pytest.mark.asyncio
+async def test_testnet_reconciliation_ignores_faucet_inventory_but_keeps_oco_checks() -> None:
+    database = AsyncMock()
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = []
+    database.execute = AsyncMock(return_value=result)
+    database.flush = AsyncMock()
+    exchange = _Exchange(
+        open_lists=[],
+        account={"canTrade": True, "balances": [{"asset": "DOGE", "free": "10", "locked": "0"}]},
+    )
+    exchange.get_account = AsyncMock(side_effect=AssertionError("Testnet must not inventory faucet assets"))
+    exchange.get_open_orders = AsyncMock(side_effect=AssertionError("Testnet must not inventory faucet orders"))
+
+    report = await SpotProtectionReconciler(exchange).reconcile(
+        database,
+        execution_mode=TradingExecutionMode.TESTNET,
+    )
+
+    assert report.ready is True
+    exchange.get_account.assert_not_awaited()
+    exchange.get_open_orders.assert_not_awaited()

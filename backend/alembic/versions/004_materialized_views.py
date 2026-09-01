@@ -20,16 +20,15 @@ def upgrade() -> None:
         SELECT
             symbol,
             date_trunc('day', open_time) AS day,
-            FIRST_VALUE(open) OVER (PARTITION BY symbol, date_trunc('day', open_time) ORDER BY open_time) AS day_open,
+            (ARRAY_AGG(open ORDER BY open_time ASC))[1] AS day_open,
             MAX(high) AS day_high,
             MIN(low) AS day_low,
-            LAST_VALUE(close) OVER (PARTITION BY symbol, date_trunc('day', open_time) ORDER BY open_time
-                ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS day_close,
+            (ARRAY_AGG(close ORDER BY open_time DESC))[1] AS day_close,
             SUM(volume) AS day_volume,
             COUNT(*) AS candle_count
         FROM ohlcv
         WHERE interval = '1h'
-        GROUP BY symbol, date_trunc('day', open_time), open_time, open, close, high, low, volume
+        GROUP BY symbol, date_trunc('day', open_time)
     """)
 
     op.execute("""
@@ -41,7 +40,7 @@ def upgrade() -> None:
     op.execute("""
         CREATE MATERIALIZED VIEW IF NOT EXISTS mv_monthly_pnl AS
         SELECT
-            date_trunc('month', created_at) AS month,
+            date_trunc('month', closed_at) AS month,
             SUM(CASE WHEN realized_pnl > 0 THEN realized_pnl ELSE 0 END) AS gross_profit,
             SUM(CASE WHEN realized_pnl < 0 THEN realized_pnl ELSE 0 END) AS gross_loss,
             SUM(realized_pnl) AS net_pnl,
@@ -49,9 +48,9 @@ def upgrade() -> None:
             COUNT(CASE WHEN realized_pnl > 0 THEN 1 END) AS winning_trades,
             COUNT(CASE WHEN realized_pnl < 0 THEN 1 END) AS losing_trades,
             AVG(realized_pnl) AS avg_pnl_per_trade
-        FROM trades
-        WHERE status = 'FILLED' AND realized_pnl IS NOT NULL
-        GROUP BY date_trunc('month', created_at)
+        FROM positions
+        WHERE is_open = false AND closed_at IS NOT NULL
+        GROUP BY date_trunc('month', closed_at)
     """)
 
     op.execute("""

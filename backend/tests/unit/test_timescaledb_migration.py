@@ -45,3 +45,14 @@ def test_model_fields_migration_does_not_recreate_initial_ohlcv_index() -> None:
     )
 
     assert 'op.create_index("ix_ohlcv_symbol_interval_time"' not in migration_path.read_text()
+
+
+def test_materialized_views_use_existing_schema_columns_and_unique_daily_rows() -> None:
+    migration_path = Path(__file__).parents[2] / "alembic" / "versions" / "004_materialized_views.py"
+    migration_sql = migration_path.read_text()
+
+    assert "(ARRAY_AGG(open ORDER BY open_time ASC))[1]" in migration_sql
+    assert "(ARRAY_AGG(close ORDER BY open_time DESC))[1]" in migration_sql
+    assert "FROM positions" in migration_sql
+    assert "WHERE is_open = false AND closed_at IS NOT NULL" in migration_sql
+    assert "WHERE status = 'FILLED'" not in migration_sql

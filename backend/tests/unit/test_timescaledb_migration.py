@@ -56,3 +56,10 @@ def test_materialized_views_use_existing_schema_columns_and_unique_daily_rows() 
     assert "FROM positions" in migration_sql
     assert "WHERE is_open = false AND closed_at IS NOT NULL" in migration_sql
     assert "WHERE status = 'FILLED'" not in migration_sql
+
+
+def test_totp_migration_only_alters_users_when_the_table_exists() -> None:
+    migration_path = Path(__file__).parents[2] / "alembic" / "versions" / "007_add_stored_events_and_totp.py"
+    migration_source = migration_path.read_text()
+
+    assert 'sa.inspect(op.get_bind()).has_table("users")' in migration_source

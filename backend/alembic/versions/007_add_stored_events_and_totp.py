@@ -29,14 +29,19 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
     )
 
-    # --- GAP 3: TOTP columns on users table ---
-    op.add_column("users", sa.Column("totp_enabled", sa.Boolean(), server_default="false", nullable=False))
-    op.add_column("users", sa.Column("totp_secret", sa.String(64), nullable=True))
-    op.add_column("users", sa.Column("totp_backup_codes", sa.Text(), nullable=True))  # JSON array
+    # The current authentication model keeps the administrator in environment
+    # configuration, so a ``users`` table is optional. Preserve compatibility
+    # with installations that add persisted users without blocking a fresh
+    # Railway bootstrap where that table is absent.
+    if sa.inspect(op.get_bind()).has_table("users"):
+        op.add_column("users", sa.Column("totp_enabled", sa.Boolean(), server_default="false", nullable=False))
+        op.add_column("users", sa.Column("totp_secret", sa.String(64), nullable=True))
+        op.add_column("users", sa.Column("totp_backup_codes", sa.Text(), nullable=True))  # JSON array
 
 
 def downgrade() -> None:
-    op.drop_column("users", "totp_backup_codes")
-    op.drop_column("users", "totp_secret")
-    op.drop_column("users", "totp_enabled")
+    if sa.inspect(op.get_bind()).has_table("users"):
+        op.drop_column("users", "totp_backup_codes")
+        op.drop_column("users", "totp_secret")
+        op.drop_column("users", "totp_enabled")
     op.drop_table("stored_events")

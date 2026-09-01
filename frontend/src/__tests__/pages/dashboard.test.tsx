@@ -1,5 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { beforeEach, describe, it, expect, vi } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+
+const runtimeMode = vi.hoisted(() => ({ value: "PAPER" }));
 
 // Mock hooks
 vi.mock("@/hooks/useMarketData", () => ({
@@ -36,7 +38,13 @@ vi.mock("@/lib/utils", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/utils")>();
   return {
     ...actual,
-    apiFetch: vi.fn().mockResolvedValue({ engine_running: true }),
+    apiFetch: vi.fn((path: string) =>
+      Promise.resolve(
+        path === "/api/v1/trading/live/status"
+          ? { execution_mode: runtimeMode.value }
+          : { engine_running: true },
+      ),
+    ),
   };
 });
 
@@ -58,6 +66,10 @@ vi.mock("@/components/onboarding/wizard", () => ({
 import DashboardPage from "@/app/page";
 
 describe("DashboardPage", () => {
+  beforeEach(() => {
+    runtimeMode.value = "PAPER";
+  });
+
   it("renders Painel heading", () => {
     render(<DashboardPage />);
     expect(screen.getByText("Painel")).toBeInTheDocument();
@@ -86,16 +98,26 @@ describe("DashboardPage", () => {
     expect(screen.getByText("1d")).toBeInTheDocument();
   });
 
-  it("renders Paper Trading panel", () => {
+  it("renders Paper Trading panel", async () => {
     render(<DashboardPage />);
-    expect(screen.getByText("Paper Trading")).toBeInTheDocument();
-    expect(screen.getByText("Simulado")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Paper Trading")).toBeInTheDocument());
+    expect(screen.getByText("PAPER")).toBeInTheDocument();
   });
 
-  it("renders Comprar and Vender buttons", () => {
+  it("renders Comprar and Vender buttons", async () => {
     render(<DashboardPage />);
-    expect(screen.getByText("Comprar")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Comprar")).toBeInTheDocument());
     expect(screen.getByText("Vender")).toBeInTheDocument();
+  });
+
+  it("replaces paper-order controls with the Testnet strategy flow", async () => {
+    runtimeMode.value = "TESTNET";
+    render(<DashboardPage />);
+
+    await waitFor(() => expect(screen.getByText("Execução Testnet")).toBeInTheDocument());
+    expect(screen.getByText("Configurar estratégia para BTC/USDT")).toBeInTheDocument();
+    expect(screen.queryByText("Paper Trading")).not.toBeInTheDocument();
+    expect(screen.queryByText("Comprar")).not.toBeInTheDocument();
   });
 
   it("renders Posicoes Abertas section", () => {
@@ -111,9 +133,9 @@ describe("DashboardPage", () => {
     expect(screen.getByText(/Sinais Recentes/)).toBeInTheDocument();
   });
 
-  it("renders risk info in trading panel", () => {
+  it("renders risk info in trading panel", async () => {
     render(<DashboardPage />);
-    expect(screen.getByText("Stop Loss")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Stop Loss")).toBeInTheDocument());
     expect(screen.getByText("Take Profit")).toBeInTheDocument();
     expect(screen.getByText("Taxa")).toBeInTheDocument();
   });

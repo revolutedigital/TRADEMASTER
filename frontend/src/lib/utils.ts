@@ -52,6 +52,22 @@ function getCsrfToken(): string | null {
   return match ? match[1] : null;
 }
 
+async function responseErrorMessage(response: Response): Promise<string> {
+  const fallback = `Não foi possível concluir esta ação (${response.status}).`;
+  const payload = await response.json().catch(() => null) as {
+    detail?: unknown;
+    message?: unknown;
+  } | null;
+
+  if (typeof payload?.detail === "string" && payload.detail.trim()) {
+    return payload.detail;
+  }
+  if (typeof payload?.message === "string" && payload.message.trim()) {
+    return payload.message;
+  }
+  return fallback;
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   // Use relative path — Next.js rewrites /api/v1/* to backend (same-origin, no CORS)
   const separator = path.includes("?") ? "&" : "?";
@@ -117,7 +133,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   }
 
   if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`);
+    throw new Error(await responseErrorMessage(res));
   }
 
   return res.json();

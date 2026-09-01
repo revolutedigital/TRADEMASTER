@@ -209,6 +209,13 @@ export default function StrategyBuilderPage() {
   const enabledIndicators = indicators.filter((ind) => ind.enabled);
 
   useEffect(() => {
+    const requestedSymbol = new URLSearchParams(window.location.search).get("symbol");
+    if (requestedSymbol === "BTCUSDT" || requestedSymbol === "ETHUSDT") {
+      setSymbol(requestedSymbol);
+    }
+  }, []);
+
+  useEffect(() => {
     let active = true;
 
     const loadRuntimeMode = async () => {

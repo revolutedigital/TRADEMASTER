@@ -42,6 +42,11 @@ import {
 } from "lucide-react";
 
 const intervals: TimeInterval[] = ["1m", "5m", "15m", "1h", "4h", "1d"];
+type ExecutionMode = "PAPER" | "TESTNET" | "LIVE";
+
+function isExecutionMode(value: unknown): value is ExecutionMode {
+  return value === "PAPER" || value === "TESTNET" || value === "LIVE";
+}
 
 export default function DashboardPage() {
   const {
@@ -60,6 +65,7 @@ export default function DashboardPage() {
 
   const [engineRunning, setEngineRunning] = useState(false);
   const [engineLoading, setEngineLoading] = useState(false);
+  const [executionMode, setExecutionMode] = useState<ExecutionMode | null>(null);
   const [orderLoading, setOrderLoading] = useState(false);
   const [lastOrder, setLastOrder] = useState<{ status: string; message: string } | null>(null);
   const [quantity, setQuantity] = useState("0.001");
@@ -67,6 +73,16 @@ export default function DashboardPage() {
   useEffect(() => {
     apiFetch<{ engine_running: boolean }>("/api/v1/trading/engine/status")
       .then((s) => setEngineRunning(s.engine_running))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    apiFetch<{ execution_mode: unknown }>("/api/v1/trading/live/status")
+      .then((status) => {
+        if (isExecutionMode(status.execution_mode)) {
+          setExecutionMode(status.execution_mode);
+        }
+      })
       .catch(() => {});
   }, []);
 
@@ -100,7 +116,9 @@ export default function DashboardPage() {
         toast.success("Engine de trading iniciado");
       }
     } catch (err) {
-      toast.error(`Falha ao alternar engine: ${err}`);
+      toast.error(
+        err instanceof Error ? err.message : "Não foi possível alterar o estado do engine.",
+      );
     }
     setEngineLoading(false);
   };
@@ -142,7 +160,7 @@ export default function DashboardPage() {
       fetchPositions();
       fetchSummary();
     } catch (err) {
-      const message = String(err);
+      const message = err instanceof Error ? err.message : "Não foi possível enviar a ordem simulada.";
       setLastOrder({ status: "error", message });
       toast.error(message);
     }
@@ -169,8 +187,9 @@ export default function DashboardPage() {
       fetchPositions();
       fetchSummary();
     } catch (err) {
-      toast.error(`Falha ao fechar: ${err}`);
-      setLastOrder({ status: "error", message: String(err) });
+      const message = err instanceof Error ? err.message : "Não foi possível fechar a posição.";
+      toast.error(message);
+      setLastOrder({ status: "error", message });
     }
   };
 
@@ -305,14 +324,25 @@ export default function DashboardPage() {
           )}
         </Card>
 
-        {/* Trading Panel */}
+        {/* Execution panel */}
         <Card className="flex flex-col">
           <CardHeader>
-            <CardTitle>Paper Trading</CardTitle>
-            <Badge variant="warning">Simulado</Badge>
+            <CardTitle>
+              {executionMode === "PAPER"
+                ? "Paper Trading"
+                : executionMode === "TESTNET"
+                  ? "Execução Testnet"
+                  : executionMode === "LIVE"
+                    ? "Execução Real"
+                    : "Modo de Execução"}
+            </CardTitle>
+            <Badge variant={executionMode === "LIVE" ? "danger" : "warning"}>
+              {executionMode ?? "Confirmando"}
+            </Badge>
           </CardHeader>
 
-          <div className="flex flex-col gap-4 px-0 pt-0 flex-1">
+          {executionMode === "PAPER" ? (
+            <div className="flex flex-col gap-4 px-0 pt-0 flex-1">
             {/* Symbol & Price */}
             <div className="text-center py-2">
               <div className="text-xs text-[var(--color-text-faint)] uppercase tracking-wider">{selectedSymbol}</div>
@@ -400,7 +430,45 @@ export default function DashboardPage() {
                 <span className="font-mono">0.1%</span>
               </div>
             </div>
-          </div>
+            </div>
+          ) : executionMode ? (
+            <div className="flex flex-1 flex-col gap-4 px-0 pt-0">
+              <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] p-3">
+                <p className="text-xs font-medium uppercase tracking-wider text-[var(--color-text-faint)]">
+                  Ativo para análise
+                </p>
+                <p className="mt-1 text-xl font-semibold">
+                  {selectedSymbol.replace("USDT", "/USDT")}
+                </p>
+                <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+                  O seletor acima altera o gráfico. Para operar este par, crie e ative uma estratégia específica para ele.
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-sm text-[var(--color-text-muted)]">
+                {executionMode === "TESTNET"
+                  ? "No Testnet, compras e vendas manuais de Paper ficam bloqueadas para não misturar livros. A ordem só pode sair de uma estratégia validada."
+                  : "Na conta real, a execução manual permanece bloqueada até que a estratégia e os controles de proteção estejam armados."}
+              </div>
+
+              <Button
+                variant="primary"
+                onClick={() => {
+                  window.location.assign(`/trading/strategy-builder?symbol=${selectedSymbol}`);
+                }}
+              >
+                Configurar estratégia para {selectedSymbol.replace("USDT", "/USDT")}
+              </Button>
+
+              <p className="mt-auto text-xs text-[var(--color-text-faint)]">
+                Fluxo: escolher o par → rodar backtest → validar para {executionMode} → ativar a estratégia → iniciar engine.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-1 items-center text-sm text-[var(--color-text-muted)]">
+              Confirmando o modo de execução do servidor…
+            </div>
+          )}
         </Card>
       </div>
 

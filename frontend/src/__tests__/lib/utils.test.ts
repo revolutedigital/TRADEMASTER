@@ -1,5 +1,20 @@
-import { describe, it, expect } from "vitest";
-import { cn, formatCurrency, formatPercent, formatNumber, formatCompactNumber, timeAgo } from "@/lib/utils";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/stores/authStore", () => ({
+  useAuthStore: {
+    getState: () => ({ token: null }),
+  },
+}));
+
+import {
+  apiFetch,
+  cn,
+  formatCompactNumber,
+  formatCurrency,
+  formatNumber,
+  formatPercent,
+  timeAgo,
+} from "@/lib/utils";
 
 describe("cn", () => {
   it("merges class names", () => {
@@ -109,5 +124,28 @@ describe("timeAgo", () => {
   it("accepts string dates", () => {
     const result = timeAgo("2020-01-01T00:00:00Z");
     expect(result).toContain("d ago");
+  });
+});
+
+describe("apiFetch", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("shows the API detail instead of a generic HTTP status", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        json: vi.fn().mockResolvedValue({
+          detail: "Paper trading endpoints are only available while execution mode is PAPER",
+        }),
+      }),
+    );
+
+    await expect(apiFetch("/api/v1/trading/paper-order", { method: "POST" })).rejects.toThrow(
+      "Paper trading endpoints are only available while execution mode is PAPER",
+    );
   });
 });

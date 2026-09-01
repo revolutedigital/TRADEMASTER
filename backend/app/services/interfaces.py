@@ -13,9 +13,9 @@ from typing import Any, Protocol, runtime_checkable
 import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.portfolio import Position, PortfolioSnapshot
+from app.models.portfolio import PortfolioSnapshot, Position
+from app.services.portfolio.tracker import PaperExitCandidate
 from app.models.trade import Order
-
 
 # ========================================
 # Exchange Adapters
@@ -123,17 +123,46 @@ class IPortfolioTracker(Protocol):
         exit_price: float,
     ) -> Position: ...
 
-    async def update_prices(self, db: AsyncSession, prices: dict[str, float]) -> list[Position]: ...
+    async def update_prices(
+        self,
+        db: AsyncSession,
+        prices: dict[str, float],
+        execution_mode: str | None = None,
+    ) -> list[Position]: ...
 
-    async def check_stop_losses(self, db: AsyncSession, prices: dict[str, float]) -> list[Position]: ...
+    async def check_stop_losses(
+        self,
+        db: AsyncSession,
+        prices: dict[str, float],
+        execution_mode: str = "PAPER",
+    ) -> list[PaperExitCandidate]: ...
 
-    async def get_open_positions(self, db: AsyncSession, symbol: str | None = None) -> list[Position]: ...
+    async def get_open_positions(
+        self,
+        db: AsyncSession,
+        symbol: str | None = None,
+        execution_mode: str | None = None,
+    ) -> list[Position]: ...
 
-    async def get_total_exposure(self, db: AsyncSession) -> float: ...
+    async def get_total_exposure(
+        self,
+        db: AsyncSession,
+        execution_mode: str | None = None,
+    ) -> float: ...
 
-    async def get_symbol_exposure(self, db: AsyncSession, symbol: str) -> float: ...
+    async def get_symbol_exposure(
+        self,
+        db: AsyncSession,
+        symbol: str,
+        execution_mode: str | None = None,
+    ) -> float: ...
 
-    async def take_snapshot(self, db: AsyncSession, equity: float, balance: float) -> PortfolioSnapshot: ...
+    async def take_snapshot(
+        self,
+        db: AsyncSession,
+        equity: float,
+        balance: float,
+    ) -> PortfolioSnapshot: ...
 
 
 # ========================================
@@ -210,5 +239,10 @@ class IPositionRepository(Protocol):
 
     async def create(self, db: AsyncSession, position: Position) -> Position: ...
     async def get_by_id(self, db: AsyncSession, position_id: int) -> Position | None: ...
-    async def get_open(self, db: AsyncSession, symbol: str | None = None) -> list[Position]: ...
+    async def get_open(
+        self,
+        db: AsyncSession,
+        symbol: str | None = None,
+        execution_mode: str | None = None,
+    ) -> list[Position]: ...
     async def update(self, db: AsyncSession, position: Position) -> Position: ...

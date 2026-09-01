@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { Spinner } from "@/components/ui/progress";
@@ -18,17 +18,17 @@ export default function FeesPage() {
   const [period, setPeriod] = useState("30d");
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchFees();
-  }, [period]);
-
-  async function fetchFees() {
+  const fetchFees = useCallback(async () => {
     setLoading(true);
     try {
       const result = await apiFetch<FeeData>(`/api/v1/portfolio/fees?period=${period}`);
       setData(result);
     } catch {} finally { setLoading(false); }
-  }
+  }, [period]);
+
+  useEffect(() => {
+    void fetchFees();
+  }, [fetchFees]);
 
   const periods = ["7d", "30d", "90d", "1y"];
 

@@ -1,6 +1,6 @@
 """Settings API endpoints for runtime configuration."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.dependencies import require_auth
@@ -17,14 +17,14 @@ class TradingConfig(BaseModel):
 
 
 class RiskConfig(BaseModel):
+    max_risk_per_trade: float = Field(default=0.02, gt=0, le=0.10)
+    max_total_exposure: float = Field(default=0.60, gt=0, le=1.0)
+    max_single_asset: float = Field(default=0.30, gt=0, le=1.0)
     max_daily_drawdown: float = Field(default=0.03, ge=0.01, le=0.20)
     max_weekly_drawdown: float = Field(default=0.07, ge=0.02, le=0.30)
     max_monthly_drawdown: float = Field(default=0.10, ge=0.03, le=0.50)
     max_total_drawdown: float = Field(default=0.15, ge=0.05, le=0.50)
-    atr_stop_multiplier: float = Field(default=2.0, ge=0.5, le=5.0)
-    trailing_stop_activation: float = Field(default=0.015, ge=0.005, le=0.10)
     kelly_fraction: float = Field(default=0.15, ge=0.05, le=0.50)
-    max_single_asset: float = Field(default=0.30, ge=0.10, le=1.0)
 
 
 class FullSettings(BaseModel):
@@ -33,8 +33,18 @@ class FullSettings(BaseModel):
     api_docs_url: str = "/api/docs"
 
 
-# In-memory runtime overrides (persisted per-process)
-_runtime_risk: RiskConfig = RiskConfig()
+def _effective_risk_config() -> RiskConfig:
+    """Return the exact limits enforced by the deployed engine process."""
+    return RiskConfig(
+        max_risk_per_trade=settings.trading_max_risk_per_trade,
+        max_total_exposure=settings.trading_max_portfolio_exposure,
+        max_single_asset=settings.trading_max_single_asset_exposure,
+        max_daily_drawdown=settings.trading_max_daily_drawdown,
+        max_weekly_drawdown=settings.trading_max_weekly_drawdown,
+        max_monthly_drawdown=settings.trading_max_monthly_drawdown,
+        max_total_drawdown=settings.trading_max_total_drawdown,
+        kelly_fraction=settings.trading_kelly_fraction,
+    )
 
 
 @router.get("/", response_model=FullSettings)
@@ -42,10 +52,12 @@ async def get_settings(_user: dict = Depends(require_auth)):
     """Get current settings."""
     return FullSettings(
         trading=TradingConfig(
-            trading_mode="testnet" if settings.binance_testnet else "live",
+            trading_mode=settings.execution_mode.value.lower(),
             symbols=settings.symbols_list,
+            max_risk_per_trade=settings.trading_max_risk_per_trade,
+            max_total_exposure=settings.trading_max_portfolio_exposure,
         ),
-        risk=_runtime_risk,
+        risk=_effective_risk_config(),
     )
 
 
@@ -54,7 +66,12 @@ async def update_risk_settings(
     config: RiskConfig,
     _user: dict = Depends(require_auth),
 ):
-    """Update risk management parameters at runtime."""
-    global _runtime_risk
-    _runtime_risk = config
-    return _runtime_risk
+    """Reject unsafe per-process risk overrides that the engine cannot share durably."""
+    del config
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            "Risk limits are immutable at runtime. Update the deployed TRADING_* "
+            "environment variables and roll out a new release before arming LIVE trading."
+        ),
+    )

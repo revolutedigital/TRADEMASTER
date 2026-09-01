@@ -46,7 +46,16 @@ class PositionSizer:
         Kelly % = W - (1-W)/R where W=win_rate, R=avg_win/avg_loss
         We use kelly_fraction (15%) of full Kelly for safety.
         """
-        if avg_loss == 0 or equity <= 0 or price <= 0:
+        values = (equity, win_rate, avg_win, avg_loss, price, stop_distance_pct)
+        if (
+            not all(math.isfinite(value) for value in values)
+            or avg_loss <= 0
+            or avg_win <= 0
+            or equity <= 0
+            or price <= 0
+            or stop_distance_pct <= 0
+            or not 0 <= win_rate <= 1
+        ):
             return PositionSize(0, 0, 0, 0, "fractional_kelly")
 
         r = avg_win / abs(avg_loss)
@@ -61,9 +70,6 @@ class PositionSizer:
         risk_amount = equity * risk_pct
 
         # Position size from risk amount and stop distance
-        if stop_distance_pct <= 0:
-            return PositionSize(0, 0, 0, 0, "fractional_kelly")
-
         notional = risk_amount / stop_distance_pct
         # Cap at max single asset exposure
         max_notional = equity * self.max_single_asset_exposure
@@ -89,7 +95,8 @@ class PositionSizer:
 
         Simpler alternative when Kelly inputs aren't available.
         """
-        if equity <= 0 or price <= 0 or stop_distance_pct <= 0:
+        values = (equity, price, stop_distance_pct)
+        if not all(math.isfinite(value) and value > 0 for value in values):
             return PositionSize(0, 0, 0, 0, "fixed_fraction")
 
         risk_amount = equity * self.max_risk_per_trade
@@ -117,7 +124,8 @@ class PositionSizer:
 
         stop_distance = atr * multiplier
         """
-        if equity <= 0 or price <= 0 or atr <= 0:
+        values = (equity, price, atr, atr_multiplier)
+        if not all(math.isfinite(value) and value > 0 for value in values):
             return PositionSize(0, 0, 0, 0, "volatility_scaled")
 
         stop_distance = atr * atr_multiplier

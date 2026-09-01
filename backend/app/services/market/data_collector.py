@@ -214,6 +214,7 @@ class MarketDataCollector:
                 "low": float(c.low),
                 "close": float(c.close),
                 "volume": float(c.volume),
+                "close_time": c.close_time,
                 "quote_volume": float(c.quote_volume),
                 "trade_count": c.trade_count,
             }

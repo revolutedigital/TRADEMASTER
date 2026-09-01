@@ -48,6 +48,8 @@ class PnLCalculator:
         """
         if not pnl_series:
             return self._empty_metrics()
+        if initial_equity <= 0:
+            raise ValueError("initial_equity must be greater than zero")
 
         pnls = np.array(pnl_series)
         total_pnl = float(pnls.sum())
@@ -68,11 +70,22 @@ class PnLCalculator:
         profit_factor = gross_profit / gross_loss if gross_loss > 0 else float("inf")
 
         # Equity curve for drawdown
-        equity_curve = np.cumsum(pnls) + initial_equity
+        # The initial balance is a valid high-water mark. Without it, a first
+        # losing trade incorrectly appears to have no drawdown.
+        equity_curve = np.concatenate(
+            ([initial_equity], np.cumsum(pnls) + initial_equity)
+        )
         peak = np.maximum.accumulate(equity_curve)
         drawdown = peak - equity_curve
-        max_dd = float(drawdown.max())
-        max_dd_pct = max_dd / float(peak[drawdown.argmax()]) if peak[drawdown.argmax()] > 0 else 0
+        max_drawdown_index = int(drawdown.argmax())
+        max_dd = float(drawdown[max_drawdown_index])
+        drawdown_pct = np.divide(
+            drawdown,
+            peak,
+            out=np.zeros_like(drawdown, dtype=float),
+            where=peak > 0,
+        )
+        max_dd_pct = float(drawdown_pct.max())
 
         # Returns for Sharpe/Sortino
         returns = pnls / initial_equity
@@ -96,10 +109,16 @@ class PnLCalculator:
         sortino = ((avg_return - daily_rf) / downside_std * np.sqrt(252)) if downside_std > 0 else 0
 
         # Calmar ratio: annualize the return
-        total_return_pct = total_pnl / initial_equity if initial_equity > 0 else 0
+        total_return_pct = total_pnl / initial_equity
         n_periods = max(len(pnl_series), 1)
         years = n_periods / 252
-        annualized_return = ((1 + total_return_pct) ** (1 / years) - 1) if years > 0 else 0
+        # A portfolio cannot lose more than 100% of its equity. If a synthetic
+        # backtest crosses below zero, treat it as bankruptcy rather than
+        # raising a negative number to a fractional power (complex result).
+        if total_return_pct <= -1:
+            annualized_return = -1.0
+        else:
+            annualized_return = float(np.expm1(np.log1p(total_return_pct) / years))
         calmar = annualized_return / max_dd_pct if max_dd_pct > 0 else 0
 
         # Expectancy
@@ -107,7 +126,7 @@ class PnLCalculator:
 
         return PerformanceMetrics(
             total_return=total_pnl,
-            total_return_pct=total_pnl / initial_equity if initial_equity > 0 else 0,
+            total_return_pct=total_return_pct,
             total_trades=total_trades,
             winning_trades=winning_trades,
             losing_trades=losing_trades,

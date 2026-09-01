@@ -9,12 +9,13 @@ import { Spinner } from "@/components/ui/progress";
 import { apiFetch } from "@/lib/utils";
 
 interface BacktestResult {
-  id: string;
+  id: number;
   strategy_name: string;
   symbol: string;
   total_return: number;
   sharpe_ratio: number;
   max_drawdown: number;
+  max_drawdown_pct: number;
   win_rate: number;
   total_trades: number;
   created_at: string;
@@ -22,7 +23,7 @@ interface BacktestResult {
 
 export default function BacktestComparePage() {
   const [backtests, setBacktests] = useState<BacktestResult[]>([]);
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -36,26 +37,27 @@ export default function BacktestComparePage() {
     } catch {} finally { setLoading(false); }
   }
 
-  function toggleSelect(id: string) {
+  function toggleSelect(id: number) {
     setSelected((prev) => prev.includes(id) ? prev.filter((s) => s !== id) : prev.length < 4 ? [...prev, id] : prev);
   }
 
   const selectedResults = backtests.filter((b) => selected.includes(b.id));
-  const metrics = ["total_return", "sharpe_ratio", "max_drawdown", "win_rate", "total_trades"] as const;
+  const metrics = ["total_return", "sharpe_ratio", "max_drawdown_pct", "win_rate", "total_trades"] as const;
   const metricLabels: Record<string, string> = {
-    total_return: "Retorno Total", sharpe_ratio: "Sharpe Ratio", max_drawdown: "Drawdown Máximo", win_rate: "Taxa de Acerto", total_trades: "Total de Trades",
+    total_return: "Retorno Total (USDT)", sharpe_ratio: "Sharpe Ratio", max_drawdown_pct: "Drawdown Máximo", win_rate: "Taxa de Acerto", total_trades: "Total de Trades",
   };
 
   function formatMetric(key: string, value: number) {
     switch (key) {
-      case "total_return": case "max_drawdown": case "win_rate": return `${(value * 100).toFixed(2)}%`;
+      case "max_drawdown_pct": case "win_rate": return `${(value * 100).toFixed(2)}%`;
+      case "total_return": return `${value.toFixed(2)} USDT`;
       case "sharpe_ratio": return value.toFixed(3);
       default: return value.toString();
     }
   }
 
   function getBestValue(key: string, values: number[]) {
-    if (key === "max_drawdown") return Math.max(...values);
+    if (key === "max_drawdown_pct") return Math.min(...values);
     return Math.max(...values);
   }
 

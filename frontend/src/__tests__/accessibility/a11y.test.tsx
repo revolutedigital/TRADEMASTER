@@ -20,7 +20,7 @@ vi.mock("next/link", () => ({
 
 // Mock Logo
 vi.mock("@/components/ui/logo", () => ({
-  Logo: ({ size }: { size?: string }) => <div data-testid="logo">TradeMaster</div>,
+  Logo: () => <div data-testid="logo">TradeMaster</div>,
 }));
 
 import { Sidebar } from "@/components/ui/sidebar";
@@ -71,7 +71,10 @@ describe("Accessibility Tests", () => {
   it("images have alt text", () => {
     const { container } = render(
       <div>
+        {/* Native images are deliberate here: this test verifies their alt text. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.png" alt="TradeMaster Logo" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/icon.png" alt="Status indicator" />
       </div>
     );

@@ -23,26 +23,18 @@ interface AdvancedChartProps {
   interval?: string;
 }
 
+const DEFAULT_INDICATORS = ["sma_20"];
+
 export function AdvancedChart({ symbol, interval = "1h" }: AdvancedChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const overlayRef = useRef<HTMLCanvasElement>(null);
   const [candles, setCandles] = useState<Candle[]>([]);
   const [drawings, setDrawings] = useState<DrawingTool[]>([]);
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [drawingPoints, setDrawingPoints] = useState<{ x: number; y: number }[]>([]);
   const [timeframe, setTimeframe] = useState(interval);
-  const [indicators, setIndicators] = useState<string[]>(["sma_20"]);
   const [crosshair, setCrosshair] = useState<{ x: number; y: number } | null>(null);
 
-  useEffect(() => {
-    fetchCandles();
-  }, [symbol, timeframe]);
-
-  useEffect(() => {
-    drawChart();
-  }, [candles, drawings, indicators, crosshair]);
-
-  async function fetchCandles() {
+  const fetchCandles = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/market/klines/${symbol}?interval=${timeframe}&limit=200`, { credentials: "include" });
       if (res.ok) {
@@ -57,9 +49,13 @@ export function AdvancedChart({ symbol, interval = "1h" }: AdvancedChartProps) {
         })));
       }
     } catch {}
-  }
+  }, [symbol, timeframe]);
 
-  function drawChart() {
+  useEffect(() => {
+    void fetchCandles();
+  }, [fetchCandles]);
+
+  const drawChart = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || candles.length === 0) return;
     const ctx = canvas.getContext("2d");
@@ -130,7 +126,7 @@ export function AdvancedChart({ symbol, interval = "1h" }: AdvancedChartProps) {
     });
 
     // Draw SMA indicator
-    if (indicators.includes("sma_20") && candles.length >= 20) {
+    if (DEFAULT_INDICATORS.includes("sma_20") && candles.length >= 20) {
       ctx.beginPath();
       ctx.strokeStyle = "#f59e0b";
       ctx.lineWidth = 1.5;
@@ -187,7 +183,11 @@ export function AdvancedChart({ symbol, interval = "1h" }: AdvancedChartProps) {
         ctx.fillText(crossPrice.toFixed(2), width - padding.right + 3, crosshair.y + 3);
       }
     }
-  }
+  }, [candles, drawings, crosshair]);
+
+  useEffect(() => {
+    drawChart();
+  }, [drawChart]);
 
   const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!activeTool) return;

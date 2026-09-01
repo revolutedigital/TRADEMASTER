@@ -3,12 +3,14 @@
 import pytest
 from unittest.mock import patch
 
+from app.config import settings
+
 
 class TestLogin:
     async def test_login_success(self, async_client):
         response = await async_client.post("/api/v1/auth/login", json={
-            "username": "admin",
-            "password": "trademaster2024",
+            "username": settings.admin_username,
+            "password": settings.admin_password,
         })
         assert response.status_code == 200
         data = response.json()
@@ -16,7 +18,7 @@ class TestLogin:
 
     async def test_login_invalid_password(self, async_client):
         response = await async_client.post("/api/v1/auth/login", json={
-            "username": "admin",
+            "username": settings.admin_username,
             "password": "wrong",
         })
         assert response.status_code == 401
@@ -27,8 +29,8 @@ class TestLogin:
 
     async def test_login_sets_cookies(self, async_client):
         response = await async_client.post("/api/v1/auth/login", json={
-            "username": "admin",
-            "password": "trademaster2024",
+            "username": settings.admin_username,
+            "password": settings.admin_password,
         })
         assert response.status_code == 200
         cookies = response.cookies

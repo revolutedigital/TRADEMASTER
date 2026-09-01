@@ -55,12 +55,17 @@ class Order(Base, TimestampMixin):
     avg_fill_price: Mapped[float | None] = mapped_column(Numeric(20, 8))
     commission: Mapped[float] = mapped_column(Numeric(20, 8), default=0)
     signal_id: Mapped[int | None] = mapped_column(BigInteger)
+    execution_mode: Mapped[str] = mapped_column(String(10), default="PAPER", nullable=False)
+    protective_order_list_id: Mapped[int | None] = mapped_column(BigInteger)
+    protective_quantity: Mapped[float | None] = mapped_column(Numeric(20, 8))
     notes: Mapped[str | None] = mapped_column(String(500))
 
     __table_args__ = (
         Index("ix_orders_symbol_status", "symbol", "status"),
         Index("ix_orders_exchange_id", "exchange_order_id"),
+        Index("ix_orders_execution_mode_created_at", "execution_mode", "created_at"),
         CheckConstraint("side IN ('BUY', 'SELL')", name="ck_orders_side"),
+        CheckConstraint("execution_mode IN ('PAPER', 'TESTNET', 'LIVE')", name="ck_orders_execution_mode"),
         CheckConstraint("quantity > 0", name="ck_orders_quantity_positive"),
     )
 

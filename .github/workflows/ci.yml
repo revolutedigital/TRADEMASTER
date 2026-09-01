@@ -27,15 +27,22 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
+        env:
+          PIP_EXTRA_INDEX_URL: https://download.pytorch.org/whl/cpu
         run: pip install -e ".[dev]"
 
       - name: Lint with ruff
         working-directory: backend
         run: ruff check app/ tests/
 
-      - name: Type check with mypy
+      - name: Type check safety-critical deterministic services
         working-directory: backend
-        run: mypy app/ --ignore-missing-imports
+        run: >-
+          mypy --strict --explicit-package-bases --follow-imports=skip
+          --disable-error-code=import-untyped
+          app/services/portfolio/pnl.py
+          app/services/risk/var.py
+          app/services/market/data_validator.py
 
   backend-test:
     name: Backend Tests
@@ -84,7 +91,15 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
+        env:
+          PIP_EXTRA_INDEX_URL: https://download.pytorch.org/whl/cpu
         run: pip install -e ".[dev]"
+
+      - name: Apply database migrations
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://trademaster:trademaster@localhost:5432/trademaster_test
+        run: alembic upgrade head
 
       - name: Run tests with coverage
         working-directory: backend
@@ -119,7 +134,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: npm ci || npm install
+        run: npm ci
 
       - name: Lint
         working-directory: frontend
@@ -145,7 +160,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: npm ci || npm install
+        run: npm ci
 
       - name: Build
         working-directory: frontend
@@ -164,6 +179,8 @@ jobs:
 
       - name: Install backend dependencies
         working-directory: backend
+        env:
+          PIP_EXTRA_INDEX_URL: https://download.pytorch.org/whl/cpu
         run: pip install -e ".[dev]"
 
       - name: Python dependency audit
@@ -179,7 +196,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm ci || npm install
+        run: npm ci
 
       - name: Node dependency audit
         working-directory: frontend

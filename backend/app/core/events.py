@@ -17,6 +17,7 @@ logger = get_logger(__name__)
 class EventType(StrEnum):
     # Market data events
     KLINE_UPDATE = "kline.update"
+    KLINE_CLOSED_PERSISTED = "kline.closed.persisted"
     TRADE_UPDATE = "trade.update"
     ORDERBOOK_UPDATE = "orderbook.update"
 
@@ -43,6 +44,9 @@ class Event:
     data: dict[str, Any]
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     source: str = "trademaster"
+    _stream_key: str | None = field(default=None, repr=False, compare=False)
+    _message_id: str | None = field(default=None, repr=False, compare=False)
+    _consumer_group: str | None = field(default=None, repr=False, compare=False)
 
 
 class EventBus:
@@ -87,8 +91,14 @@ class EventBus:
         consumer: str,
         count: int = 10,
         block_ms: int = 5000,
+        acknowledge: bool = True,
+        retry_pending: bool = False,
     ) -> list[Event]:
-        """Consume events from Redis Streams using consumer groups."""
+        """Consume events from Redis Streams using consumer groups.
+
+        Consumers that persist external state must opt into manual acknowledgement
+        and pending-message retries so a failed transaction is never dropped.
+        """
         if not self._redis:
             return []
 
@@ -104,13 +114,24 @@ class EventBus:
 
             streams[stream_key] = ">"
 
-        results = await self._redis.xreadgroup(
-            groupname=group,
-            consumername=consumer,
-            streams=streams,
-            count=count,
-            block=block_ms,
-        )
+        results = []
+        if retry_pending:
+            pending_streams = {stream_key: "0" for stream_key in streams}
+            results = await self._redis.xreadgroup(
+                groupname=group,
+                consumername=consumer,
+                streams=pending_streams,
+                count=count,
+                block=1,
+            )
+        if not results:
+            results = await self._redis.xreadgroup(
+                groupname=group,
+                consumername=consumer,
+                streams=streams,
+                count=count,
+                block=block_ms,
+            )
 
         events = []
         for _stream_key, messages in results:
@@ -121,16 +142,36 @@ class EventBus:
                         data=json.loads(msg_data["data"]),
                         timestamp=msg_data["timestamp"],
                         source=msg_data.get("source", "unknown"),
+                        _stream_key=_stream_key,
+                        _message_id=msg_id,
+                        _consumer_group=group,
                     )
                     events.append(event)
-                    # Acknowledge the message
-                    await self._redis.xack(
-                        _stream_key, group, msg_id
-                    )
+                    if acknowledge:
+                        await self._acknowledge_event(event)
                 except (KeyError, ValueError) as e:
                     logger.error("event_parse_error", msg_id=msg_id, error=str(e))
+                    await self._redis.xack(_stream_key, group, msg_id)
 
         return events
+
+    async def acknowledge(self, events: list[Event]) -> None:
+        """Acknowledge manually-consumed events after their transaction commits."""
+        if not self._redis:
+            raise RuntimeError("event bus is not connected")
+        for event in events:
+            await self._acknowledge_event(event)
+
+    async def _acknowledge_event(self, event: Event) -> None:
+        if not self._redis:
+            raise RuntimeError("event bus is not connected")
+        if not event._stream_key or not event._message_id or not event._consumer_group:
+            raise ValueError("event does not carry Redis acknowledgement metadata")
+        await self._redis.xack(
+            event._stream_key,
+            event._consumer_group,
+            event._message_id,
+        )
 
 
 # Global event bus instance

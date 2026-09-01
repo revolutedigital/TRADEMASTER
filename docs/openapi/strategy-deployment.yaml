@@ -1,0 +1,192 @@
+openapi: 3.1.0
+info:
+  title: TradeMaster Strategy Deployment API
+  version: 1.0.0
+  description: |
+    Promotes a reproducible technical-strategy backtest to a specific engine
+    execution mode. A deployment is not an order and cannot bypass the live
+    execution controls. Every deployment is checked against the source result
+    plus fresh walk-forward evidence. Activation only makes an approved
+    strategy available to the matching engine mode; it never arms LIVE orders.
+    TESTNET and LIVE engines reject all new entries when no approved active
+    deployment matches the symbol and interval.
+servers:
+  - url: /api/v1
+paths:
+  /strategy-deployments:
+    get:
+      operationId: listStrategyDeployments
+      summary: List persisted strategy deployment evidence.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Deployments newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StrategyDeployment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      operationId: createStrategyDeployment
+      summary: Revalidate a technical backtest for PAPER, TESTNET, or LIVE use.
+      description: |
+        The server reloads candles for the original symbol and interval, runs
+        walk-forward validation with the recorded strategy configuration, and
+        stores both passing and rejected evidence. Approval requires at least
+        20 source trades, profit factor >= 1.05, positive source return,
+        source drawdown <= 15%, and fresh out-of-sample evidence across at
+        least 3 windows: 20 trades, positive mean return, profit factor >=
+        1.05, 60% profitable-window consistency, drawdown <= 15%, and an
+        overfitting score <= 0.50. This endpoint never starts the engine or
+        places an order.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StrategyDeploymentCreateRequest'
+      responses:
+        '201':
+          description: Deployment evidence was persisted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StrategyDeployment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Source backtest was not found.
+        '409':
+          description: The source is not a deployable Spot technical backtest.
+  /strategy-deployments/{deployment_id}/activate:
+    post:
+      operationId: activateStrategyDeployment
+      summary: Activate one approved strategy for its matching execution mode.
+      description: |
+        Only one strategy may be active for the same symbol, interval, and
+        target execution mode. LIVE activation still does not authorize an
+        order; the live guard must separately be ready and armed. LIVE
+        activation also requires a valid operator TOTP code.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: deployment_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StrategyDeploymentActivationRequest'
+      responses:
+        '200':
+          description: Strategy is active for the matching runtime mode.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StrategyDeployment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Deployment is not approved or the runtime mode does not match.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    Unauthorized:
+      description: Authentication is required.
+  schemas:
+    StrategyDeploymentCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [source_backtest_id, target_execution_mode]
+      properties:
+        source_backtest_id:
+          type: integer
+          minimum: 1
+        target_execution_mode:
+          type: string
+          enum: [PAPER, TESTNET, LIVE]
+    StrategyDeploymentActivationRequest:
+      type: object
+      additionalProperties: false
+      required: [confirmation_phrase]
+      properties:
+        confirmation_phrase:
+          type: string
+          const: ACTIVATE STRATEGY
+        totp_code:
+          type: [string, 'null']
+          pattern: '^\\d{6}$'
+          description: Required when activating a LIVE deployment.
+    StrategyDeployment:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - source_backtest_id
+        - symbol
+        - interval
+        - target_execution_mode
+        - status
+        - total_test_trades
+        - walk_forward_windows
+        - avg_return_pct
+        - avg_sharpe
+        - avg_max_drawdown_pct
+        - avg_profit_factor
+        - consistency_score
+        - overfitting_score
+        - created_at
+      properties:
+        id:
+          type: integer
+        source_backtest_id:
+          type: integer
+        symbol:
+          type: string
+        interval:
+          type: string
+        target_execution_mode:
+          type: string
+          enum: [PAPER, TESTNET, LIVE]
+        status:
+          type: string
+          enum: [APPROVED, ACTIVE, REJECTED, DISABLED]
+        total_test_trades:
+          type: integer
+        walk_forward_windows:
+          type: integer
+        avg_return_pct:
+          type: number
+        avg_sharpe:
+          type: number
+        avg_max_drawdown_pct:
+          type: number
+        avg_profit_factor:
+          type: number
+        consistency_score:
+          type: number
+        overfitting_score:
+          type: number
+        rejection_reason:
+          type: [string, 'null']
+        activated_at:
+          type: [string, 'null']
+          format: date-time
+        created_at:
+          type: string
+          format: date-time

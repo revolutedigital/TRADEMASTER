@@ -34,8 +34,8 @@ export async function loadWASM(): Promise<WASMIndicators | null> {
     }
 
     const buffer = await response.arrayBuffer();
-    const module = await WebAssembly.instantiate(buffer);
-    wasmModule = module.instance.exports as unknown as WASMIndicators;
+    const wasmInstance = await WebAssembly.instantiate(buffer);
+    wasmModule = wasmInstance.instance.exports as unknown as WASMIndicators;
     console.info("WASM indicators module loaded successfully");
     return wasmModule;
   } catch (error) {

@@ -3,7 +3,7 @@ FROM node:22-alpine AS base
 # Install dependencies
 FROM base AS deps
 WORKDIR /app
-COPY frontend/package.json frontend/package-lock.json ./
+COPY package.json package-lock.json ./
 RUN npm install --frozen-lockfile 2>/dev/null || npm install
 
 # Build
@@ -17,7 +17,7 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY frontend/ .
+COPY . .
 RUN npm run build
 
 # Production

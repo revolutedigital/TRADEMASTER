@@ -5,7 +5,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.portfolio import Position, PortfolioSnapshot
+from app.models.portfolio import PortfolioSnapshot, Position
 from app.repositories.base import BaseRepository
 
 
@@ -13,19 +13,32 @@ class PositionRepository(BaseRepository[Position]):
     def __init__(self) -> None:
         super().__init__(Position)
 
-    async def get_open(self, db: AsyncSession, symbol: str | None = None) -> list[Position]:
-        query = select(Position).where(Position.is_open == True)
+    async def get_open(
+        self,
+        db: AsyncSession,
+        symbol: str | None = None,
+        execution_mode: str | None = None,
+    ) -> list[Position]:
+        query = select(Position).where(Position.is_open.is_(True))
         if symbol:
             query = query.where(Position.symbol == symbol)
+        if execution_mode is not None:
+            query = query.where(Position.execution_mode == execution_mode)
         result = await db.execute(query)
         return list(result.scalars().all())
 
     async def get_closed(
-        self, db: AsyncSession, symbol: str | None = None, limit: int = 50
+        self,
+        db: AsyncSession,
+        symbol: str | None = None,
+        limit: int = 50,
+        execution_mode: str | None = None,
     ) -> list[Position]:
-        query = select(Position).where(Position.is_open == False)
+        query = select(Position).where(Position.is_open.is_(False))
         if symbol:
             query = query.where(Position.symbol == symbol)
+        if execution_mode is not None:
+            query = query.where(Position.execution_mode == execution_mode)
         result = await db.execute(query.order_by(Position.closed_at.desc()).limit(limit))
         return list(result.scalars().all())
 
@@ -36,7 +49,7 @@ class PositionRepository(BaseRepository[Position]):
             select(Position).where(
                 Position.symbol == symbol,
                 Position.side == side,
-                Position.is_open == True,
+                Position.is_open.is_(True),
             )
         )
         return list(result.scalars().all())
@@ -54,19 +67,13 @@ class SnapshotRepository(BaseRepository[PortfolioSnapshot]):
     def __init__(self) -> None:
         super().__init__(PortfolioSnapshot)
 
-    async def get_recent(
-        self, db: AsyncSession, limit: int = 100
-    ) -> list[PortfolioSnapshot]:
+    async def get_recent(self, db: AsyncSession, limit: int = 100) -> list[PortfolioSnapshot]:
         result = await db.execute(
-            select(PortfolioSnapshot)
-            .order_by(PortfolioSnapshot.timestamp.desc())
-            .limit(limit)
+            select(PortfolioSnapshot).order_by(PortfolioSnapshot.timestamp.desc()).limit(limit)
         )
         return list(result.scalars().all())
 
-    async def get_since(
-        self, db: AsyncSession, since: datetime
-    ) -> list[PortfolioSnapshot]:
+    async def get_since(self, db: AsyncSession, since: datetime) -> list[PortfolioSnapshot]:
         result = await db.execute(
             select(PortfolioSnapshot)
             .where(PortfolioSnapshot.timestamp >= since)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 
 interface ShortcutConfig {
@@ -15,7 +15,7 @@ interface ShortcutConfig {
 export function useKeyboardShortcuts() {
   const router = useRouter();
 
-  const shortcuts: ShortcutConfig[] = [
+  const shortcuts = useMemo<ShortcutConfig[]>(() => [
     {
       key: "d",
       ctrl: true,
@@ -49,7 +49,7 @@ export function useKeyboardShortcuts() {
       action: () => router.push("/settings"),
       description: "Go to Settings",
     },
-  ];
+  ], [router]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {

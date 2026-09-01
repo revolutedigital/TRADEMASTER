@@ -25,8 +25,6 @@ from app.core.honeypot import honeypot_router
 
 logger = get_logger(__name__)
 
-# Global state for trading engine control
-_engine_enabled: bool = True
 _background_tasks: list[asyncio.Task] = []
 
 
@@ -34,6 +32,15 @@ _background_tasks: list[asyncio.Task] = []
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan: startup and shutdown events."""
     setup_logging()
+    from app.services.exchange.live_execution_readiness import (
+        live_protection_readiness,
+        testnet_protection_readiness,
+    )
+    from app.services.exchange.live_trading_guard import live_trading_guard
+
+    live_protection_readiness.reset()
+    testnet_protection_readiness.reset()
+    live_trading_guard.disarm("application startup")
     logger.info(
         "trademaster_starting",
         env=settings.app_env,
@@ -55,6 +62,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         import app.models.lineage  # noqa: F401
         import app.models.user  # noqa: F401
         import app.models.event  # noqa: F401
+        import app.models.execution_release  # noqa: F401
+        import app.models.strategy_deployment  # noqa: F401
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         logger.info("database_tables_ready")
@@ -111,6 +120,39 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("binance_connected")
     except Exception as e:
         logger.warning("binance_connection_failed", error=str(e))
+
+    # A live process must prove its persisted Spot OCO state before it can be
+    # armed. A failed read is an explicit lock, never a reason to assume safety.
+    if settings.execution_mode.value == "LIVE":
+        if not binance_ok:
+            live_protection_readiness.mark_error("Binance is unavailable for live OCO reconciliation")
+            logger.critical("live_spot_protection_unverified", reason="binance_unavailable")
+        else:
+            try:
+                from app.models.base import async_session_factory
+                from app.services.exchange.spot_protection_reconciler import (
+                    spot_protection_reconciler,
+                )
+                from app.services.exchange.testnet_protection_verifier import (
+                    testnet_protection_verifier,
+                )
+
+                async with async_session_factory() as db:
+                    testnet_verified = await testnet_protection_verifier.load_live_readiness(db)
+                    report = await spot_protection_reconciler.reconcile(db)
+                    await db.commit()
+                logger.info(
+                    "live_spot_protection_startup_reconciled",
+                    ready=report.ready,
+                    checked_positions=report.checked_positions,
+                    testnet_verified=testnet_verified,
+                )
+            except Exception as exc:
+                logger.critical(
+                    "live_spot_protection_startup_reconciliation_failed",
+                    error=str(exc),
+                    exc_info=True,
+                )
 
     # --- Phase 3: Start background services (never crash the app) ---
     try:
@@ -202,7 +244,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 async def _start_background_services() -> None:
-    """Start all background async tasks: WS streams, processors, trading engine, scheduler."""
+    """Start market-data and monitoring services; engine start stays operator-controlled."""
     global _background_tasks
 
     # 1. WebSocket streams from Binance -> Redis
@@ -223,14 +265,12 @@ async def _start_background_services() -> None:
     from app.services.ws_broadcaster import ws_broadcaster
     await ws_broadcaster.start()
 
-    # 4. Trading engine (consumes kline events, generates signals, executes trades)
-    from app.services.trading_engine import trading_engine
-    if _engine_enabled:
-        task = asyncio.create_task(trading_engine.start(), name="trading_engine")
-        _background_tasks.append(task)
-        logger.info("trading_engine_task_created")
+    # The trading engine is deliberately not auto-started. The authenticated
+    # /trading/engine/start endpoint verifies a live Binance WebSocket before
+    # exchange execution and reserves the singleton engine atomically.
+    logger.info("trading_engine_waiting_for_operator_start")
 
-    # 5. Periodic scheduler
+    # 4. Periodic scheduler
     from app.services.scheduler import scheduler
     from app.services.exchange.binance_client import binance_client as bc
 
@@ -308,14 +348,11 @@ async def _start_background_services_offline() -> None:
     from app.services.ws_broadcaster import ws_broadcaster
     await ws_broadcaster.start()
 
-    # 5. Trading engine
-    from app.services.trading_engine import trading_engine
-    if _engine_enabled:
-        task = asyncio.create_task(trading_engine.start(), name="trading_engine")
-        _background_tasks.append(task)
-        logger.info("trading_engine_task_created_offline")
+    # The engine is intentionally not started from offline services. Paper
+    # execution must still use the authenticated operational start endpoint.
+    logger.info("trading_engine_waiting_for_operator_start")
 
-    # 6. Periodic position check (uses Redis-cached prices, no Binance needed)
+    # 5. Periodic position check (uses Redis-cached prices, no Binance needed)
     from app.services.scheduler import scheduler
 
     async def check_positions():

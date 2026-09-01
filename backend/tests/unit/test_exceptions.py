@@ -13,7 +13,7 @@ from app.core.exceptions import (
 
 def test_base_exception():
     err = TradeMasterError("something went wrong", "TEST_ERROR")
-    assert str(err) == "something went wrong"
+    assert str(err) == "[TEST_ERROR] something went wrong"
     assert err.code == "TEST_ERROR"
 
 

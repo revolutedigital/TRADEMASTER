@@ -155,6 +155,9 @@ async def health_detailed():
         "version": getattr(settings, "app_version", "1.0.0"),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "env": settings.app_env,
+        # ``checks`` is the established public health contract. Keep
+        # ``dependencies`` as an alias for older dashboard consumers.
+        "checks": checks,
         "dependencies": checks,
         "system": system_info,
     }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import LandingPage from "@/app/(public)/page";
+import LandingPage from "@/app/(public)/welcome/page";
 
 describe("LandingPage", () => {
   it("renders TradeMaster brand name", () => {

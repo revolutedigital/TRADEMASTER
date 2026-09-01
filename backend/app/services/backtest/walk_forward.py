@@ -13,12 +13,19 @@ import pandas as pd
 
 from app.core.logging import get_logger
 from app.services.backtest.engine import BacktestEngine
-from app.services.portfolio.pnl import PnLCalculator
 
 logger = get_logger(__name__)
 
-# 15m candles per day = 96
-CANDLES_PER_DAY_15M = 96
+CANDLES_PER_DAY_BY_INTERVAL = {
+    "1m": 1440,
+    "5m": 288,
+    "15m": 96,
+    "30m": 48,
+    "1h": 24,
+    "4h": 6,
+    "1d": 1,
+    "1w": 1 / 7,
+}
 
 
 @dataclass
@@ -64,6 +71,10 @@ def run_walk_forward(
     step_days: int = 15,
     initial_capital: float = 10000.0,
     signal_threshold: float = 0.3,
+    atr_stop_multiplier: float = 2.0,
+    risk_reward_ratio: float = 2.0,
+    allow_short: bool = True,
+    candles_per_day: float = 96,
 ) -> WalkForwardResult:
     """Run walk-forward validation on historical data with pre-computed signals.
 
@@ -75,10 +86,13 @@ def run_walk_forward(
         step_days: Step size between windows
         initial_capital: Starting capital per window
         signal_threshold: Minimum signal strength to trade
+        allow_short: Whether a negative signal may open a short position.
     """
-    train_candles = train_days * CANDLES_PER_DAY_15M
-    test_candles = test_days * CANDLES_PER_DAY_15M
-    step_candles = step_days * CANDLES_PER_DAY_15M
+    if candles_per_day <= 0:
+        raise ValueError("candles_per_day must be positive")
+    train_candles = max(1, round(train_days * candles_per_day))
+    test_candles = max(1, round(test_days * candles_per_day))
+    step_candles = max(1, round(step_days * candles_per_day))
 
     total_candles = len(df)
     if total_candles < train_candles + test_candles:
@@ -95,7 +109,6 @@ def run_walk_forward(
         )
 
     windows: list[WalkForwardWindow] = []
-    pnl_calc = PnLCalculator()
 
     start = 0
     window_idx = 0
@@ -113,6 +126,9 @@ def run_walk_forward(
         train_engine = BacktestEngine(
             initial_capital=initial_capital,
             signal_threshold=signal_threshold,
+            atr_stop_multiplier=atr_stop_multiplier,
+            risk_reward_ratio=risk_reward_ratio,
+            allow_short=allow_short,
         )
         train_result = train_engine.run(train_df, signals=train_signals)
 
@@ -123,6 +139,9 @@ def run_walk_forward(
         test_engine = BacktestEngine(
             initial_capital=initial_capital,
             signal_threshold=signal_threshold,
+            atr_stop_multiplier=atr_stop_multiplier,
+            risk_reward_ratio=risk_reward_ratio,
+            allow_short=allow_short,
         )
         test_result = test_engine.run(test_df, signals=test_signals)
 
@@ -217,3 +236,11 @@ def run_walk_forward(
     )
 
     return result
+
+
+def candles_per_day(interval: str) -> float:
+    """Return the candle cadence used to translate calendar walk-forward windows."""
+    try:
+        return CANDLES_PER_DAY_BY_INTERVAL[interval]
+    except KeyError as exc:
+        raise ValueError(f"unsupported walk-forward interval: {interval}") from exc

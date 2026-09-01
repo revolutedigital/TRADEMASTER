@@ -23,6 +23,7 @@ class OrderRepository(BaseRepository[Order]):
         end_date: str | None = None,
         limit: int = 50,
         offset: int = 0,
+        execution_mode: str | None = None,
     ) -> list[Order]:
         """List orders with optional filters, ordered by newest first."""
         query = select(Order)
@@ -32,6 +33,8 @@ class OrderRepository(BaseRepository[Order]):
             query = query.where(Order.side == side.upper())
         if status and status.upper() != "ALL":
             query = query.where(Order.status == status.upper())
+        if execution_mode is not None:
+            query = query.where(Order.execution_mode == execution_mode)
         if start_date:
             try:
                 dt = datetime.fromisoformat(start_date)
@@ -50,7 +53,9 @@ class OrderRepository(BaseRepository[Order]):
 
     async def get_open_orders(self, db: AsyncSession, symbol: str | None = None) -> list[Order]:
         query = select(Order).where(
-            Order.status.in_([OrderStatus.PENDING, OrderStatus.SUBMITTED, OrderStatus.PARTIALLY_FILLED])
+            Order.status.in_(
+                [OrderStatus.PENDING, OrderStatus.SUBMITTED, OrderStatus.PARTIALLY_FILLED]
+            )
         )
         if symbol:
             query = query.where(Order.symbol == symbol)
@@ -58,9 +63,7 @@ class OrderRepository(BaseRepository[Order]):
         return list(result.scalars().all())
 
     async def get_by_exchange_id(self, db: AsyncSession, exchange_order_id: str) -> Order | None:
-        result = await db.execute(
-            select(Order).where(Order.exchange_order_id == exchange_order_id)
-        )
+        result = await db.execute(select(Order).where(Order.exchange_order_id == exchange_order_id))
         return result.scalar_one_or_none()
 
     async def get_filled_orders(

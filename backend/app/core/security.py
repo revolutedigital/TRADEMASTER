@@ -4,8 +4,10 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
+import jwt
+import redis.asyncio as aioredis
 from cryptography.fernet import Fernet
-from jose import JWTError, jwt
+from jwt import InvalidTokenError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -39,7 +41,7 @@ def verify_token(token: str, token_type: str = "access") -> dict | None:
         if payload.get("type", "access") != token_type:
             return None
         return payload
-    except JWTError:
+    except InvalidTokenError:
         return None
 
 
@@ -175,14 +177,13 @@ class AppRateLimiter:
     """
 
     def __init__(self) -> None:
-        self._redis: "aioredis.Redis | None" = None
+        self._redis: aioredis.Redis | None = None
         self._fallback: dict[str, list[float]] = {}
 
-    async def _get_redis(self) -> "aioredis.Redis | None":
+    async def _get_redis(self) -> aioredis.Redis | None:
         if self._redis is not None:
             return self._redis
         try:
-            import redis.asyncio as aioredis
             self._redis = aioredis.from_url(
                 settings.redis_url, decode_responses=True
             )

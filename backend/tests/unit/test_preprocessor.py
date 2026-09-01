@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import tempfile
 import os
+from pathlib import Path
 
 from app.services.ml.preprocessor import Preprocessor, SplitData, SequenceData
 
@@ -69,8 +70,8 @@ class TestCreateTarget(TestPreprocessor):
 
     def test_target_with_custom_threshold(self, preprocessor, sample_df):
         """Different thresholds should change distribution."""
-        result_low = preprocessor.create_target(sample_df.copy(), threshold=0.001)
-        result_high = preprocessor.create_target(sample_df.copy(), threshold=0.05)
+        result_low = Preprocessor(threshold=0.001).create_target(sample_df.copy())
+        result_high = Preprocessor(threshold=0.05).create_target(sample_df.copy())
 
         low_holds = (result_low["target"] == 1).sum()
         high_holds = (result_high["target"] == 1).sum()
@@ -163,15 +164,15 @@ class TestScalerPersistence(TestPreprocessor):
     def test_save_and_load_scaler(self, preprocessor, sample_df, feature_cols):
         """Scaler should be saveable and loadable."""
         df = preprocessor.create_target(sample_df.copy())
-        preprocessor.prepare_tabular(df, feature_cols)
+        split_data = preprocessor.prepare_tabular(df, feature_cols)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "scaler.pkl")
-            preprocessor.save_scaler(path)
+            Preprocessor.save_scaler(split_data.scaler, Path(path))
             assert os.path.exists(path)
 
-            new_preprocessor = Preprocessor()
-            new_preprocessor.load_scaler(path)
+            loaded_scaler = Preprocessor.load_scaler(Path(path))
+            assert loaded_scaler is not None
 
     def test_loaded_scaler_produces_same_output(self, preprocessor, sample_df, feature_cols):
         """Loaded scaler should produce identical transformations."""
@@ -180,14 +181,14 @@ class TestScalerPersistence(TestPreprocessor):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "scaler.pkl")
-            preprocessor.save_scaler(path)
+            Preprocessor.save_scaler(result1.scaler, Path(path))
 
-            new_preprocessor = Preprocessor()
-            new_preprocessor.load_scaler(path)
+            loaded_scaler = Preprocessor.load_scaler(Path(path))
 
-            # Transform same data with loaded scaler
-            result2 = new_preprocessor.prepare_tabular(df, feature_cols)
+            result2 = loaded_scaler.transform(
+                df[feature_cols].iloc[-len(result1.X_test):].values,
+            )
 
             np.testing.assert_array_almost_equal(
-                result1.X_test[:5], result2.X_test[:5], decimal=5
+                result1.X_test[:5], result2[:5], decimal=5
             )

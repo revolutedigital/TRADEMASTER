@@ -1,14 +1,14 @@
 """Materialized views for performance analytics.
 
 Revision ID: 004_materialized_views
-Revises: 003_add_model_and_backtest_fields
+Revises: 003_model_fields
 Create Date: 2025-10-01 00:00:00.000000
 """
 
 from alembic import op
 
 revision = "004_materialized_views"
-down_revision = "003_add_model_and_backtest_fields"
+down_revision = "003_model_fields"
 branch_labels = None
 depends_on = None
 

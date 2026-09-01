@@ -75,21 +75,23 @@ export default function SignalsPage() {
               <TableHead>Ação</TableHead>
               <TableHead>Força</TableHead>
               <TableHead>Confiança</TableHead>
-              <TableHead>Model</TableHead>
+              <TableHead>Origem</TableHead>
+              <TableHead>Execução</TableHead>
+              <TableHead>Evidência</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {signals.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="py-12 text-center text-[var(--color-text-muted)]">
-                  Nenhum sinal gerado ainda. O pipeline de ML gerará sinais quando houver dados de mercado.
+                <TableCell colSpan={8} className="py-12 text-center text-[var(--color-text-muted)]">
+                  Nenhum candidato de estratégia gerado ainda. Os sinais aprovados aparecerão com as evidências da decisão.
                 </TableCell>
               </TableRow>
             ) : (
               signals.map((sig) => (
                 <TableRow key={sig.id}>
                   <TableCell className="text-xs text-[var(--color-text-muted)]">
-                    {timeAgo(sig.created_at)}
+                    {timeAgo(sig.generated_at)}
                   </TableCell>
                   <TableCell className="font-semibold">{sig.symbol}</TableCell>
                   <TableCell>
@@ -113,6 +115,30 @@ export default function SignalsPage() {
                   </TableCell>
                   <TableCell className="text-xs text-[var(--color-text-muted)]">
                     {sig.model_source}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={sig.was_executed ? "success" : "warning"}>
+                      {sig.was_executed ? "Executado" : "Não executado"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="min-w-64 text-xs text-[var(--color-text-muted)]">
+                    {sig.evidence ? (
+                      <details>
+                        <summary className="cursor-pointer text-[var(--color-text)]">
+                          {sig.evidence.votes.length} voto{sig.evidence.votes.length === 1 ? "" : "s"} · {sig.evidence.regime.market}
+                        </summary>
+                        <div className="mt-2 space-y-1">
+                          <p>
+                            Limite {sig.evidence.signal_threshold.toFixed(2)} · consenso {(sig.evidence.agreement_ratio * 100).toFixed(0)}% · ATR {(sig.evidence.atr_pct * 100).toFixed(2)}%
+                          </p>
+                          <p>
+                            {sig.evidence.votes.map((vote) => `${vote.model}: ${vote.action}`).join(" · ")}
+                          </p>
+                        </div>
+                      </details>
+                    ) : (
+                      "Evidência indisponível para registro legado"
+                    )}
                   </TableCell>
                 </TableRow>
               ))

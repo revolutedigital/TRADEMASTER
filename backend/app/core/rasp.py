@@ -17,6 +17,10 @@ SQL_INJECTION_PATTERNS = [
     re.compile(r"(\b(UNION|SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|EXEC)\b.*\b(FROM|INTO|TABLE|WHERE)\b)", re.IGNORECASE),
     re.compile(r"(\/\*|\*\/|xp_|sp_cmdshell)", re.IGNORECASE),
     re.compile(r"('\s*(OR|AND)\s*'?\s*\d+\s*=\s*\d+)", re.IGNORECASE),
+    re.compile(
+        r"(?:['\"]\s*|\b\d+\s+)(?:OR|AND)\s+['\"]?(?:\d+|[A-Z_][A-Z0-9_]*)['\"]?\s*=\s*['\"]?(?:\d+|[A-Z_][A-Z0-9_]*)['\"]?",
+        re.IGNORECASE,
+    ),
     re.compile(r"(SLEEP\s*\(\s*\d+\s*\)|BENCHMARK\s*\()", re.IGNORECASE),
 ]
 

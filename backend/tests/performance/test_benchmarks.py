@@ -76,7 +76,7 @@ class TestRiskCalculationPerformance:
         elapsed = time.perf_counter() - start
         
         assert elapsed < 5.0, f"Monte Carlo took {elapsed:.2f}s (limit: 5.0s)"
-        assert "median_outcome" in result
+        assert result.median_outcome > 0
 
 
 class TestDataProcessingPerformance:

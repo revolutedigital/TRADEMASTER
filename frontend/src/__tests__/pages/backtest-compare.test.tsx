@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
-let mockPathname = "/backtest/compare";
+const mockPathname = "/backtest/compare";
 vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname,
 }));

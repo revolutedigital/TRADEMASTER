@@ -129,7 +129,11 @@ export default function DashboardPage() {
         toast.success(message);
       } else if (status === "position_closed") {
         message = `Posição fechada | P&L: $${pnl}`;
-        Number(pnl) >= 0 ? toast.success(message) : toast.warning(message);
+        if (Number(pnl) >= 0) {
+          toast.success(message);
+        } else {
+          toast.warning(message);
+        }
       } else if (status === "position_increased") {
         message = `Adicionado a ${result.side} | Méd: $${Number(result.avg_entry).toLocaleString()}`;
         toast.info(message);
@@ -157,7 +161,11 @@ export default function DashboardPage() {
         status: result.pnl >= 0 ? "profit" : "loss",
         message,
       });
-      result.pnl >= 0 ? toast.success(message) : toast.warning(message);
+      if (result.pnl >= 0) {
+        toast.success(message);
+      } else {
+        toast.warning(message);
+      }
       fetchPositions();
       fetchSummary();
     } catch (err) {
@@ -532,7 +540,7 @@ export default function DashboardPage() {
                       </div>
                     </TableCell>
                     <TableCell className="text-xs text-[var(--color-text-faint)]">
-                      {timeAgo(sig.created_at)}
+                      {timeAgo(sig.generated_at)}
                     </TableCell>
                   </TableRow>
                 ))}

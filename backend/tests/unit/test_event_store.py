@@ -55,10 +55,10 @@ class TestPluginManager:
         status = pm.get_status()
         assert status["loaded"] == 0
 
-    def test_discover_nonexistent(self):
+    @pytest.mark.asyncio
+    async def test_discover_nonexistent(self):
         pm = PluginManager(plugins_dir="/nonexistent")
-        import asyncio
-        discovered = asyncio.get_event_loop().run_until_complete(pm.discover_plugins())
+        discovered = await pm.discover_plugins()
         assert len(discovered) == 0
 
 

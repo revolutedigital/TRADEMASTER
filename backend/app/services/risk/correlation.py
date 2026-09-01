@@ -5,7 +5,6 @@ Uses rolling return correlation from DB candles + known defaults.
 """
 
 from collections import deque
-from datetime import datetime, timezone
 
 import numpy as np
 from sqlalchemy import select
@@ -59,15 +58,17 @@ class CorrelationFilter:
         db: AsyncSession,
         symbol: str,
         side: str,
+        execution_mode: str | None = None,
     ) -> tuple[bool, str | None]:
         """Check if opening this position violates correlation limits.
 
         Returns:
             (is_allowed, reason) — reason is None if allowed.
         """
-        result = await db.execute(
-            select(Position).where(Position.is_open == True)
-        )
+        query = select(Position).where(Position.is_open.is_(True))
+        if execution_mode is not None:
+            query = query.where(Position.execution_mode == execution_mode)
+        result = await db.execute(query)
         open_positions = list(result.scalars().all())
 
         if not open_positions:
@@ -198,14 +199,16 @@ class CorrelationFilter:
         high_correlations = []
 
         for i, sym_a in enumerate(symbols):
-            for sym_b in symbols[i + 1:]:
+            for sym_b in symbols[i + 1 :]:
                 corr = self.get_rolling_correlation(sym_a, sym_b)
                 if corr is not None and abs(corr) > threshold:
-                    high_correlations.append({
-                        "pair": f"{sym_a}-{sym_b}",
-                        "correlation": round(corr, 4),
-                        "risk": "high" if abs(corr) > 0.95 else "moderate",
-                    })
+                    high_correlations.append(
+                        {
+                            "pair": f"{sym_a}-{sym_b}",
+                            "correlation": round(corr, 4),
+                            "risk": "high" if abs(corr) > 0.95 else "moderate",
+                        }
+                    )
 
         return {
             "has_concentration_risk": len(high_correlations) > 0,

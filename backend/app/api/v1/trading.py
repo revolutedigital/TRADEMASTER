@@ -1,28 +1,39 @@
 """Trading API endpoints: orders, engine control, manual actions, paper trading."""
 
 from datetime import datetime, timezone
+from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import TradingExecutionMode, settings
 from app.core.logging import get_logger
 from app.dependencies import (
     get_db,
     get_order_repository,
-    get_position_repository,
-    get_market_repository,
     get_trading_engine,
     require_auth,
 )
-from app.models.trade import Order
-from app.services.exchange.binance_client import binance_client
 from app.models.portfolio import Position
+from app.models.trade import Order
 from app.repositories.order_repo import OrderRepository
-from app.repositories.position_repo import PositionRepository
-from app.repositories.market_repo import MarketDataRepository
 from app.schemas.trading import OrderResponse
+from app.services.exchange.binance_client import binance_client
+from app.services.exchange.live_trading_guard import (
+    LiveTradingSafetyError,
+    live_trading_guard,
+)
+from app.services.exchange.spot_position_closer import (
+    SpotPositionCloseError,
+    spot_position_closer,
+)
+from app.services.exchange.spot_protection_reconciler import spot_protection_reconciler
+from app.services.exchange.testnet_protection_verifier import (
+    TestnetProtectionVerificationError,
+    testnet_protection_verifier,
+)
 
 logger = get_logger(__name__)
 
@@ -31,11 +42,272 @@ router = APIRouter()
 
 class PaperOrderRequest(BaseModel):
     symbol: str = "BTCUSDT"
-    side: str = "BUY"  # BUY or SELL
-    quantity: float = 0.001  # Amount of the asset
-    stop_loss_pct: float | None = 0.02  # 2% stop loss
-    take_profit_pct: float | None = 0.04  # 4% take profit
-    price: float | None = None  # Live price from frontend (Binance WS)
+    side: str = "BUY"  # BUY opens/adds a LONG; SELL only reduces a LONG
+    quantity: float = Field(default=0.001, gt=0)  # Amount of the asset
+    stop_loss_pct: float | None = Field(default=0.02, gt=0, lt=1)
+    take_profit_pct: float | None = Field(default=0.04, gt=0, lt=1)
+    price: float | None = Field(default=None, gt=0)  # Live price from frontend (Binance WS)
+
+
+LIVE_ARM_CONFIRMATION_PHRASE = "ARM LIVE TRADING"
+
+
+def _require_paper_execution_mode() -> None:
+    """Keep legacy virtual order endpoints out of exchange-mode ledgers."""
+    if settings.execution_mode != TradingExecutionMode.PAPER:
+        raise HTTPException(
+            status_code=409,
+            detail="Paper trading endpoints are only available while execution mode is PAPER",
+        )
+
+
+class ArmLiveTradingRequest(BaseModel):
+    confirmation_phrase: str = Field(min_length=1, max_length=100)
+    arm_code: str = Field(min_length=20, max_length=200)
+    totp_code: str = Field(pattern=r"^\d{6}$")
+
+    @model_validator(mode="after")
+    def validate_confirmation_phrase(self) -> "ArmLiveTradingRequest":
+        if self.confirmation_phrase != LIVE_ARM_CONFIRMATION_PHRASE:
+            raise ValueError(f"confirmation_phrase must be {LIVE_ARM_CONFIRMATION_PHRASE!r}")
+        return self
+
+
+class DisarmLiveTradingRequest(BaseModel):
+    reason: str = Field(default="operator disarm", min_length=3, max_length=200)
+
+
+class LiveProtectionReadinessResponse(BaseModel):
+    ready: bool
+    state: str
+    checked_at: str | None
+    max_age_seconds: int
+    issues: list[str]
+
+
+class LiveProtectionReconciliationResponse(LiveProtectionReadinessResponse):
+    checked_positions: int
+    active_protections: int
+    closed_positions: int
+
+
+class TestnetProtectionVerificationRequest(BaseModel):
+    confirmation_phrase: str = Field(min_length=1, max_length=100)
+    symbol: str = Field(pattern=r"^[A-Z0-9]{5,20}$")
+
+    @model_validator(mode="after")
+    def validate_confirmation_phrase(self) -> "TestnetProtectionVerificationRequest":
+        if self.confirmation_phrase != "VERIFY TESTNET OCO":
+            raise ValueError("confirmation_phrase must be 'VERIFY TESTNET OCO'")
+        return self
+
+
+class TestnetProtectionVerificationResponse(BaseModel):
+    status: str
+    environment: str
+    symbol: str
+    entry_order_id: str
+    order_list_id: int
+    exit_order_id: str
+    verified_at: str
+
+
+class ExchangePositionCloseRequest(BaseModel):
+    confirmation_phrase: str = Field(min_length=1, max_length=100)
+    totp_code: str = Field(pattern=r"^\d{6}$")
+
+    @model_validator(mode="after")
+    def validate_confirmation_phrase(self) -> "ExchangePositionCloseRequest":
+        if self.confirmation_phrase != "CLOSE SPOT POSITION":
+            raise ValueError("confirmation_phrase must be 'CLOSE SPOT POSITION'")
+        return self
+
+
+class ExchangePositionCloseResponse(BaseModel):
+    status: str
+    position_id: int
+    symbol: str
+    exit_order_id: str
+    exit_price: float
+    closed_at: str
+
+
+class LiveTradingStatusResponse(BaseModel):
+    execution_mode: str
+    live_enabled: bool
+    armed: bool
+    armed_until: str | None
+    armable: bool
+    blockers: list[str]
+    max_notional_per_order: float
+    max_daily_notional: float
+    reconciliation: LiveProtectionReadinessResponse
+    testnet_verification: LiveProtectionReadinessResponse
+
+
+@router.get("/live/status", response_model=LiveTradingStatusResponse)
+async def get_live_trading_status(
+    _user: dict = Depends(require_auth),
+) -> dict[str, object]:
+    """Read the effective execution mode and all live-execution safety gates."""
+    return live_trading_guard.status()
+
+
+@router.post("/live/arm", response_model=LiveTradingStatusResponse)
+async def arm_live_trading(
+    body: ArmLiveTradingRequest,
+    request: Request,
+    user: dict = Depends(require_auth),
+) -> dict[str, object]:
+    """Arm real-capital execution temporarily; this endpoint never places an order."""
+    try:
+        status = live_trading_guard.arm(
+            actor=str(user.get("sub", "admin")),
+            arm_code=body.arm_code,
+            totp_code=body.totp_code,
+        )
+    except LiveTradingSafetyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    from app.core.audit import audit_logger
+
+    await audit_logger.log_event(
+        action="LIVE_TRADING_ARMED",
+        user_id=str(user.get("sub", "admin")),
+        resource="trading:live-control",
+        details={"armed_until": status["armed_until"]},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    return status
+
+
+@router.post("/live/reconcile", response_model=LiveProtectionReconciliationResponse)
+async def reconcile_live_spot_protection(
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_auth),
+) -> dict[str, object]:
+    """Read and reconcile Binance Spot OCO protection; this endpoint never trades."""
+    if settings.execution_mode.value != "LIVE":
+        raise HTTPException(
+            status_code=409,
+            detail="Spot OCO reconciliation is only available when execution mode is LIVE",
+        )
+    try:
+        report = await spot_protection_reconciler.reconcile(db)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Live Spot protection reconciliation failed; execution remains disarmed",
+        ) from exc
+
+    from app.core.audit import audit_logger
+
+    await audit_logger.log_event(
+        action="LIVE_SPOT_PROTECTION_RECONCILED",
+        user_id=str(user.get("sub", "admin")),
+        resource="trading:live-control",
+        details={
+            "checked_positions": report.checked_positions,
+            "active_protections": report.active_protections,
+            "closed_positions": report.closed_positions,
+            "issues": list(report.issues),
+        },
+    )
+    return report.as_dict(settings.live_trading_reconciliation_max_age_seconds)
+
+
+@router.post(
+    "/live/testnet-protection-verification",
+    response_model=TestnetProtectionVerificationResponse,
+)
+async def verify_testnet_native_spot_protection(
+    body: TestnetProtectionVerificationRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_auth),
+    engine=Depends(get_trading_engine),
+) -> dict[str, str | int]:
+    """Run the explicit Testnet BUY -> OCO -> signed read -> cleanup release proof."""
+    if engine._running:
+        raise HTTPException(
+            status_code=409,
+            detail="stop the trading engine before running the isolated Testnet protection proof",
+        )
+    try:
+        report = await testnet_protection_verifier.verify(db, body.symbol)
+    except TestnetProtectionVerificationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    from app.core.audit import audit_logger
+
+    await audit_logger.log_event(
+        action="TESTNET_NATIVE_OCO_VERIFIED",
+        user_id=str(user.get("sub", "admin")),
+        resource="trading:live-control",
+        details={"symbol": report.symbol, "order_list_id": report.order_list_id},
+    )
+    return report.as_dict()
+
+
+@router.post(
+    "/positions/{position_id}/close-exchange",
+    response_model=ExchangePositionCloseResponse,
+)
+async def close_live_spot_position_on_exchange(
+    position_id: int,
+    body: ExchangePositionCloseRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_auth),
+) -> dict[str, str | int | float]:
+    """Cancel the native OCO, prove its terminal state, then sell once on Binance Spot."""
+    try:
+        report = await spot_position_closer.close(
+            db=db,
+            position_id=position_id,
+            totp_code=body.totp_code,
+        )
+    except (LiveTradingSafetyError, SpotPositionCloseError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    from app.core.audit import audit_logger
+
+    await audit_logger.log_event(
+        action="LIVE_SPOT_POSITION_CLOSED_ON_EXCHANGE",
+        user_id=str(user.get("sub", "admin")),
+        resource=f"trading:position:{report.position_id}",
+        details={
+            "symbol": report.symbol,
+            "status": report.status,
+            "exit_order_id": report.exit_order_id,
+            "exit_price": float(report.exit_price),
+        },
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    return report.as_dict()
+
+
+@router.post("/live/disarm", response_model=LiveTradingStatusResponse)
+async def disarm_live_trading(
+    body: DisarmLiveTradingRequest,
+    request: Request,
+    user: dict = Depends(require_auth),
+) -> dict[str, object]:
+    """Immediately revoke live-execution permission without touching open positions."""
+    status = live_trading_guard.disarm(body.reason)
+
+    from app.core.audit import audit_logger
+
+    await audit_logger.log_event(
+        action="LIVE_TRADING_DISARMED",
+        user_id=str(user.get("sub", "admin")),
+        resource="trading:live-control",
+        details={"reason": body.reason},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    return status
 
 
 @router.get("/orders", response_model=list[OrderResponse])
@@ -47,11 +319,13 @@ async def get_orders(
     end_date: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    execution_mode: TradingExecutionMode | None = None,
     db: AsyncSession = Depends(get_db),
     _user: dict = Depends(require_auth),
     repo: OrderRepository = Depends(get_order_repository),
 ):
-    """Get recent orders with filters. Requires authentication."""
+    """Get recent orders from the selected ledger, defaulting to the active mode."""
+    selected_mode = execution_mode or settings.execution_mode
     orders = await repo.list_filtered(
         db,
         symbol=symbol,
@@ -61,6 +335,7 @@ async def get_orders(
         end_date=end_date,
         limit=limit,
         offset=offset,
+        execution_mode=selected_mode.value,
     )
     return orders
 
@@ -72,6 +347,7 @@ async def create_paper_order(
     _user: dict = Depends(require_auth),
 ):
     """Execute a simulated paper trade using live Binance prices. Requires authentication."""
+    _require_paper_execution_mode()
     symbol = req.symbol.upper()
     side = req.side.upper()
     if side not in ("BUY", "SELL"):
@@ -83,9 +359,11 @@ async def create_paper_order(
     else:
         try:
             price = float(await binance_client.get_ticker_price(symbol))
-        except Exception as e:
-            logger.error("live_price_fetch_failed", symbol=symbol, error=str(e))
-            raise HTTPException(503, f"Não foi possível obter preço em tempo real para {symbol}. Tente novamente.")
+        except Exception as exc:
+            logger.error("live_price_fetch_failed", symbol=symbol, error=str(exc))
+            raise HTTPException(
+                503, f"Não foi possível obter preço em tempo real para {symbol}. Tente novamente."
+            ) from exc
     now = datetime.now(timezone.utc)
     commission = price * req.quantity * 0.001  # 0.1% fee
 
@@ -101,20 +379,97 @@ async def create_paper_order(
         filled_quantity=req.quantity,
         avg_fill_price=price,
         commission=commission,
+        execution_mode=TradingExecutionMode.PAPER.value,
         notes="Paper trade (simulated)",
     )
     db.add(order)
 
-    # Handle position logic
-    position_side = "LONG" if side == "BUY" else "SHORT"
+    # Paper execution must mirror the supported exchange contract: Spot
+    # long-only. A SELL can reduce an existing simulated long but it cannot
+    # create a synthetic short that would never be executable on Binance Spot.
+    if side == "SELL":
+        long_result = await db.execute(
+            select(Position)
+            .where(
+                Position.symbol == symbol,
+                Position.side == "LONG",
+                Position.is_open.is_(True),
+                Position.execution_mode == TradingExecutionMode.PAPER.value,
+            )
+            .with_for_update()
+        )
+        long_position = long_result.scalar_one_or_none()
+        if long_position is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Paper Spot SELL can only reduce an existing LONG position",
+            )
 
-    # Check for existing open position on opposite side (close it)
-    opposite_side = "SHORT" if side == "BUY" else "LONG"
+        current_quantity = Decimal(str(long_position.quantity))
+        requested_quantity = Decimal(str(req.quantity))
+        if requested_quantity > current_quantity:
+            raise HTTPException(
+                status_code=409,
+                detail="Paper Spot SELL quantity exceeds the open LONG position",
+            )
+
+        realized_pnl = (
+            Decimal(str(price)) - Decimal(str(long_position.entry_price))
+        ) * requested_quantity - Decimal(str(commission))
+        remaining_quantity = current_quantity - requested_quantity
+        long_position.current_price = price
+        long_position.realized_pnl = float(
+            Decimal(str(long_position.realized_pnl)) + realized_pnl
+        )
+
+        if remaining_quantity == 0:
+            long_position.unrealized_pnl = 0
+            long_position.is_open = False
+            long_position.closed_at = now
+            await db.commit()
+            await db.refresh(order)
+            return {
+                "status": "position_closed",
+                "order_id": order.id,
+                "symbol": symbol,
+                "side": side,
+                "price": price,
+                "quantity": req.quantity,
+                "closed_position_id": long_position.id,
+                "realized_pnl": round(float(long_position.realized_pnl), 2),
+            }
+
+        long_position.quantity = float(remaining_quantity)
+        long_position.unrealized_pnl = float(
+            (Decimal(str(price)) - Decimal(str(long_position.entry_price)))
+            * remaining_quantity
+        )
+        await db.commit()
+        await db.refresh(order)
+        return {
+            "status": "position_reduced",
+            "order_id": order.id,
+            "symbol": symbol,
+            "side": side,
+            "price": price,
+            "quantity": req.quantity,
+            "position_id": long_position.id,
+            "remaining_quantity": float(remaining_quantity),
+            "realized_pnl": round(float(realized_pnl), 2),
+        }
+
+    # BUY can close any historical paper short created before the Spot-only
+    # rule, but cannot create a new one.
+    position_side = "LONG"
+
+    # Check for a historical short that predates the Spot-long-only contract.
+    opposite_side = "SHORT"
     existing = await db.execute(
         select(Position).where(
             Position.symbol == symbol,
             Position.side == opposite_side,
-            Position.is_open == True,
+            Position.is_open.is_(True),
+            Position.execution_mode == TradingExecutionMode.PAPER.value,
         )
     )
     existing_pos = existing.scalar_one_or_none()
@@ -132,7 +487,9 @@ async def create_paper_order(
         existing_pos.unrealized_pnl = 0
         existing_pos.is_open = False
         existing_pos.closed_at = now
-        logger.info("paper_position_closed", symbol=symbol, side=existing_pos.side, pnl=round(pnl, 2))
+        logger.info(
+            "paper_position_closed", symbol=symbol, side=existing_pos.side, pnl=round(pnl, 2)
+        )
 
         await db.commit()
         await db.refresh(order)
@@ -153,7 +510,8 @@ async def create_paper_order(
         select(Position).where(
             Position.symbol == symbol,
             Position.side == position_side,
-            Position.is_open == True,
+            Position.is_open.is_(True),
+            Position.execution_mode == TradingExecutionMode.PAPER.value,
         )
     )
     same_pos = same_result.scalar_one_or_none()
@@ -173,10 +531,18 @@ async def create_paper_order(
             same_pos.unrealized_pnl = (avg_price - price) * new_qty
         # Update stops
         if req.stop_loss_pct:
-            sl = price * (1 - req.stop_loss_pct) if position_side == "LONG" else price * (1 + req.stop_loss_pct)
+            sl = (
+                price * (1 - req.stop_loss_pct)
+                if position_side == "LONG"
+                else price * (1 + req.stop_loss_pct)
+            )
             same_pos.stop_loss_price = sl
         if req.take_profit_pct:
-            tp = price * (1 + req.take_profit_pct) if position_side == "LONG" else price * (1 - req.take_profit_pct)
+            tp = (
+                price * (1 + req.take_profit_pct)
+                if position_side == "LONG"
+                else price * (1 - req.take_profit_pct)
+            )
             same_pos.take_profit_price = tp
 
         await db.commit()
@@ -198,9 +564,17 @@ async def create_paper_order(
     stop_loss = None
     take_profit = None
     if req.stop_loss_pct:
-        stop_loss = price * (1 - req.stop_loss_pct) if position_side == "LONG" else price * (1 + req.stop_loss_pct)
+        stop_loss = (
+            price * (1 - req.stop_loss_pct)
+            if position_side == "LONG"
+            else price * (1 + req.stop_loss_pct)
+        )
     if req.take_profit_pct:
-        take_profit = price * (1 + req.take_profit_pct) if position_side == "LONG" else price * (1 - req.take_profit_pct)
+        take_profit = (
+            price * (1 + req.take_profit_pct)
+            if position_side == "LONG"
+            else price * (1 - req.take_profit_pct)
+        )
 
     position = Position(
         symbol=symbol,
@@ -212,6 +586,7 @@ async def create_paper_order(
         realized_pnl=0,
         stop_loss_price=stop_loss,
         take_profit_price=take_profit,
+        execution_mode=TradingExecutionMode.PAPER.value,
         is_open=True,
         opened_at=now,
     )
@@ -255,13 +630,17 @@ async def close_position_manually(
     _user: dict = Depends(require_auth),
 ):
     """Manually close a position at current live price. Requires authentication."""
+    _require_paper_execution_mode()
     result = await db.execute(
-        select(Position).where(Position.id == position_id, Position.is_open == True)
+        select(Position).where(
+            Position.id == position_id,
+            Position.is_open.is_(True),
+            Position.execution_mode == TradingExecutionMode.PAPER.value,
+        )
     )
     position = result.scalar_one_or_none()
     if not position:
         raise HTTPException(status_code=404, detail="Open position not found")
-
     # Use frontend-provided live price first, then try Binance API
     exit_price = None
     if req and req.price and req.price > 0:
@@ -269,9 +648,11 @@ async def close_position_manually(
     else:
         try:
             exit_price = float(await binance_client.get_ticker_price(position.symbol))
-        except Exception as e:
-            logger.error("live_price_fetch_failed", symbol=position.symbol, error=str(e))
-            raise HTTPException(503, f"Não foi possível obter preço em tempo real. Tente novamente.")
+        except Exception as exc:
+            logger.error("live_price_fetch_failed", symbol=position.symbol, error=str(exc))
+            raise HTTPException(
+                503, "Não foi possível obter preço em tempo real. Tente novamente."
+            ) from exc
 
     # Calculate P&L
     if position.side == "LONG":
@@ -301,12 +682,15 @@ async def close_position_manually(
         filled_quantity=float(position.quantity),
         avg_fill_price=exit_price,
         commission=commission,
+        execution_mode=TradingExecutionMode.PAPER.value,
         notes=f"Paper close position #{position_id}",
     )
     db.add(order)
     await db.commit()
 
-    logger.info("paper_position_closed", position_id=position_id, exit_price=exit_price, pnl=round(pnl, 2))
+    logger.info(
+        "paper_position_closed", position_id=position_id, exit_price=exit_price, pnl=round(pnl, 2)
+    )
 
     return {
         "status": "closed",
@@ -321,25 +705,44 @@ async def start_engine(
     _user: dict = Depends(require_auth),
     engine=Depends(get_trading_engine),
 ):
-    """Start the trading engine. Requires authentication."""
-    if engine._running:
+    """Start the engine from one approved market-data source. Requires authentication."""
+    if settings.execution_mode != TradingExecutionMode.PAPER:
+        # Testnet/LIVE decisions must originate from Binance market events.
+        # Never start the offline price/candle generators in an exchange mode.
+        from app.services.exchange.binance_ws import binance_ws_manager
+
+        if not binance_ws_manager._running or not binance_ws_manager._tasks:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "exchange execution requires active Binance WebSocket market data; "
+                    "synthetic candles are restricted to PAPER mode"
+                ),
+            )
+
+    if not engine.reserve_start():
         return {"status": "already_running"}
 
     import asyncio
 
-    # Also start price fetcher + synthetic kline generator if not running
-    from app.services.market.price_fetcher import price_fetcher
-    if not price_fetcher._running:
-        asyncio.create_task(price_fetcher.start(), name="price_fetcher")
+    if settings.execution_mode == TradingExecutionMode.PAPER:
+        # Paper mode may use the independent public price feed and derive its
+        # candles locally. These sources are explicitly forbidden above for
+        # Testnet/LIVE execution.
+        from app.services.market.price_fetcher import price_fetcher
 
-    from app.services.market.synthetic_kline_generator import synthetic_kline_generator
-    if not synthetic_kline_generator._running:
-        asyncio.create_task(synthetic_kline_generator.start(), name="synthetic_kline_generator")
+        if not price_fetcher._running:
+            asyncio.create_task(price_fetcher.start(), name="price_fetcher")
 
-    # Start stream processor if not running
-    from app.services.market.stream_processor import market_stream_processor
-    if not market_stream_processor._running:
-        asyncio.create_task(market_stream_processor.start(), name="market_stream_processor")
+        from app.services.market.synthetic_kline_generator import synthetic_kline_generator
+
+        if not synthetic_kline_generator._running:
+            asyncio.create_task(synthetic_kline_generator.start(), name="synthetic_kline_generator")
+
+        from app.services.market.stream_processor import market_stream_processor
+
+        if not market_stream_processor._running:
+            asyncio.create_task(market_stream_processor.start(), name="market_stream_processor")
 
     asyncio.create_task(engine.start(), name="trading_engine")
     return {"status": "started"}
@@ -351,22 +754,24 @@ async def stop_engine(
     engine=Depends(get_trading_engine),
 ):
     """Pause the trading engine. Requires authentication."""
+    live_trading_guard.disarm("trading engine stopped by operator")
     if not engine._running:
-        return {"status": "already_stopped"}
+        return {"status": "already_stopped", "live_trading": live_trading_guard.status()}
 
     await engine.stop()
-    return {"status": "stopped"}
+    return {"status": "stopped", "live_trading": live_trading_guard.status()}
 
 
 @router.get("/engine/status")
 async def engine_status(_user: dict = Depends(require_auth)):
     """Get trading engine status. Requires authentication."""
-    from app.dependencies import get_trading_engine, get_circuit_breaker
-    from app.services.scheduler import scheduler
-    from app.services.exchange.binance_ws import binance_ws_manager
-    from app.services.market.synthetic_kline_generator import synthetic_kline_generator
-    from app.services.market.price_fetcher import price_fetcher
     from sqlalchemy import func
+
+    from app.dependencies import get_circuit_breaker, get_trading_engine
+    from app.services.exchange.binance_ws import binance_ws_manager
+    from app.services.market.price_fetcher import price_fetcher
+    from app.services.market.synthetic_kline_generator import synthetic_kline_generator
+    from app.services.scheduler import scheduler
 
     engine = get_trading_engine()
     cb = get_circuit_breaker()
@@ -374,12 +779,15 @@ async def engine_status(_user: dict = Depends(require_auth)):
     # Count candles per symbol for monitoring
     candle_counts = {}
     try:
-        from app.models.market import OHLCV
         from app.models.base import async_session_factory as db_session_maker
+        from app.models.market import OHLCV
+
         async with db_session_maker() as sdb:
             for sym in ["BTCUSDT", "ETHUSDT"]:
                 result = await sdb.execute(
-                    select(func.count()).select_from(OHLCV).where(
+                    select(func.count())
+                    .select_from(OHLCV)
+                    .where(
                         OHLCV.symbol == sym,
                         OHLCV.interval == synthetic_kline_generator._interval_label,
                     )
@@ -403,6 +811,7 @@ async def engine_status(_user: dict = Depends(require_auth)):
         "max_trades_per_day": 6,
         "circuit_breaker": cb.get_status(),
         "scheduled_tasks": scheduler.get_status(),
+        "live_trading": live_trading_guard.status(),
     }
 
 
@@ -413,12 +822,14 @@ async def train_bootstrap_model(
 ):
     """Train a bootstrap XGBoost model using available historical data."""
     from pathlib import Path
+
     import numpy as np
+
     from app.services.market.data_collector import market_data_collector
     from app.services.ml.features import feature_engineer
     from app.services.ml.models.xgboost_model import XGBoostTradingModel
-    from app.services.ml.preprocessor import Preprocessor
     from app.services.ml.pipeline import ml_pipeline
+    from app.services.ml.preprocessor import Preprocessor
 
     MODELS_DIR = Path("ml_artifacts/models")
     SCALERS_DIR = Path("ml_artifacts/scalers")
@@ -443,7 +854,10 @@ async def train_bootstrap_model(
             )
 
         if df.empty or len(df) < 300:
-            results[symbol] = {"status": "skipped", "reason": f"Only {len(df)} candles available (need 300+)"}
+            results[symbol] = {
+                "status": "skipped",
+                "reason": f"Only {len(df)} candles available (need 300+)",
+            }
             continue
 
         # Feature engineering
@@ -465,8 +879,10 @@ async def train_bootstrap_model(
         # Train XGBoost
         model = XGBoostTradingModel()
         training_result = model.train(
-            split.X_train, split.y_train,
-            split.X_val, split.y_val,
+            split.X_train,
+            split.y_train,
+            split.X_val,
+            split.y_val,
             n_estimators=200,
             max_depth=4,
             learning_rate=0.05,
@@ -496,6 +912,7 @@ async def train_bootstrap_model(
 async def get_drift_status(_user: dict = Depends(require_auth)):
     """Get model drift detection status for all symbols."""
     from app.services.ml.drift_detector import drift_detector
+
     return drift_detector.get_status()
 
 
@@ -503,6 +920,7 @@ async def get_drift_status(_user: dict = Depends(require_auth)):
 async def trigger_drift_retrain(_user: dict = Depends(require_auth)):
     """Manually trigger drift check and retrain if needed."""
     from app.services.ml.drift_detector import drift_detector
+
     retrained = await drift_detector.auto_retrain_if_needed()
     return {"retrained": retrained}
 
@@ -514,6 +932,7 @@ async def get_execution_analytics(
 ):
     """Get trade execution quality metrics (slippage, latency, fill rate)."""
     from app.services.exchange.execution_analytics import execution_analytics
+
     return execution_analytics.get_best_execution_report()
 
 
@@ -521,6 +940,7 @@ async def get_execution_analytics(
 async def get_regime_status(_user: dict = Depends(require_auth)):
     """Get current market regime detection for all tracked symbols."""
     from app.services.ml.regime import regime_detector
+
     return {
         "regimes": regime_detector.get_all(),
         "description": "Adaptive regime: bull/bear/sideways × low/normal/high volatility",
@@ -531,6 +951,7 @@ async def get_regime_status(_user: dict = Depends(require_auth)):
 async def get_rolling_sharpe(_user: dict = Depends(require_auth)):
     """Get rolling Sharpe ratio monitor status (auto-pause indicator)."""
     from app.services.risk.rolling_sharpe import rolling_sharpe_monitor
+
     return rolling_sharpe_monitor.get_status()
 
 
@@ -538,6 +959,7 @@ async def get_rolling_sharpe(_user: dict = Depends(require_auth)):
 async def force_resume_sharpe(_user: dict = Depends(require_auth)):
     """Manually resume trading after rolling Sharpe auto-pause."""
     from app.services.risk.rolling_sharpe import rolling_sharpe_monitor
+
     rolling_sharpe_monitor.force_resume()
     return {"status": "resumed"}
 
@@ -545,9 +967,14 @@ async def force_resume_sharpe(_user: dict = Depends(require_auth)):
 @router.get("/engine/ensemble-status")
 async def get_ensemble_status(_user: dict = Depends(require_auth)):
     """Get ensemble voting configuration and regime-adaptive weight info."""
-    from app.services.ml.ensemble_voter import _REGIME_WEIGHTS, _VOL_ADJUSTMENTS, _REGIME_BIAS
+    from app.services.ml.ensemble_voter import _REGIME_BIAS, _REGIME_WEIGHTS, _VOL_ADJUSTMENTS
+
     return {
-        "regime_weights": {k: {"technical": v[0], "ml": v[1], "regime": v[2]} for k, v in _REGIME_WEIGHTS.items()},
-        "volatility_adjustments": {k: {"tech": v[0], "ml": v[1], "regime": v[2]} for k, v in _VOL_ADJUSTMENTS.items()},
+        "regime_weights": {
+            k: {"technical": v[0], "ml": v[1], "regime": v[2]} for k, v in _REGIME_WEIGHTS.items()
+        },
+        "volatility_adjustments": {
+            k: {"tech": v[0], "ml": v[1], "regime": v[2]} for k, v in _VOL_ADJUSTMENTS.items()
+        },
         "regime_bias": _REGIME_BIAS,
     }

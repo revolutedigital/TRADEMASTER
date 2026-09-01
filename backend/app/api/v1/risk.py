@@ -230,7 +230,7 @@ async def run_scenario(scenario_name: str, _user: dict = Depends(require_auth)):
             "assets_affected": result.assets_most_affected,
         }
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 @router.get("/scenario-stress-test")

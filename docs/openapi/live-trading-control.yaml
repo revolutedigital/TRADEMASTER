@@ -1,0 +1,406 @@
+openapi: 3.1.0
+info:
+  title: TradeMaster Live Trading Control API
+  version: 1.0.0
+  description: |
+    Safety control plane for the Binance Spot live-execution path. Live orders
+    are impossible unless the server is explicitly enabled and an authenticated
+    operator has armed the session with a second factor and a short-lived code.
+    Live arming additionally requires a fresh reconciliation of every tracked
+    LIVE position against its native Binance Spot OCO order list, every open
+    exchange order, account inventory, and a completed Testnet native-protection
+    release verification. Reconciliation is signed, read-only against Binance
+    and never creates, changes, or cancels an exchange order.
+    The engine keeps PAPER, TESTNET, and LIVE positions isolated: an order or
+    exposure from one mode can never close, block, or size a position in another.
+    Legacy virtual order and close endpoints are available only while the
+    effective execution mode is PAPER.
+    Portfolio and order read APIs default to the active execution ledger and
+    include its mode explicitly, so a simulated or Testnet result cannot be
+    presented as real-account performance.
+servers:
+  - url: /api/v1
+paths:
+  /trading/live/status:
+    get:
+      operationId: getLiveTradingStatus
+      summary: Read the effective execution mode and live safety gates.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current live-trading control state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveTradingStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /trading/live/arm:
+    post:
+      operationId: armLiveTrading
+      summary: Arm live execution for a short, server-configured window.
+      description: |
+        Available only in production when Binance Spot is selected, the server
+        has LIVE_TRADING_ENABLED=true, TOTP is enabled, and all confirmation
+        fields are valid. This endpoint never places an order.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArmLiveTradingRequest'
+      responses:
+        '200':
+          description: Live execution was armed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveTradingStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: A mandatory safety condition prevented arming.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /trading/live/reconcile:
+    post:
+      operationId: reconcileLiveSpotProtection
+      summary: Reconcile tracked LIVE positions with native Binance Spot OCO protection.
+      description: |
+        Reads Binance open order lists, open Spot orders, and balances; when an
+        OCO is no longer open, it reads its terminal order state. Any missing,
+        inconsistent, partial, unknown order, or untracked asset leaves live
+        execution disarmed. This endpoint never creates, modifies, or cancels
+        an exchange order.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Reconciliation completed; inspect ready and issues before arming.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveProtectionReconciliation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Binance or the local position ledger could not be reconciled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /trading/live/testnet-protection-verification:
+    post:
+      operationId: verifyTestnetNativeSpotProtection
+      summary: Run the controlled Testnet proof for a native Spot OCO exit.
+      description: |
+        Available only when the effective execution mode is TESTNET. With the
+        supplied Testnet account, it creates the minimum valid BUY and confirms
+        its full fill by a signed read, attaches a native OCO exit, confirms
+        that order list by a signed read, cancels the OCO, and confirms the
+        complete cleanup SELL by a signed read. The trading engine must be
+        stopped first so the proof is isolated from strategy orders. It never
+        runs on a LIVE account.
+        A successful report is a release prerequisite, not permission to place
+        a LIVE order by itself.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestnetProtectionVerificationRequest'
+      responses:
+        '200':
+          description: The Testnet native-protection proof completed and was recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestnetProtectionVerificationReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: The environment, credentials, balance, OCO confirmation, or cleanup failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /trading/positions/{position_id}/close-exchange:
+    post:
+      operationId: closeLiveSpotPositionOnExchange
+      summary: Close one protected LIVE Spot long on Binance without a virtual ledger close.
+      description: |
+        Available only for an authenticated operator in LIVE production with a
+        valid TOTP. It first cancels the exact native OCO, verifies the terminal
+        children by signed reads, and only then sends the market SELL. If a
+        child OCO sell filled during that sequence, it records that exchange
+        exit and never submits a second SELL. It disarms new live entries before
+        the OCO cancellation and confirms the resulting market exit by a signed
+        read. Any ambiguous or partial result leaves the position marked MISSING.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: position_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExchangePositionCloseRequest'
+      responses:
+        '200':
+          description: The native OCO or the controlled market exit closed the position.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExchangePositionCloseReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: The position, OCO, or exchange result was unsafe to close automatically.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /trading/live/disarm:
+    post:
+      operationId: disarmLiveTrading
+      summary: Immediately revoke the current live-execution arm.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisarmLiveTradingRequest'
+      responses:
+        '200':
+          description: Live execution is locked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveTradingStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    Unauthorized:
+      description: Authentication is required.
+  schemas:
+    ArmLiveTradingRequest:
+      type: object
+      additionalProperties: false
+      required: [confirmation_phrase, arm_code, totp_code]
+      properties:
+        confirmation_phrase:
+          type: string
+          const: ARM LIVE TRADING
+        arm_code:
+          type: string
+          minLength: 20
+          writeOnly: true
+        totp_code:
+          type: string
+          pattern: '^\\d{6}$'
+          writeOnly: true
+    DisarmLiveTradingRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 200
+    LiveTradingStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - execution_mode
+        - live_enabled
+        - armed
+        - armable
+        - blockers
+        - max_notional_per_order
+        - max_daily_notional
+        - reconciliation
+        - testnet_verification
+      properties:
+        execution_mode:
+          type: string
+          enum: [PAPER, TESTNET, LIVE]
+        live_enabled:
+          type: boolean
+        armed:
+          type: boolean
+        armed_until:
+          type: [string, 'null']
+          format: date-time
+        armable:
+          type: boolean
+        blockers:
+          type: array
+          items:
+            type: string
+        max_notional_per_order:
+          type: number
+          exclusiveMinimum: 0
+        max_daily_notional:
+          type: number
+          exclusiveMinimum: 0
+        reconciliation:
+          $ref: '#/components/schemas/LiveProtectionReadiness'
+        testnet_verification:
+          $ref: '#/components/schemas/LiveProtectionReadiness'
+    LiveProtectionReadiness:
+      type: object
+      additionalProperties: false
+      required: [ready, state, checked_at, max_age_seconds, issues]
+      properties:
+        ready:
+          type: boolean
+        state:
+          type: string
+          enum: [UNVERIFIED, READY, UNRESOLVED, ERROR, STALE]
+        checked_at:
+          type: [string, 'null']
+          format: date-time
+        max_age_seconds:
+          type: integer
+          minimum: 5
+        issues:
+          type: array
+          items:
+            type: string
+    TestnetProtectionVerificationRequest:
+      type: object
+      additionalProperties: false
+      required: [confirmation_phrase, symbol]
+      properties:
+        confirmation_phrase:
+          type: string
+          const: VERIFY TESTNET OCO
+        symbol:
+          type: string
+          pattern: '^[A-Z0-9]{5,20}$'
+          example: BTCUSDT
+    TestnetProtectionVerificationReport:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - environment
+        - symbol
+        - entry_order_id
+        - order_list_id
+        - exit_order_id
+        - verified_at
+      properties:
+        status:
+          type: string
+          const: PASSED
+        environment:
+          type: string
+          const: TESTNET
+        symbol:
+          type: string
+        entry_order_id:
+          type: string
+        order_list_id:
+          type: integer
+        exit_order_id:
+          type: string
+        verified_at:
+          type: string
+          format: date-time
+    ExchangePositionCloseRequest:
+      type: object
+      additionalProperties: false
+      required: [confirmation_phrase, totp_code]
+      properties:
+        confirmation_phrase:
+          type: string
+          const: CLOSE SPOT POSITION
+        totp_code:
+          type: string
+          pattern: '^\\d{6}$'
+          writeOnly: true
+    ExchangePositionCloseReport:
+      type: object
+      additionalProperties: false
+      required: [status, position_id, symbol, exit_order_id, exit_price, closed_at]
+      properties:
+        status:
+          type: string
+          enum: [OCO_FILLED, MANUAL_MARKET_FILLED]
+        position_id:
+          type: integer
+        symbol:
+          type: string
+        exit_order_id:
+          type: string
+        exit_price:
+          type: number
+          exclusiveMinimum: 0
+        closed_at:
+          type: string
+          format: date-time
+    LiveProtectionReconciliation:
+      type: object
+      additionalProperties: false
+      required:
+        - ready
+        - state
+        - checked_at
+        - max_age_seconds
+        - issues
+        - checked_positions
+        - active_protections
+        - closed_positions
+      properties:
+        ready:
+          type: boolean
+        state:
+          type: string
+          enum: [UNVERIFIED, READY, UNRESOLVED, ERROR, STALE]
+        checked_at:
+          type: [string, 'null']
+          format: date-time
+        max_age_seconds:
+          type: integer
+          minimum: 5
+        issues:
+          type: array
+          items:
+            type: string
+        checked_positions:
+          type: integer
+          minimum: 0
+        active_protections:
+          type: integer
+          minimum: 0
+        closed_positions:
+          type: integer
+          minimum: 0
+    Error:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string

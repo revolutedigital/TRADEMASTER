@@ -3,6 +3,8 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import TradingExecutionMode, settings
+from app.core.logging import get_logger
 from app.dependencies import (
     get_db,
     get_position_repository,
@@ -12,7 +14,6 @@ from app.dependencies import (
 from app.repositories.position_repo import PositionRepository
 from app.schemas.trading import PositionResponse, PortfolioSummary
 from app.services.risk.drawdown import circuit_breaker
-from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -24,15 +25,26 @@ async def get_positions(
     symbol: str | None = None,
     is_open: bool = True,
     limit: int = 50,
+    execution_mode: TradingExecutionMode | None = None,
     db: AsyncSession = Depends(get_db),
     _user: dict = Depends(require_auth),
     repo: PositionRepository = Depends(get_position_repository),
 ):
-    """Get positions."""
+    """Get positions from one execution ledger, defaulting to the active mode."""
+    selected_mode = execution_mode or settings.execution_mode
     if is_open:
-        positions = await repo.get_open(db, symbol)
+        positions = await repo.get_open(
+            db,
+            symbol,
+            execution_mode=selected_mode.value,
+        )
     else:
-        positions = await repo.get_closed(db, symbol, limit)
+        positions = await repo.get_closed(
+            db,
+            symbol,
+            limit,
+            execution_mode=selected_mode.value,
+        )
     return positions[:limit]
 
 
@@ -42,9 +54,14 @@ async def get_portfolio_summary(
     _user: dict = Depends(require_auth),
     repo: PositionRepository = Depends(get_position_repository),
 ):
-    """Get portfolio summary with all open positions."""
-    open_positions = await repo.get_open(db)
-    closed_positions = await repo.get_closed(db, limit=1000)
+    """Get a summary for only the active PAPER, TESTNET, or LIVE ledger."""
+    execution_mode = settings.execution_mode
+    open_positions = await repo.get_open(db, execution_mode=execution_mode.value)
+    closed_positions = await repo.get_closed(
+        db,
+        limit=1000,
+        execution_mode=execution_mode.value,
+    )
 
     total_unrealized = sum(float(p.unrealized_pnl) for p in open_positions)
     total_exposure = sum(float(p.current_price) * float(p.quantity) for p in open_positions)
@@ -67,6 +84,7 @@ async def get_portfolio_summary(
     daily_pnl_pct = daily_pnl / total_equity if total_equity > 0 else 0.0
 
     return PortfolioSummary(
+        execution_mode=execution_mode,
         total_equity=total_equity,
         available_balance=available_balance,
         total_unrealized_pnl=total_unrealized,
@@ -128,6 +146,7 @@ async def get_risk_metrics(
 
     # Calculate basic risk metrics
     import numpy as np
+
     sharpe = 0.0
     sortino = 0.0
     if len(returns) > 1:
@@ -176,11 +195,13 @@ async def get_risk_history(
         peak = max(peak, cumulative_pnl)
         drawdown = (peak - cumulative_pnl) / peak if peak > 0 else 0.0
 
-        history.append({
-            "date": pos.closed_at.isoformat() if pos.closed_at else "",
-            "cumulative_pnl": round(cumulative_pnl, 2),
-            "drawdown_pct": round(drawdown, 4),
-        })
+        history.append(
+            {
+                "date": pos.closed_at.isoformat() if pos.closed_at else "",
+                "cumulative_pnl": round(cumulative_pnl, 2),
+                "drawdown_pct": round(drawdown, 4),
+            }
+        )
 
     return history[-limit:]
 
@@ -226,6 +247,7 @@ async def get_portfolio_optimization(
     """Get portfolio optimization suggestions based on risk tolerance."""
     try:
         from app.services.portfolio.optimizer import portfolio_optimizer
+
         result = await portfolio_optimizer.optimize(risk_tolerance=risk_tolerance)
         return result
     except Exception as e:

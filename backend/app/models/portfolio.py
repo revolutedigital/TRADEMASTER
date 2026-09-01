@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Index, Numeric, String
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, Index, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
@@ -22,11 +22,21 @@ class Position(Base, TimestampMixin):
     stop_loss_price: Mapped[float | None] = mapped_column(Numeric(20, 8))
     take_profit_price: Mapped[float | None] = mapped_column(Numeric(20, 8))
     is_open: Mapped[bool] = mapped_column(default=True)
+    execution_mode: Mapped[str] = mapped_column(String(10), default="PAPER", nullable=False)
+    entry_exchange_order_id: Mapped[str | None] = mapped_column(String(64))
+    protective_order_list_id: Mapped[int | None] = mapped_column(BigInteger)
+    protective_quantity: Mapped[float | None] = mapped_column(Numeric(20, 8))
+    protection_status: Mapped[str] = mapped_column(String(20), default="LOCAL", nullable=False)
+    protection_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
         Index("ix_positions_symbol_open", "symbol", "is_open"),
+        CheckConstraint(
+            "execution_mode IN ('PAPER', 'TESTNET', 'LIVE')",
+            name="ck_positions_execution_mode",
+        ),
     )
 
     def __repr__(self) -> str:

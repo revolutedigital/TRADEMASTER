@@ -1,6 +1,7 @@
 """Async Binance client wrapper with rate limiting and circuit breaker."""
 
 import asyncio
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
@@ -29,6 +30,7 @@ from app.core.exceptions import (
 from app.core.logging import get_logger
 from app.core.rate_limiter import BinanceRateLimiter
 from app.core.resilience import ServiceCircuitBreaker
+from app.services.exchange.spot_rules import SpotSymbolRules
 
 logger = get_logger(__name__)
 
@@ -40,6 +42,15 @@ INTERVAL_MAP = {
     "4h": KLINE_INTERVAL_4HOUR,
     "1d": KLINE_INTERVAL_1DAY,
 }
+
+
+@dataclass(frozen=True)
+class NativeSpotOcoProtection:
+    """Acknowledged native OCO protection with its exact protected base quantity."""
+
+    order_list_id: int
+    protected_quantity: Decimal
+    response: dict[str, Any]
 
 
 class BinanceClientWrapper:
@@ -261,6 +272,13 @@ class BinanceClientWrapper:
             result = await self._execute(self._client.get_exchange_info(), weight=20)
         return result
 
+    async def get_spot_symbol_rules(self, symbol: str) -> SpotSymbolRules:
+        """Load and validate the currently active trading filters for one pair."""
+        exchange_info = await self.get_exchange_info(symbol)
+        if not exchange_info:
+            raise OrderExecutionError(f"Binance returned no exchangeInfo for {symbol}")
+        return SpotSymbolRules.from_exchange_info(exchange_info)
+
     # --- Account ---
 
     async def get_account(self) -> dict:
@@ -278,7 +296,7 @@ class BinanceClientWrapper:
     # --- Orders ---
 
     async def place_market_order(
-        self, symbol: str, side: str, quantity: float,
+        self, symbol: str, side: str, quantity: Decimal | float,
         client_order_id: str | None = None,
     ) -> dict:
         """Place a market order with optional client-side idempotency ID."""
@@ -292,7 +310,7 @@ class BinanceClientWrapper:
             "symbol": symbol,
             "side": side,
             "type": ORDER_TYPE_MARKET,
-            "quantity": f"{quantity:.8f}",
+            "quantity": _decimal_wire_value(Decimal(str(quantity))),
             "newClientOrderId": coid,
         }
         result = await self._execute(self._client.create_order(**params))
@@ -306,6 +324,92 @@ class BinanceClientWrapper:
             order_id=result.get("orderId"),
         )
         return result
+
+    async def test_market_order(
+        self,
+        symbol: str,
+        side: str,
+        quantity: Decimal,
+    ) -> dict:
+        """Validate a signed Spot market order without sending it to matching."""
+        params = {
+            "symbol": symbol,
+            "side": side,
+            "type": ORDER_TYPE_MARKET,
+            "quantity": _decimal_wire_value(quantity),
+        }
+        return await self._execute(self._client.create_test_order(**params))
+
+    async def place_spot_long_exit_oco(
+        self,
+        *,
+        symbol: str,
+        last_price: Decimal,
+        quantity: Decimal,
+        take_profit_price: Decimal,
+        stop_loss_price: Decimal,
+        client_order_id: str,
+    ) -> NativeSpotOcoProtection:
+        """Create native OCO protection for an already-filled Spot long entry."""
+        if not self._rate_limiter.can_place_order():
+            raise ExchangeRateLimitError("Order rate limit exceeded")
+
+        rules = await self.get_spot_symbol_rules(symbol)
+        protected_quantity, take_profit, stop_loss = rules.prepare_long_exit_oco(
+            last_price=last_price,
+            quantity=quantity,
+            take_profit_price=take_profit_price,
+            stop_loss_price=stop_loss_price,
+        )
+        result = await self._execute(
+            self._client.v3_post_order_list_oco(
+                symbol=symbol,
+                side=SIDE_SELL,
+                quantity=_decimal_wire_value(protected_quantity),
+                aboveType="LIMIT_MAKER",
+                abovePrice=_decimal_wire_value(take_profit),
+                belowType="STOP_LOSS",
+                belowStopPrice=_decimal_wire_value(stop_loss),
+                listClientOrderId=client_order_id,
+            )
+        )
+        self._rate_limiter.record_order()
+        logger.info(
+            "spot_long_exit_oco_placed",
+            symbol=symbol,
+            order_list_id=result.get("orderListId"),
+            quantity=str(protected_quantity),
+            take_profit=str(take_profit),
+            stop_loss=str(stop_loss),
+        )
+        try:
+            order_list_id = int(result["orderListId"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise OrderExecutionError("Binance OCO response did not include an orderListId") from exc
+        return NativeSpotOcoProtection(
+            order_list_id=order_list_id,
+            protected_quantity=protected_quantity,
+            response=result,
+        )
+
+    async def cancel_spot_order_list(self, symbol: str, order_list_id: int) -> dict:
+        """Cancel an active native Spot order list before a deliberate exit."""
+        result = await self._execute(
+            self._client.v3_delete_order_list(symbol=symbol, orderListId=order_list_id)
+        )
+        logger.info("spot_order_list_cancelled", symbol=symbol, order_list_id=order_list_id)
+        return result
+
+    async def get_open_spot_order_lists(self) -> list[dict]:
+        """Read active Spot OCO/order-list state for reconciliation."""
+        result = await self._execute(self._client.v3_get_open_order_list(), weight=6)
+        return list(result)
+
+    async def get_spot_order_list(self, order_list_id: int) -> dict:
+        """Read a specific native Spot order list, including its terminal state."""
+        return await self._execute(
+            self._client.v3_get_order_list(orderListId=order_list_id), weight=4
+        )
 
     async def place_limit_order(
         self, symbol: str, side: str, quantity: float, price: float,
@@ -364,3 +468,8 @@ class BinanceClientWrapper:
 
 # Global singleton
 binance_client = BinanceClientWrapper()
+
+
+def _decimal_wire_value(value: Decimal) -> str:
+    """Serialize a Decimal without float rounding or scientific notation."""
+    return format(value, "f")

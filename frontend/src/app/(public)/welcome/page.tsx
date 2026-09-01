@@ -93,7 +93,7 @@ export default function LandingPage() {
             TradeMaster
           </span>
           <Link
-            href="/login"
+            href="/"
             className="rounded-lg bg-[var(--color-primary)] px-5 py-2 text-sm font-medium text-white transition-colors hover:opacity-90"
           >
             Entrar
@@ -123,7 +123,7 @@ export default function LandingPage() {
 
           <div className="flex items-center justify-center gap-4 pt-4">
             <Link
-              href="/login"
+              href="/"
               className="inline-flex items-center rounded-lg bg-[var(--color-primary)] px-6 py-3 text-sm font-medium text-white transition-colors hover:opacity-90"
             >
               Começar
@@ -142,7 +142,7 @@ export default function LandingPage() {
               </svg>
             </Link>
             <Link
-              href="/"
+              href="/welcome"
               className="inline-flex items-center rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-3 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-hover)]"
             >
               Saiba Mais

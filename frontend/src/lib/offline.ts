@@ -58,8 +58,17 @@ export class OfflineStore {
 
   clearCache(): void {
     if (typeof localStorage === "undefined") return;
-    const keys = Object.keys(localStorage).filter((k) => k.startsWith(CACHE_PREFIX));
-    keys.forEach((k) => localStorage.removeItem(k));
+
+    try {
+      const cachedKeys = Array.from(
+        { length: localStorage.length },
+        (_, index) => localStorage.key(index),
+      ).filter((key): key is string => key?.startsWith(CACHE_PREFIX) ?? false);
+
+      cachedKeys.forEach((key) => localStorage.removeItem(key));
+    } catch {
+      // Storage can be unavailable in restricted browser contexts.
+    }
   }
 }
 

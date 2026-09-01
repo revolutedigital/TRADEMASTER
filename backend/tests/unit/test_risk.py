@@ -1,16 +1,19 @@
 """Tests for risk management: position sizing, stop loss, circuit breaker, risk manager."""
 
+import math
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-import numpy as np
 
-from app.services.risk.position_sizer import PositionSizer, PositionSize
-from app.services.risk.stop_loss import StopLossCalculator
-from app.services.risk.drawdown import DrawdownCircuitBreaker, CircuitBreakerState
+from app.core.exceptions import RiskLimitExceededError
+from app.services.risk.correlation import CorrelationFilter
+from app.services.risk.drawdown import CircuitBreakerState, DrawdownCircuitBreaker
 from app.services.risk.manager import RiskManager, TradeProposal
-from app.core.exceptions import RiskLimitExceededError, DrawdownCircuitBreakerError
-
+from app.services.risk.position_sizer import PositionSizer
+from app.services.risk.stop_loss import StopLossCalculator
 
 # ---- Position Sizer ----
+
 
 class TestPositionSizer:
     def setup_method(self):
@@ -21,25 +24,25 @@ class TestPositionSizer:
         )
 
     def test_fixed_fraction_basic(self):
-        result = self.sizer.fixed_fraction(
-            equity=10000, price=50000, stop_distance_pct=0.02
-        )
+        result = self.sizer.fixed_fraction(equity=10000, price=50000, stop_distance_pct=0.02)
         assert result.quantity > 0
         assert result.risk_pct == 0.02
         assert result.risk_amount == 200  # 2% of 10k
         assert result.method == "fixed_fraction"
 
     def test_fixed_fraction_respects_max_exposure(self):
-        result = self.sizer.fixed_fraction(
-            equity=10000, price=100, stop_distance_pct=0.001
-        )
+        result = self.sizer.fixed_fraction(equity=10000, price=100, stop_distance_pct=0.001)
         # Very tight stop would give huge position, should be capped
         assert result.notional_value <= 10000 * 0.30  # max 30%
 
     def test_fractional_kelly(self):
         result = self.sizer.fractional_kelly(
-            equity=10000, win_rate=0.55, avg_win=200, avg_loss=100,
-            price=50000, stop_distance_pct=0.02,
+            equity=10000,
+            win_rate=0.55,
+            avg_win=200,
+            avg_loss=100,
+            price=50000,
+            stop_distance_pct=0.02,
         )
         assert result.quantity > 0
         assert result.risk_pct <= 0.02
@@ -47,8 +50,12 @@ class TestPositionSizer:
 
     def test_kelly_negative_expectancy_returns_zero(self):
         result = self.sizer.fractional_kelly(
-            equity=10000, win_rate=0.30, avg_win=100, avg_loss=200,
-            price=50000, stop_distance_pct=0.02,
+            equity=10000,
+            win_rate=0.30,
+            avg_win=100,
+            avg_loss=200,
+            price=50000,
+            stop_distance_pct=0.02,
         )
         assert result.quantity == 0
 
@@ -62,8 +69,15 @@ class TestPositionSizer:
         result = self.sizer.fixed_fraction(equity=0, price=50000, stop_distance_pct=0.02)
         assert result.quantity == 0
 
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+    def test_non_finite_inputs_return_zero_position(self, value):
+        result = self.sizer.fixed_fraction(equity=10000, price=value, stop_distance_pct=0.02)
+        assert result.quantity == 0
+        assert result.notional_value == 0
+
 
 # ---- Stop Loss ----
+
 
 class TestStopLoss:
     def setup_method(self):
@@ -87,8 +101,10 @@ class TestStopLoss:
     def test_trailing_stop_activates(self):
         # Entry at 50000, 1.5% profit = 50750
         new_stop = self.calc.update_trailing_stop(
-            entry_price=50000, current_price=51000,
-            current_stop=49000, side="LONG",
+            entry_price=50000,
+            current_price=51000,
+            current_stop=49000,
+            side="LONG",
         )
         # Should trail at 1% from current: 51000 * 0.99 = 50490
         assert new_stop > 49000
@@ -96,8 +112,10 @@ class TestStopLoss:
 
     def test_trailing_stop_doesnt_activate_too_early(self):
         new_stop = self.calc.update_trailing_stop(
-            entry_price=50000, current_price=50500,
-            current_stop=49000, side="LONG",
+            entry_price=50000,
+            current_price=50500,
+            current_stop=49000,
+            side="LONG",
         )
         # Only 1% profit, threshold is 1.5% — should NOT activate
         assert new_stop == 49000
@@ -116,6 +134,7 @@ class TestStopLoss:
 
 
 # ---- Drawdown Circuit Breaker ----
+
 
 class TestDrawdownCircuitBreaker:
     def test_initial_state_is_normal(self):
@@ -169,6 +188,7 @@ class TestDrawdownCircuitBreaker:
 
 # ---- Risk Manager ----
 
+
 class TestRiskManager:
     def test_valid_trade_passes(self):
         rm = RiskManager()
@@ -198,6 +218,7 @@ class TestRiskManager:
     def test_rejects_when_exposure_exceeded(self):
         rm = RiskManager()
         from app.services.risk.drawdown import circuit_breaker
+
         circuit_breaker.initialize(10000)
 
         proposal = TradeProposal(
@@ -213,3 +234,74 @@ class TestRiskManager:
 
         with pytest.raises(RiskLimitExceededError):
             rm.validate_trade(proposal)
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("entry_price", float("nan")),
+            ("atr", float("inf")),
+            ("current_equity", 0.0),
+            ("current_exposure", -1.0),
+            ("symbol_exposure", float("nan")),
+            ("signal_strength", 1.1),
+        ],
+    )
+    def test_rejects_non_finite_or_invalid_trade_inputs(self, field, value):
+        rm = RiskManager()
+        from app.services.risk.drawdown import circuit_breaker
+
+        circuit_breaker.initialize(10000)
+        proposal = TradeProposal(
+            symbol="BTCUSDT",
+            side="BUY",
+            signal_strength=0.6,
+            entry_price=50000,
+            atr=500,
+            current_equity=10000,
+            current_exposure=0,
+            symbol_exposure=0,
+        )
+        setattr(proposal, field, value)
+
+        with pytest.raises(RiskLimitExceededError):
+            rm.validate_trade(proposal)
+
+    def test_rejects_protection_that_would_place_stop_below_zero(self):
+        rm = RiskManager()
+        from app.services.risk.drawdown import circuit_breaker
+
+        circuit_breaker.initialize(10000)
+        proposal = TradeProposal(
+            symbol="BTCUSDT",
+            side="BUY",
+            signal_strength=0.6,
+            entry_price=100,
+            atr=100,
+            current_equity=10000,
+            current_exposure=0,
+            symbol_exposure=0,
+        )
+
+        with pytest.raises(RiskLimitExceededError, match="Protective prices"):
+            rm.validate_trade(proposal)
+
+
+class TestCorrelationFilter:
+    @pytest.mark.asyncio
+    async def test_scopes_open_positions_to_the_requested_execution_ledger(self):
+        correlation_filter = CorrelationFilter()
+        database = AsyncMock()
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = []
+        database.execute.return_value = result
+
+        allowed, reason = await correlation_filter.check_can_open(
+            database,
+            "BTCUSDT",
+            "BUY",
+            execution_mode="LIVE",
+        )
+
+        assert allowed is True
+        assert reason is None
+        assert "execution_mode" in str(database.execute.await_args.args[0])

@@ -40,7 +40,13 @@ async def async_client(auth_token):
     app.dependency_overrides[require_auth] = override_require_auth
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    csrf_token = "test-csrf-token"
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"X-CSRF-Token": csrf_token},
+        cookies={"csrf_token": csrf_token},
+    ) as client:
         yield client
 
     app.dependency_overrides.clear()

@@ -12,7 +12,7 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
-import { apiFetch, formatCurrency, timeAgo, cn } from "@/lib/utils";
+import { apiFetch, formatCurrency, timeAgo } from "@/lib/utils";
 import type { Order } from "@/lib/types";
 import { History, ChevronLeft, ChevronRight, Search } from "lucide-react";
 
@@ -199,6 +199,7 @@ export default function TradeHistoryPage() {
               <TableRow>
                 <TableHead>Data</TableHead>
                 <TableHead>Par</TableHead>
+                <TableHead>Modo</TableHead>
                 <TableHead>Lado</TableHead>
                 <TableHead>Qtd</TableHead>
                 <TableHead>Preço</TableHead>
@@ -210,7 +211,7 @@ export default function TradeHistoryPage() {
               {loading ? (
                 <TableRow>
                   <TableCell
-                    colSpan={7}
+                    colSpan={8}
                     className="py-12 text-center text-[var(--color-text-muted)]"
                   >
                     Carregando ordens...
@@ -219,7 +220,7 @@ export default function TradeHistoryPage() {
               ) : orders.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={7}
+                    colSpan={8}
                     className="py-12 text-center text-[var(--color-text-muted)]"
                   >
                     Nenhuma ordem encontrada com os filtros atuais.
@@ -233,6 +234,19 @@ export default function TradeHistoryPage() {
                     </TableCell>
                     <TableCell className="font-medium">
                       {order.symbol}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          order.execution_mode === "LIVE"
+                            ? "danger"
+                            : order.execution_mode === "TESTNET"
+                            ? "warning"
+                            : "primary"
+                        }
+                      >
+                        {order.execution_mode}
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       <Badge

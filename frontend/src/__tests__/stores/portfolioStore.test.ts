@@ -62,10 +62,21 @@ describe("portfolioStore", () => {
   });
 
   it("addSignal adds signal and caps at 100", () => {
-    const signal = { id: "s1", symbol: "BTCUSDT", action: "BUY" as const, strength: 0.8, confidence: 0.75, model_source: "xgboost", created_at: "2024-01-01" };
+    const signal = {
+      id: 1,
+      symbol: "BTCUSDT",
+      action: "BUY" as const,
+      strength: 0.8,
+      confidence: 0.75,
+      model_source: "xgboost",
+      timeframe: "1h",
+      was_executed: false,
+      evidence: null,
+      generated_at: "2024-01-01",
+    };
     usePortfolioStore.getState().addSignal(signal);
     expect(usePortfolioStore.getState().signals.length).toBe(1);
-    expect(usePortfolioStore.getState().signals[0].id).toBe("s1");
+    expect(usePortfolioStore.getState().signals[0].id).toBe(1);
   });
 
   it("updateRiskStatus sets risk status", () => {

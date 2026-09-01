@@ -22,7 +22,7 @@ describe("SignalsPage", () => {
 
   it("renders empty state when no signals", () => {
     render(<SignalsPage />);
-    expect(screen.getByText(/Nenhum sinal gerado/)).toBeInTheDocument();
+    expect(screen.getByText(/Nenhum candidato de estratégia gerado/)).toBeInTheDocument();
   });
 
   it("renders real-time indicator", () => {

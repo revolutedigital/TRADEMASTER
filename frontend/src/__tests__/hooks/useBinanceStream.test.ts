@@ -34,7 +34,11 @@ describe("useBinanceStream", () => {
       readyState: 1, // OPEN
     };
 
-    vi.stubGlobal("WebSocket", vi.fn(() => mockWebSocket));
+    function MockWebSocket() {
+      return mockWebSocket;
+    }
+
+    vi.stubGlobal("WebSocket", MockWebSocket);
   });
 
   afterEach(() => {

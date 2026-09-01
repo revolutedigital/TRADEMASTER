@@ -1,6 +1,6 @@
 """Backtesting engine: event-driven simulation with realistic fills."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -9,9 +9,9 @@ import pandas as pd
 from app.core.logging import get_logger
 from app.services.indicators.engine import indicator_engine
 from app.services.ml.features import feature_engineer
-from app.services.ml.models.base import BaseTradingModel, ModelPrediction
+from app.services.ml.models.base import BaseTradingModel
 from app.services.ml.models.ensemble import EnsembleModel
-from app.services.portfolio.pnl import PnLCalculator, PerformanceMetrics
+from app.services.portfolio.pnl import PerformanceMetrics, PnLCalculator
 
 logger = get_logger(__name__)
 
@@ -67,6 +67,7 @@ class BacktestEngine:
         atr_stop_multiplier: float = 2.0,
         risk_reward_ratio: float = 2.0,
         signal_threshold: float = 0.3,
+        allow_short: bool = True,
     ):
         self.initial_capital = initial_capital
         self.maker_fee = maker_fee
@@ -76,6 +77,7 @@ class BacktestEngine:
         self.atr_stop_multiplier = atr_stop_multiplier
         self.risk_reward_ratio = risk_reward_ratio
         self.signal_threshold = signal_threshold
+        self.allow_short = allow_short
 
     def run(
         self,
@@ -103,16 +105,80 @@ class BacktestEngine:
         trades: list[BacktestTrade] = []
         equity_curve = [equity]
 
-        for i in range(60, len(df)):
+        # Signals use a completed candle and may only execute on the next bar.
+        # This prevents same-bar look-ahead across technical and ML strategies.
+        for i in range(61, len(df)):
             row = df.iloc[i]
-            price = float(row["close"])
-            atr = float(row.get("atr_14", 0))
+            execution_price = _execution_open_price(row)
+            signal_row = i - 1
+            atr = float(df.iloc[signal_row].get("atr_14", 0))
 
-            # Check existing position
+            if signals is not None:
+                signal = float(signals.iloc[signal_row]) if signal_row < len(signals) else 0
+            else:
+                signal = self._predict_signal(model, df, signal_row)
+
+            # A reversal is available at this candle's open. It must execute
+            # before checking this candle's high/low range.
+            if position:
+                side, entry, qty, _stop, _tp, entry_idx = position
+                is_reversal = (
+                    (side == "LONG" and signal <= -self.signal_threshold)
+                    or (side == "SHORT" and signal >= self.signal_threshold)
+                )
+                if is_reversal:
+                    exit_price = execution_price * (
+                        1 - self.slippage if side == "LONG" else 1 + self.slippage
+                    )
+                    pnl, fees = self._close_trade(side, entry, exit_price, qty)
+                    equity += pnl - fees
+                    trades.append(BacktestTrade(
+                        entry_idx=entry_idx,
+                        exit_idx=i,
+                        side=side,
+                        entry_price=entry,
+                        exit_price=exit_price,
+                        quantity=qty,
+                        pnl=pnl - fees,
+                        fees=fees,
+                        exit_reason="signal",
+                    ))
+                    position = None
+
+            # A new order is sent at the current open, using ATR that existed
+            # when the prior candle closed. Spot long-only ignores SELL here
+            # after using it to close the existing long above.
+            if position is None and atr > 0:
+                if signal >= self.signal_threshold:
+                    entry_price = execution_price * (1 + self.slippage)
+                    stop_dist = atr * self.atr_stop_multiplier
+                    stop_price = entry_price - stop_dist
+                    tp_price = entry_price + stop_dist * self.risk_reward_ratio
+
+                    risk_amount = equity * self.max_risk_per_trade
+                    stop_pct = stop_dist / entry_price
+                    qty = (risk_amount / stop_pct) / entry_price if stop_pct > 0 else 0
+
+                    if qty * entry_price >= 10:  # min notional
+                        position = ("LONG", entry_price, qty, stop_price, tp_price, i)
+
+                elif self.allow_short and signal <= -self.signal_threshold:
+                    entry_price = execution_price * (1 - self.slippage)
+                    stop_dist = atr * self.atr_stop_multiplier
+                    stop_price = entry_price + stop_dist
+                    tp_price = entry_price - stop_dist * self.risk_reward_ratio
+
+                    risk_amount = equity * self.max_risk_per_trade
+                    stop_pct = stop_dist / entry_price
+                    qty = (risk_amount / stop_pct) / entry_price if stop_pct > 0 else 0
+
+                    if qty * entry_price >= 10:
+                        position = ("SHORT", entry_price, qty, stop_price, tp_price, i)
+
+            # Stop/target orders protect the remaining candle. When both are
+            # possible, stop takes priority as the conservative assumption.
             if position:
                 side, entry, qty, stop, tp, entry_idx = position
-
-                # Check stop loss
                 if side == "LONG" and float(row["low"]) <= stop:
                     exit_price = stop * (1 - self.slippage)
                     pnl, fees = self._close_trade(side, entry, exit_price, qty)
@@ -135,7 +201,6 @@ class BacktestEngine:
                         exit_reason="stop_loss",
                     ))
                     position = None
-                # Check take profit
                 elif tp and side == "LONG" and float(row["high"]) >= tp:
                     exit_price = tp * (1 - self.slippage)
                     pnl, fees = self._close_trade(side, entry, exit_price, qty)
@@ -158,42 +223,6 @@ class BacktestEngine:
                         exit_reason="take_profit",
                     ))
                     position = None
-
-            # Generate or read signal
-            if signals is not None:
-                signal = float(signals.iloc[i]) if i < len(signals) else 0
-            else:
-                signal = self._predict_signal(model, df, i)
-
-            # Open new position if no existing one
-            if position is None and atr > 0:
-                if signal >= self.signal_threshold:
-                    # BUY signal
-                    entry_price = price * (1 + self.slippage)
-                    stop_dist = atr * self.atr_stop_multiplier
-                    stop_price = entry_price - stop_dist
-                    tp_price = entry_price + stop_dist * self.risk_reward_ratio
-
-                    risk_amount = equity * self.max_risk_per_trade
-                    stop_pct = stop_dist / entry_price
-                    qty = (risk_amount / stop_pct) / entry_price if stop_pct > 0 else 0
-
-                    if qty * entry_price >= 10:  # min notional
-                        position = ("LONG", entry_price, qty, stop_price, tp_price, i)
-
-                elif signal <= -self.signal_threshold:
-                    # SELL signal
-                    entry_price = price * (1 - self.slippage)
-                    stop_dist = atr * self.atr_stop_multiplier
-                    stop_price = entry_price + stop_dist
-                    tp_price = entry_price - stop_dist * self.risk_reward_ratio
-
-                    risk_amount = equity * self.max_risk_per_trade
-                    stop_pct = stop_dist / entry_price
-                    qty = (risk_amount / stop_pct) / entry_price if stop_pct > 0 else 0
-
-                    if qty * entry_price >= 10:
-                        position = ("SHORT", entry_price, qty, stop_price, tp_price, i)
 
             equity_curve.append(equity)
 
@@ -238,6 +267,9 @@ class BacktestEngine:
                 "max_risk_per_trade": self.max_risk_per_trade,
                 "slippage": self.slippage,
                 "fees": self.taker_fee,
+                "allow_short": self.allow_short,
+                "signal_execution_lag_bars": 1,
+                "signal_execution_price": "next_open",
             },
         )
 
@@ -267,7 +299,7 @@ class BacktestEngine:
 
             if isinstance(model, EnsembleModel):
                 # EnsembleModel.predict expects dict[model_name -> features]
-                features_dict = {name: row_features for name in model.models}
+                features_dict = dict.fromkeys(model.models, row_features)
                 prediction = model.predict(features_dict)
             else:
                 prediction = model.predict(row_features)
@@ -288,6 +320,17 @@ class BacktestEngine:
 
         fees = (entry * qty * self.taker_fee) + (exit_price * qty * self.taker_fee)
         return pnl, fees
+
+
+def _execution_open_price(row: pd.Series) -> float:
+    """Use the first executable candle price, with a safe legacy-data fallback."""
+    open_price = float(row.get("open", 0))
+    if np.isfinite(open_price) and open_price > 0:
+        return open_price
+    close_price = float(row["close"])
+    if not np.isfinite(close_price) or close_price <= 0:
+        raise ValueError("backtest candle requires a positive open or close price")
+    return close_price
 
 
 backtest_engine = BacktestEngine()

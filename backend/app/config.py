@@ -1,7 +1,16 @@
 import secrets
+from enum import StrEnum
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class TradingExecutionMode(StrEnum):
+    """Effective destination for an order after resolving the environment flags."""
+
+    PAPER = "PAPER"
+    TESTNET = "TESTNET"
+    LIVE = "LIVE"
 
 
 class Settings(BaseSettings):
@@ -50,17 +59,30 @@ class Settings(BaseSettings):
     # Paper trading mode (no real Binance orders)
     paper_mode: bool = True
 
+    # Live trading safety control plane. These values deliberately keep the
+    # application locked even when PAPER_MODE=false and BINANCE_TESTNET=false.
+    live_trading_enabled: bool = False
+    live_trading_arm_code: str = Field(default="", repr=False)
+    live_trading_arm_ttl_minutes: int = Field(default=15, ge=1, le=60)
+    live_trading_max_notional_per_order: float = Field(default=100.0, gt=0)
+    live_trading_max_daily_notional: float = Field(default=300.0, gt=0)
+    live_trading_reconciliation_max_age_seconds: int = Field(default=45, ge=5, le=300)
+    live_trading_testnet_verification_max_age_days: int = Field(default=30, ge=1, le=90)
+    live_trading_allowed_account_assets: str = "USDT,BNB"
+
     # Frontend URL for CORS (comma-separated for multiple origins)
     frontend_url: str = "https://trademaster.up.railway.app,http://localhost:3000"
 
     # Trading
     trading_symbols: str = "BTCUSDT,ETHUSDT"
-    trading_max_risk_per_trade: float = 0.02
-    trading_max_portfolio_exposure: float = 0.60
-    trading_max_single_asset_exposure: float = 0.30
-    trading_max_daily_drawdown: float = 0.03
-    trading_max_weekly_drawdown: float = 0.07
-    trading_max_total_drawdown: float = 0.15
+    trading_max_risk_per_trade: float = Field(default=0.02, gt=0, le=0.10)
+    trading_max_portfolio_exposure: float = Field(default=0.60, gt=0, le=1.0)
+    trading_max_single_asset_exposure: float = Field(default=0.30, gt=0, le=1.0)
+    trading_max_daily_drawdown: float = Field(default=0.03, ge=0.01, le=0.20)
+    trading_max_weekly_drawdown: float = Field(default=0.07, ge=0.02, le=0.30)
+    trading_max_monthly_drawdown: float = Field(default=0.10, ge=0.03, le=0.50)
+    trading_max_total_drawdown: float = Field(default=0.15, ge=0.05, le=0.50)
+    trading_kelly_fraction: float = Field(default=0.15, gt=0, le=0.50)
 
     # Webhook alerts (Slack/Discord/custom — optional)
     risk_alert_webhook_url: str = ""
@@ -82,6 +104,18 @@ class Settings(BaseSettings):
                 self.jwt_secret_key = secrets.token_urlsafe(32)
             if not self.admin_password:
                 self.admin_password = "admin"
+
+        if self.live_trading_enabled:
+            if self.paper_mode or self.binance_testnet:
+                raise ValueError(
+                    "live_trading_enabled requires PAPER_MODE=false and BINANCE_TESTNET=false"
+                )
+            if not self.is_production:
+                raise ValueError("live_trading_enabled requires APP_ENV=production")
+            if not self.totp_enabled or not self.totp_secret:
+                raise ValueError("live_trading_enabled requires TOTP_ENABLED with TOTP_SECRET")
+            if len(self.live_trading_arm_code) < 20:
+                raise ValueError("live_trading_arm_code must be at least 20 characters")
         return self
 
     @property
@@ -95,8 +129,26 @@ class Settings(BaseSettings):
         return [s.strip() for s in self.trading_symbols.split(",") if s.strip()]
 
     @property
+    def live_trading_allowed_assets_list(self) -> list[str]:
+        """Assets allowed outside tracked positions, such as the quote and fee token."""
+        return [
+            asset.strip().upper()
+            for asset in self.live_trading_allowed_account_assets.split(",")
+            if asset.strip()
+        ]
+
+    @property
     def is_production(self) -> bool:
         return self.app_env == "production"
+
+    @property
+    def execution_mode(self) -> TradingExecutionMode:
+        """Resolve paper, testnet, and real-capital execution unambiguously."""
+        if self.paper_mode:
+            return TradingExecutionMode.PAPER
+        if self.binance_testnet:
+            return TradingExecutionMode.TESTNET
+        return TradingExecutionMode.LIVE
 
     @property
     def active_api_key(self) -> str:

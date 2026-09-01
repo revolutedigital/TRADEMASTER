@@ -68,6 +68,32 @@ def test_backtest_requires_model_or_signals(sample_ohlcv):
         engine.run(sample_ohlcv)
 
 
+def test_completed_candle_signal_executes_at_the_following_open():
+    candles = pd.DataFrame(
+        {
+            "open": [100.0] * 61 + [120.0] * 4,
+            "high": [101.0] * 61 + [121.0] * 4,
+            "low": [99.0] * 61 + [119.0] * 4,
+            "close": [100.0] * 61 + [120.0] * 4,
+            "atr_14": [1.0] * 65,
+        }
+    )
+    signals = pd.Series(0.0, index=candles.index)
+    signals.iloc[60] = 1.0
+
+    result = BacktestEngine(
+        initial_capital=1_000,
+        signal_threshold=0.3,
+        allow_short=False,
+    ).run(candles, signals=signals)
+
+    assert len(result.trades) == 1
+    assert result.trades[0].entry_idx == 61
+    assert result.trades[0].entry_price == pytest.approx(120.0 * 1.0005)
+    assert result.params["signal_execution_lag_bars"] == 1
+    assert result.params["signal_execution_price"] == "next_open"
+
+
 # ---- PnL Calculator ----
 
 def test_pnl_metrics_winning_trades():

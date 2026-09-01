@@ -31,7 +31,7 @@ export default function TradingPage() {
     setSelectedInterval,
   } = useMarketData();
 
-  const { positions, orders, riskStatus } = usePortfolio();
+  const { positions, orders, summary, riskStatus } = usePortfolio();
 
   return (
     <div className="space-y-6">
@@ -39,6 +39,11 @@ export default function TradingPage() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">Terminal de Trading</h1>
         <div className="flex items-center gap-2">
+          {summary && (
+            <Badge variant={summary.execution_mode === "LIVE" ? "danger" : "warning"}>
+              Livro: {summary.execution_mode}
+            </Badge>
+          )}
           <ExportButton endpoint="/api/v1/export/trades" filename="trades.csv" label="Exportar Trades" />
           <Badge
             variant={
@@ -110,6 +115,7 @@ export default function TradingPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Par</TableHead>
+                <TableHead>Modo</TableHead>
                 <TableHead>Lado</TableHead>
                 <TableHead>Qtd</TableHead>
                 <TableHead>Entrada</TableHead>
@@ -122,7 +128,7 @@ export default function TradingPage() {
             <TableBody>
               {positions.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-[var(--color-text-muted)]">
+                  <TableCell colSpan={9} className="text-center text-[var(--color-text-muted)]">
                     Sem posições ativas
                   </TableCell>
                 </TableRow>
@@ -130,6 +136,11 @@ export default function TradingPage() {
                 positions.map((pos) => (
                   <TableRow key={pos.id}>
                     <TableCell className="font-medium">{pos.symbol}</TableCell>
+                    <TableCell>
+                      <Badge variant={pos.execution_mode === "LIVE" ? "danger" : "warning"}>
+                        {pos.execution_mode}
+                      </Badge>
+                    </TableCell>
                     <TableCell>
                       <Badge variant={pos.side === "LONG" ? "success" : "danger"}>
                         {pos.side}
@@ -176,6 +187,7 @@ export default function TradingPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Par</TableHead>
+                <TableHead>Modo</TableHead>
                 <TableHead>Lado</TableHead>
                 <TableHead>Tipo</TableHead>
                 <TableHead>Preço</TableHead>
@@ -186,7 +198,7 @@ export default function TradingPage() {
             <TableBody>
               {orders.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-[var(--color-text-muted)]">
+                  <TableCell colSpan={7} className="text-center text-[var(--color-text-muted)]">
                     Nenhuma ordem ainda
                   </TableCell>
                 </TableRow>
@@ -194,6 +206,11 @@ export default function TradingPage() {
                 orders.slice(0, 10).map((order) => (
                   <TableRow key={order.id}>
                     <TableCell className="font-medium">{order.symbol}</TableCell>
+                    <TableCell>
+                      <Badge variant={order.execution_mode === "LIVE" ? "danger" : "warning"}>
+                        {order.execution_mode}
+                      </Badge>
+                    </TableCell>
                     <TableCell>
                       <Badge variant={order.side === "BUY" ? "success" : "danger"}>
                         {order.side}

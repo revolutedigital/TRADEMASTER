@@ -14,11 +14,11 @@ RUN addgroup --system --gid 1001 appgroup && \
     adduser --system --uid 1001 --ingroup appgroup appuser
 
 # Install Python dependencies first (layer caching)
-COPY backend/pyproject.toml .
+COPY pyproject.toml .
 RUN pip install --no-cache-dir "."
 
 # Copy application code
-COPY backend/ .
+COPY . .
 
 # Create directories for ML artifacts with correct ownership
 RUN mkdir -p ml_artifacts/models ml_artifacts/scalers && \

@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 
 // Need to mock PageHeader since it uses next/navigation (Breadcrumbs)
-let mockPathname = "/alerts";
+const mockPathname = "/alerts";
 vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname,
 }));

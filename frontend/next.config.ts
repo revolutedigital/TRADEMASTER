@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
   experimental: {
     staleTimes: {
       dynamic: 0,
-      static: 0,
+      static: 30,
     },
   },
   // Proxy API requests to backend so pages using relative fetch("/api/v1/...")

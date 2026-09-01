@@ -1,5 +1,6 @@
 """Risk management gate: every trade must pass through here before execution."""
 
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -31,6 +32,8 @@ class TradeProposal:
     current_equity: float
     current_exposure: float  # Total notional of open positions
     symbol_exposure: float  # Notional of open positions for this symbol
+    atr_stop_multiplier: float = 2.0
+    risk_reward_ratio: float = 2.0
 
 
 @dataclass
@@ -61,7 +64,7 @@ class RiskManager:
         self._position_sizer = PositionSizer(
             max_risk_per_trade=settings.trading_max_risk_per_trade,
             max_single_asset_exposure=settings.trading_max_single_asset_exposure,
-            kelly_fraction=0.15,
+            kelly_fraction=settings.trading_kelly_fraction,
         )
         self._stop_loss_calc = StopLossCalculator()
         self._perf_stats: "PerformanceStats | None" = None
@@ -75,6 +78,8 @@ class RiskManager:
             RiskLimitExceededError: If any risk limit is breached.
         """
         checks_passed = []
+        self._validate_proposal(proposal)
+        checks_passed.append("finite_market_inputs")
 
         # 1. Circuit breaker check
         cb_state = circuit_breaker.update(proposal.current_equity)
@@ -89,7 +94,11 @@ class RiskManager:
         checks_passed.append("circuit_breaker")
 
         # 2. Position sizing — Kelly criterion when we have enough data
-        stop_distance_pct = (proposal.atr * 2) / proposal.entry_price if proposal.entry_price > 0 else 0.02
+        stop_distance_pct = (
+            proposal.atr * proposal.atr_stop_multiplier / proposal.entry_price
+            if proposal.entry_price > 0
+            else 0.02
+        )
         if (
             self._perf_stats
             and self._perf_stats.has_enough_data
@@ -126,6 +135,16 @@ class RiskManager:
 
         if position_size.quantity <= 0:
             raise RiskLimitExceededError("Position size calculated as zero")
+        if not all(
+            math.isfinite(value)
+            for value in (
+                position_size.quantity,
+                position_size.notional_value,
+                position_size.risk_amount,
+                position_size.risk_pct,
+            )
+        ):
+            raise RiskLimitExceededError("Position sizing produced a non-finite value")
         checks_passed.append("position_sizing")
 
         # 3. Exposure check - single asset
@@ -155,11 +174,15 @@ class RiskManager:
 
         # 6. Calculate stop loss
         trade_side = "LONG" if proposal.side == "BUY" else "SHORT"
-        stop_loss = self._stop_loss_calc.atr_based(
+        stop_loss = StopLossCalculator(
+            atr_multiplier=proposal.atr_stop_multiplier,
+            risk_reward_ratio=proposal.risk_reward_ratio,
+        ).atr_based(
             entry_price=proposal.entry_price,
             atr=proposal.atr,
             side=trade_side,
         )
+        self._validate_protective_prices(proposal, stop_loss)
         checks_passed.append("stop_loss_assigned")
 
         logger.info(
@@ -182,6 +205,59 @@ class RiskManager:
             position_size=position_size,
             risk_checks_passed=checks_passed,
         )
+
+    @staticmethod
+    def _validate_proposal(proposal: TradeProposal) -> None:
+        """Reject malformed market or ledger inputs before any sizing arithmetic."""
+        if proposal.side not in {"BUY", "SELL"}:
+            raise RiskLimitExceededError("Trade side must be BUY or SELL")
+
+        positive_values = {
+            "entry_price": proposal.entry_price,
+            "atr": proposal.atr,
+            "current_equity": proposal.current_equity,
+            "atr_stop_multiplier": proposal.atr_stop_multiplier,
+            "risk_reward_ratio": proposal.risk_reward_ratio,
+        }
+        for name, value in positive_values.items():
+            if not math.isfinite(value) or value <= 0:
+                raise RiskLimitExceededError(f"{name} must be a positive finite value")
+
+        if (
+            not math.isfinite(proposal.signal_strength)
+            or not -1.0 <= proposal.signal_strength <= 1.0
+        ):
+            raise RiskLimitExceededError("signal_strength must be finite and between -1 and 1")
+
+        non_negative_values = {
+            "current_exposure": proposal.current_exposure,
+            "symbol_exposure": proposal.symbol_exposure,
+        }
+        for name, value in non_negative_values.items():
+            if not math.isfinite(value) or value < 0:
+                raise RiskLimitExceededError(f"{name} must be a non-negative finite value")
+
+    @staticmethod
+    def _validate_protective_prices(proposal: TradeProposal, stop_loss: StopLossLevel) -> None:
+        """Ensure a calculated protection plan is meaningful before order submission."""
+        take_profit = stop_loss.take_profit_price
+        if (
+            take_profit is None
+            or not math.isfinite(stop_loss.stop_price)
+            or not math.isfinite(take_profit)
+            or stop_loss.stop_price <= 0
+            or take_profit <= 0
+        ):
+            raise RiskLimitExceededError("Protective prices must be positive finite values")
+
+        if proposal.side == "BUY" and not (
+            stop_loss.stop_price < proposal.entry_price < take_profit
+        ):
+            raise RiskLimitExceededError("Long protection prices are not ordered around entry")
+        if proposal.side == "SELL" and not (
+            take_profit < proposal.entry_price < stop_loss.stop_price
+        ):
+            raise RiskLimitExceededError("Short protection prices are not ordered around entry")
 
 
     async def refresh_performance_stats(self, db) -> None:

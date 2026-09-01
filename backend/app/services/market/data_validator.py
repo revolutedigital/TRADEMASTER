@@ -5,13 +5,15 @@ data integrity and detect anomalies.
 """
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Maximum allowed single-candle price change (20%)
-MAX_PRICE_CHANGE_PCT = 0.20
+# Large single-candle price changes above 15% are not rejected automatically,
+# but must be surfaced for inspection before downstream strategy logic uses them.
+MAX_PRICE_CHANGE_PCT = 0.15
 
 # Maximum allowed volume spike multiplier vs rolling average
 MAX_VOLUME_SPIKE = 50.0
@@ -29,7 +31,7 @@ class ValidationResult:
 class DataValidator:
     """Validates OHLCV candle data for integrity and anomalies."""
 
-    def validate_ohlcv(self, data: dict) -> ValidationResult:
+    def validate_ohlcv(self, data: dict[str, Any]) -> ValidationResult:
         """Validate a single OHLCV candle.
 
         Checks:

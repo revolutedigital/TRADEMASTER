@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 
+from app.config import settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -290,4 +291,9 @@ class DrawdownCircuitBreaker:
         }
 
 
-circuit_breaker = DrawdownCircuitBreaker()
+circuit_breaker = DrawdownCircuitBreaker(
+    max_daily_drawdown=settings.trading_max_daily_drawdown,
+    max_weekly_drawdown=settings.trading_max_weekly_drawdown,
+    max_monthly_drawdown=settings.trading_max_monthly_drawdown,
+    max_total_drawdown=settings.trading_max_total_drawdown,
+)

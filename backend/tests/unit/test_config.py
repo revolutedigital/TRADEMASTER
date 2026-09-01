@@ -42,7 +42,11 @@ def test_active_api_key_production():
 
 
 def test_is_production():
-    s = Settings(app_env="production")
+    s = Settings(
+        app_env="production",
+        jwt_secret_key="a" * 32,
+        admin_password="safe-test-password",
+    )
     assert s.is_production is True
 
     s = Settings(app_env="development")

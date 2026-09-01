@@ -1,10 +1,14 @@
 """Value-at-Risk (VaR) and Conditional VaR calculations."""
 
 import numpy as np
+from numpy.typing import NDArray
+from typing import TypeAlias
 
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+FloatArray: TypeAlias = NDArray[np.float64]
 
 
 class VaRCalculator:
@@ -12,7 +16,7 @@ class VaRCalculator:
 
     def historical_var(
         self,
-        returns: list[float] | np.ndarray,
+        returns: list[float] | FloatArray,
         confidence: float = 0.95,
         portfolio_value: float = 1.0,
     ) -> float:
@@ -23,9 +27,8 @@ class VaRCalculator:
         if len(returns) < 10:
             return 0.0
 
-        arr = np.array(returns)
-        percentile = (1 - confidence) * 100
-        var_pct = float(np.percentile(arr, percentile))
+        arr: FloatArray = np.asarray(returns, dtype=np.float64)
+        var_pct = self._historical_tail_threshold(arr, confidence)
         return abs(var_pct * portfolio_value)
 
     def parametric_var(
@@ -46,7 +49,7 @@ class VaRCalculator:
 
     def cornish_fisher_var(
         self,
-        returns: list[float] | np.ndarray,
+        returns: list[float] | FloatArray,
         confidence: float = 0.95,
         portfolio_value: float = 1.0,
     ) -> float:
@@ -61,7 +64,7 @@ class VaRCalculator:
 
         from scipy.stats import norm, skew, kurtosis
 
-        arr = np.array(returns)
+        arr: FloatArray = np.asarray(returns, dtype=np.float64)
         z = norm.ppf(1 - confidence)
         s = float(skew(arr))
         k = float(kurtosis(arr, fisher=True))  # excess kurtosis
@@ -81,7 +84,7 @@ class VaRCalculator:
 
     def conditional_var(
         self,
-        returns: list[float] | np.ndarray,
+        returns: list[float] | FloatArray,
         confidence: float = 0.95,
         portfolio_value: float = 1.0,
     ) -> float:
@@ -93,9 +96,8 @@ class VaRCalculator:
         if len(returns) < 10:
             return 0.0
 
-        arr = np.array(returns)
-        percentile = (1 - confidence) * 100
-        var_threshold = np.percentile(arr, percentile)
+        arr: FloatArray = np.asarray(returns, dtype=np.float64)
+        var_threshold = self._historical_tail_threshold(arr, confidence)
         tail_losses = arr[arr <= var_threshold]
 
         if len(tail_losses) == 0:
@@ -104,14 +106,27 @@ class VaRCalculator:
         cvar = float(np.mean(tail_losses))
         return abs(cvar * portfolio_value)
 
+    @staticmethod
+    def _historical_tail_threshold(arr: FloatArray, confidence: float) -> float:
+        """Return the empirical tail quantile without interpolation.
+
+        A discrete sample must not manufacture an unobserved return between two
+        observations. The selected index leaves at most ``1 - confidence`` of
+        sample observations strictly below the VaR threshold.
+        """
+        sorted_returns = np.sort(arr)
+        index = int(np.floor((1 - confidence) * len(sorted_returns)))
+        index = max(0, min(index, len(sorted_returns) - 1))
+        return float(sorted_returns[index])
+
     def calculate_all(
         self,
-        returns: list[float] | np.ndarray,
+        returns: list[float] | FloatArray,
         portfolio_value: float,
         confidence: float = 0.95,
-    ) -> dict:
+    ) -> dict[str, float | int]:
         """Calculate all VaR metrics at once."""
-        arr = np.array(returns) if not isinstance(returns, np.ndarray) else returns
+        arr: FloatArray = np.asarray(returns, dtype=np.float64)
 
         if len(arr) < 10:
             return {

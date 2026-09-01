@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_auth
 from app.models.backtest import BacktestResult as BacktestResultModel
-from app.schemas.trading import BacktestRequest, BacktestResponse
+from app.schemas.trading import BacktestRequest, BacktestResponse, StrategySummary
 
 router = APIRouter()
 
@@ -23,11 +23,15 @@ class BacktestHistoryItem(BaseModel):
     symbol: str
     interval: str
     initial_capital: float
+    strategy_name: str
+    execution_profile: str
     signal_threshold: float
+    total_return: float
     total_trades: int
     win_rate: float
     total_return_pct: float
     sharpe_ratio: float
+    max_drawdown: float
     max_drawdown_pct: float
     profit_factor: float
     created_at: str
@@ -39,7 +43,7 @@ async def run_backtest(
     db: AsyncSession = Depends(get_db),
     _user: dict = Depends(require_auth),
 ):
-    """Run a backtest with ML model signals. Requires authentication."""
+    """Run a reproducible historical backtest. Requires authentication."""
     from app.services.backtest.engine import BacktestEngine
     from app.services.market.data_collector import market_data_collector
 
@@ -51,21 +55,25 @@ async def run_backtest(
         limit=5000,
     )
 
+    strategy = _strategy_summary(req)
     if df.empty or len(df) < 200:
-        return BacktestResponse(
-            total_trades=0, win_rate=0, total_return_pct=0,
-            sharpe_ratio=0, max_drawdown_pct=0, profit_factor=0,
-            expectancy=0, equity_curve=[req.initial_capital],
-        )
+        return _empty_backtest_response(req.initial_capital, strategy)
 
-    # Generate signals using ML models
-    signals = await _generate_ml_signals(df, req.symbol)
+    if req.strategy:
+        from app.services.backtest.technical_strategy import build_technical_strategy_signals
+
+        signals, _definition = build_technical_strategy_signals(df, req.strategy)
+        allow_short = False
+    else:
+        signals = await _generate_ml_signals(df, req.symbol)
+        allow_short = True
 
     engine = BacktestEngine(
         initial_capital=req.initial_capital,
         signal_threshold=req.signal_threshold,
         atr_stop_multiplier=req.atr_stop_multiplier,
         risk_reward_ratio=req.risk_reward_ratio,
+        allow_short=allow_short,
     )
     result = engine.run(df, signals=signals)
 
@@ -78,10 +86,17 @@ async def run_backtest(
         signal_threshold=req.signal_threshold,
         atr_stop_multiplier=req.atr_stop_multiplier,
         risk_reward_ratio=req.risk_reward_ratio,
+        strategy_name=strategy.name,
+        execution_profile=strategy.execution_profile,
+        strategy_config_json=json.dumps(req.strategy.model_dump() if req.strategy else {}),
+        total_return=result.metrics.total_return,
         total_trades=result.metrics.total_trades,
+        winning_trades=result.metrics.winning_trades,
+        losing_trades=result.metrics.losing_trades,
         win_rate=result.metrics.win_rate,
         total_return_pct=result.metrics.total_return_pct,
         sharpe_ratio=result.metrics.sharpe_ratio,
+        max_drawdown=result.metrics.max_drawdown,
         max_drawdown_pct=result.metrics.max_drawdown_pct,
         profit_factor=result.metrics.profit_factor,
         expectancy=result.metrics.expectancy,
@@ -90,16 +105,7 @@ async def run_backtest(
     db.add(db_result)
     await db.commit()
 
-    return BacktestResponse(
-        total_trades=result.metrics.total_trades,
-        win_rate=result.metrics.win_rate,
-        total_return_pct=result.metrics.total_return_pct,
-        sharpe_ratio=result.metrics.sharpe_ratio,
-        max_drawdown_pct=result.metrics.max_drawdown_pct,
-        profit_factor=result.metrics.profit_factor,
-        expectancy=result.metrics.expectancy,
-        equity_curve=equity_curve,
-    )
+    return _backtest_response(result, equity_curve, strategy, backtest_id=db_result.id)
 
 
 @router.post("/walk-forward")
@@ -112,7 +118,7 @@ async def run_walk_forward_validation(
 
     Tests signal robustness by backtesting on multiple out-of-sample windows.
     """
-    from app.services.backtest.walk_forward import run_walk_forward
+    from app.services.backtest.walk_forward import candles_per_day, run_walk_forward
     from app.services.market.data_collector import market_data_collector
 
     df = await market_data_collector.get_latest_candles(
@@ -125,7 +131,14 @@ async def run_walk_forward_validation(
             "available": len(df) if not df.empty else 0,
         }
 
-    signals = await _generate_ml_signals(df, req.symbol)
+    if req.strategy:
+        from app.services.backtest.technical_strategy import build_technical_strategy_signals
+
+        signals, _definition = build_technical_strategy_signals(df, req.strategy)
+        allow_short = False
+    else:
+        signals = await _generate_ml_signals(df, req.symbol)
+        allow_short = True
 
     result = run_walk_forward(
         df=df,
@@ -135,6 +148,10 @@ async def run_walk_forward_validation(
         step_days=15,
         initial_capital=req.initial_capital,
         signal_threshold=req.signal_threshold,
+        atr_stop_multiplier=req.atr_stop_multiplier,
+        risk_reward_ratio=req.risk_reward_ratio,
+        allow_short=allow_short,
+        candles_per_day=candles_per_day(req.interval),
     )
 
     return {
@@ -179,11 +196,15 @@ async def backtest_history(
             symbol=r.symbol,
             interval=r.interval,
             initial_capital=float(r.initial_capital),
+            strategy_name=r.strategy_name,
+            execution_profile=r.execution_profile,
             signal_threshold=float(r.signal_threshold),
+            total_return=r.total_return,
             total_trades=r.total_trades,
             win_rate=r.win_rate,
             total_return_pct=r.total_return_pct,
             sharpe_ratio=r.sharpe_ratio,
+            max_drawdown=r.max_drawdown,
             max_drawdown_pct=r.max_drawdown_pct,
             profit_factor=r.profit_factor,
             created_at=r.created_at.isoformat(),
@@ -208,14 +229,20 @@ async def get_backtest(
 
     equity_curve = json.loads(row.equity_curve_json) if row.equity_curve_json else []
     return BacktestResponse(
-        total_trades=row.total_trades,
-        win_rate=row.win_rate,
+        total_return=row.total_return,
         total_return_pct=row.total_return_pct,
+        total_trades=row.total_trades,
+        winning_trades=row.winning_trades,
+        losing_trades=row.losing_trades,
+        win_rate=row.win_rate,
         sharpe_ratio=row.sharpe_ratio,
+        max_drawdown=row.max_drawdown,
         max_drawdown_pct=row.max_drawdown_pct,
         profit_factor=row.profit_factor,
         expectancy=row.expectancy,
         equity_curve=equity_curve,
+        strategy=_strategy_summary_from_record(row),
+        id=row.id,
     )
 
 
@@ -277,6 +304,84 @@ async def run_monte_carlo_validation(
         "n_simulations": mc_result.n_simulations,
         "n_trades": mc_result.n_trades,
     }
+
+
+def _strategy_summary(req: BacktestRequest) -> StrategySummary:
+    """Describe precisely what a new backtest evaluated."""
+    if req.strategy:
+        return StrategySummary(
+            name="Technical ensemble (Spot long-only)",
+            execution_profile="spot_long_only",
+            indicators=list(req.strategy.indicators),
+            min_confirmations=req.strategy.min_confirmations,
+        )
+    return StrategySummary(
+        name="ML / technical fallback",
+        execution_profile="model_long_short",
+    )
+
+
+def _strategy_summary_from_record(row: BacktestResultModel) -> StrategySummary:
+    """Restore the audit details saved with an historical backtest."""
+    try:
+        raw_config = json.loads(row.strategy_config_json or "{}")
+    except json.JSONDecodeError:
+        raw_config = {}
+    indicators = raw_config.get("indicators", [])
+    min_confirmations = raw_config.get("min_confirmations")
+    return StrategySummary(
+        name=row.strategy_name,
+        execution_profile=row.execution_profile,
+        indicators=indicators if isinstance(indicators, list) else [],
+        min_confirmations=min_confirmations if isinstance(min_confirmations, int) else None,
+    )
+
+
+def _empty_backtest_response(
+    initial_capital: float,
+    strategy: StrategySummary,
+) -> BacktestResponse:
+    return BacktestResponse(
+        total_return=0,
+        total_return_pct=0,
+        total_trades=0,
+        winning_trades=0,
+        losing_trades=0,
+        win_rate=0,
+        sharpe_ratio=0,
+        max_drawdown=0,
+        max_drawdown_pct=0,
+        profit_factor=0,
+        expectancy=0,
+        equity_curve=[initial_capital],
+        strategy=strategy,
+    )
+
+
+def _backtest_response(
+    result,
+    equity_curve: list[float],
+    strategy: StrategySummary,
+    *,
+    backtest_id: int | None = None,
+) -> BacktestResponse:
+    metrics = result.metrics
+    return BacktestResponse(
+        id=backtest_id,
+        total_return=metrics.total_return,
+        total_return_pct=metrics.total_return_pct,
+        total_trades=metrics.total_trades,
+        winning_trades=metrics.winning_trades,
+        losing_trades=metrics.losing_trades,
+        win_rate=metrics.win_rate,
+        sharpe_ratio=metrics.sharpe_ratio,
+        max_drawdown=metrics.max_drawdown,
+        max_drawdown_pct=metrics.max_drawdown_pct,
+        profit_factor=metrics.profit_factor,
+        expectancy=metrics.expectancy,
+        equity_curve=equity_curve,
+        strategy=strategy,
+    )
 
 
 async def _generate_ml_signals(df: pd.DataFrame, symbol: str) -> pd.Series:

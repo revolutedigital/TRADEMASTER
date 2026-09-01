@@ -1,7 +1,8 @@
 """Unit tests for the DrawdownCircuitBreaker with Redis persistence."""
 
+from unittest.mock import AsyncMock
+
 import pytest
-from unittest.mock import AsyncMock, patch
 
 from app.services.risk.drawdown import (
     DrawdownCircuitBreaker,
@@ -68,17 +69,22 @@ class TestCircuitBreakerStates:
 
 
 class TestCircuitBreakerRedis:
-    @patch("app.services.risk.drawdown.redis")
-    async def test_save_to_redis(self, mock_redis):
-        mock_redis.set = AsyncMock()
+    async def test_save_to_redis(self, monkeypatch):
+        from app.core.events import event_bus
+
+        mock_redis = AsyncMock()
+        monkeypatch.setattr(event_bus, "_redis", mock_redis)
         cb = DrawdownCircuitBreaker()
         cb.initialize(10000)
-        await cb.save_to_redis()
+        await cb._save_to_redis()
         mock_redis.set.assert_called_once()
 
-    @patch("app.services.risk.drawdown.redis")
-    async def test_restore_from_redis_no_data(self, mock_redis):
-        mock_redis.get = AsyncMock(return_value=None)
+    async def test_restore_from_redis_no_data(self, monkeypatch):
+        from app.core.events import event_bus
+
+        mock_redis = AsyncMock()
+        mock_redis.get.return_value = None
+        monkeypatch.setattr(event_bus, "_redis", mock_redis)
         cb = DrawdownCircuitBreaker()
         result = await cb.restore_from_redis()
         assert result is False

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, type ReactNode } from "react";
+import { useState, useRef, useEffect, useId, type ReactNode } from "react";
 import { ChevronDown, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +26,7 @@ export function Select({ options, value, onChange, label, placeholder = "Select.
   const [focused, setFocused] = useState(-1);
   const ref = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const listboxId = useId();
 
   const selected = options.find((o) => o.value === value);
 
@@ -75,6 +76,7 @@ export function Select({ options, value, onChange, label, placeholder = "Select.
       <button
         type="button"
         role="combobox"
+        aria-controls={listboxId}
         aria-expanded={open}
         aria-haspopup="listbox"
         disabled={disabled}
@@ -107,6 +109,7 @@ export function Select({ options, value, onChange, label, placeholder = "Select.
       {open && (
         <ul
           ref={listRef}
+          id={listboxId}
           role="listbox"
           className="absolute z-50 mt-1 w-full max-h-60 overflow-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] py-1 shadow-lg animate-scale-in"
         >

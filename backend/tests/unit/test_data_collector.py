@@ -2,6 +2,7 @@
 
 import pytest
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 import pandas as pd
 import numpy as np
@@ -40,7 +41,9 @@ class TestMarketDataCollector:
     @pytest.fixture
     def mock_db(self):
         db = AsyncMock()
-        db.execute = AsyncMock()
+        db.execute = AsyncMock(
+            return_value=MagicMock(rowcount=10, scalar_one_or_none=MagicMock(return_value=None)),
+        )
         db.flush = AsyncMock()
         db.commit = AsyncMock()
         return db
@@ -56,53 +59,54 @@ class TestMarketDataCollector:
             "low": np.random.uniform(75000, 80000, 10),
             "close": np.random.uniform(80000, 90000, 10),
             "volume": np.random.uniform(100, 1000, 10),
+            "close_time": dates + pd.Timedelta(hours=1) - pd.Timedelta(milliseconds=1),
             "quote_volume": np.random.uniform(8000000, 90000000, 10),
-            "trades": np.random.randint(1000, 50000, 10),
+            "trade_count": np.random.randint(1000, 50000, 10),
         })
 
     @pytest.mark.asyncio
     @patch("app.services.market.data_collector.binance_client")
     async def test_seed_historical_fetches_klines(self, mock_binance, collector, mock_db, sample_klines_df):
         """seed_historical should fetch klines from Binance and insert into DB."""
-        mock_binance.get_historical_klines = AsyncMock(return_value=sample_klines_df)
+        mock_binance.get_klines = AsyncMock(return_value=sample_klines_df)
 
-        await collector.seed_historical(mock_db, "BTCUSDT", "1h", limit=10)
+        inserted = await collector.seed_historical(mock_db, "BTCUSDT", "1h", days_back=1)
 
-        mock_binance.get_historical_klines.assert_called_once()
-        call_args = mock_binance.get_historical_klines.call_args
-        assert call_args[1].get("symbol", call_args[0][0] if call_args[0] else None) == "BTCUSDT" or "BTCUSDT" in str(call_args)
+        mock_binance.get_klines.assert_called_once()
+        assert mock_binance.get_klines.call_args.kwargs["symbol"] == "BTCUSDT"
+        assert inserted == 10
+        mock_db.commit.assert_awaited_once()
 
     @pytest.mark.asyncio
     @patch("app.services.market.data_collector.binance_client")
     async def test_seed_historical_handles_empty_response(self, mock_binance, collector, mock_db):
         """seed_historical should handle empty DataFrame gracefully."""
-        mock_binance.get_historical_klines = AsyncMock(return_value=pd.DataFrame())
+        mock_binance.get_klines = AsyncMock(return_value=pd.DataFrame())
 
         # Should not raise
-        await collector.seed_historical(mock_db, "BTCUSDT", "1h", limit=10)
+        inserted = await collector.seed_historical(mock_db, "BTCUSDT", "1h", days_back=1)
+        assert inserted == 0
+        mock_db.commit.assert_awaited_once()
 
     @pytest.mark.asyncio
-    @patch("app.services.market.data_collector.binance_client")
-    async def test_store_kline_creates_ohlcv_record(self, mock_binance, collector, mock_db):
+    async def test_store_kline_creates_ohlcv_record(self, collector, mock_db):
         """store_kline should create an OHLCV record from WebSocket kline data."""
         kline_data = {
-            "s": "BTCUSDT",
-            "i": "1m",
-            "t": 1704067200000,  # 2024-01-01 00:00:00 UTC
-            "o": "85000.00",
-            "h": "85500.00",
-            "l": "84500.00",
-            "c": "85200.00",
-            "v": "123.45",
-            "q": "10500000.00",
-            "n": 5000,
+            "is_closed": True,
+            "open_time": 1704067200000,  # 2024-01-01 00:00:00 UTC
+            "close_time": 1704070799999,
+            "open": 85000.00,
+            "high": 85500.00,
+            "low": 84500.00,
+            "close": 85200.00,
+            "volume": 123.45,
+            "quote_volume": 10500000.00,
+            "trade_count": 5000,
         }
 
-        await collector.store_kline(mock_db, kline_data)
+        await collector.store_kline(mock_db, "BTCUSDT", "1m", kline_data)
 
-        # Should have added to session
-        mock_db.add.assert_called_once() if hasattr(mock_db, 'add') else None
-        mock_db.flush.assert_called() if hasattr(mock_db, 'flush') else None
+        mock_db.execute.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_get_latest_candles_returns_dataframe(self, collector, mock_db):
@@ -117,10 +121,36 @@ class TestMarketDataCollector:
         assert isinstance(result, pd.DataFrame)
 
     @pytest.mark.asyncio
+    async def test_get_latest_candles_preserves_close_time_for_freshness_checks(
+        self, collector, mock_db
+    ):
+        open_time = datetime(2025, 1, 15, 12, 0, 0)
+        close_time = datetime(2025, 1, 15, 12, 59, 59, 999000)
+        candle = SimpleNamespace(
+            open_time=open_time,
+            open=85000,
+            high=85500,
+            low=84500,
+            close=85200,
+            volume=123.45,
+            close_time=close_time,
+            quote_volume=10_500_000,
+            trade_count=5000,
+        )
+        query_result = MagicMock()
+        query_result.scalars.return_value.all.return_value = [candle]
+        mock_db.execute = AsyncMock(return_value=query_result)
+
+        result = await collector.get_latest_candles(mock_db, "BTCUSDT", "1h", limit=100)
+
+        assert list(result.columns).count("close_time") == 1
+        assert result.iloc[0]["close_time"] == close_time
+
+    @pytest.mark.asyncio
     @patch("app.services.market.data_collector.binance_client")
     async def test_seed_historical_skips_duplicates(self, mock_binance, collector, mock_db, sample_klines_df):
         """_insert_candles should handle duplicate entries without errors."""
-        mock_binance.get_historical_klines = AsyncMock(return_value=sample_klines_df)
+        mock_binance.get_klines = AsyncMock(return_value=sample_klines_df)
 
         # Simulate IntegrityError on flush (duplicate)
         from sqlalchemy.exc import IntegrityError
@@ -129,7 +159,7 @@ class TestMarketDataCollector:
 
         # Should handle gracefully (implementation may vary)
         try:
-            await collector.seed_historical(mock_db, "BTCUSDT", "1h", limit=10)
+            await collector.seed_historical(mock_db, "BTCUSDT", "1h", days_back=1)
         except (IntegrityError, Exception):
             pass  # Implementation-dependent error handling
 
@@ -137,10 +167,10 @@ class TestMarketDataCollector:
     @patch("app.services.market.data_collector.binance_client")
     async def test_seed_historical_validates_symbol(self, mock_binance, collector, mock_db, sample_klines_df):
         """seed_historical should pass correct symbol to Binance client."""
-        mock_binance.get_historical_klines = AsyncMock(return_value=sample_klines_df)
+        mock_binance.get_klines = AsyncMock(return_value=sample_klines_df)
 
-        await collector.seed_historical(mock_db, "ETHUSDT", "1h", limit=5)
+        await collector.seed_historical(mock_db, "ETHUSDT", "1h", days_back=1)
 
-        call_args = mock_binance.get_historical_klines.call_args
+        call_args = mock_binance.get_klines.call_args
         # Verify ETHUSDT was passed
         assert "ETHUSDT" in str(call_args)

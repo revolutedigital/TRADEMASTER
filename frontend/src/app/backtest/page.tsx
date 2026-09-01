@@ -14,7 +14,7 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
-import { formatCurrency, formatPercent, apiFetch, timeAgo } from "@/lib/utils";
+import { formatNumber, formatPercent, apiFetch, timeAgo } from "@/lib/utils";
 import type { BacktestResult } from "@/lib/types";
 import { FlaskConical, Play, Loader2, History } from "lucide-react";
 
@@ -119,7 +119,7 @@ export default function BacktestPage() {
 
           {/* Capital */}
           <div>
-            <label className="mb-1 block text-xs text-[var(--color-text-muted)]">Capital Inicial ($)</label>
+            <label className="mb-1 block text-xs text-[var(--color-text-muted)]">Capital Inicial (USDT)</label>
             <input
               type="number"
               value={capital}
@@ -174,7 +174,7 @@ export default function BacktestPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
             <StatCard
               label="Retorno Total"
-              value={formatCurrency(result.total_return)}
+              value={`${formatNumber(result.total_return)} USDT`}
               change={formatPercent(result.total_return_pct)}
               positive={result.total_return >= 0}
             />
@@ -196,7 +196,7 @@ export default function BacktestPage() {
             />
             <StatCard
               label="Drawdown Máximo"
-              value={formatPercent(result.max_drawdown)}
+              value={formatPercent(result.max_drawdown_pct)}
               positive={false}
             />
           </div>
@@ -255,7 +255,7 @@ export default function BacktestPage() {
                     <TableCell className="font-medium">{h.symbol}</TableCell>
                     <TableCell className="text-xs">{h.interval}</TableCell>
                     <TableCell className="font-mono text-xs">
-                      {formatCurrency(h.initial_capital)}
+                      {formatNumber(h.initial_capital)} USDT
                     </TableCell>
                     <TableCell className="font-mono text-xs">{h.total_trades}</TableCell>
                     <TableCell className={`font-mono text-xs ${h.total_return_pct >= 0 ? "text-green-400" : "text-red-400"}`}>

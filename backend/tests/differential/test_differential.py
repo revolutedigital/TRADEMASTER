@@ -58,7 +58,7 @@ def _ref_sharpe_ratio(
         return 0.0
     returns = [p / initial_equity for p in pnl_series]
     mean_r = sum(returns) / len(returns)
-    var = sum((r - mean_r) ** 2 for r in returns) / (len(returns) - 1)
+    var = sum((r - mean_r) ** 2 for r in returns) / len(returns)
     std_r = math.sqrt(var) if var > 0 else 0.0
     if std_r == 0:
         return 0.0
@@ -73,12 +73,9 @@ def _ref_sortino_ratio(
         return 0.0
     returns = [p / initial_equity for p in pnl_series]
     mean_r = sum(returns) / len(returns)
-    neg_returns = [r for r in returns if r < 0]
-    if len(neg_returns) < 2:
-        return 0.0
-    neg_mean = sum(neg_returns) / len(neg_returns)
-    neg_var = sum((r - neg_mean) ** 2 for r in neg_returns) / (len(neg_returns) - 1)
-    downside_std = math.sqrt(neg_var) if neg_var > 0 else 0.0
+    downside_std = math.sqrt(
+        sum(min(r, 0.0) ** 2 for r in returns) / len(returns)
+    )
     if downside_std == 0:
         return 0.0
     return (mean_r / downside_std) * math.sqrt(252)
@@ -183,18 +180,10 @@ class TestDifferentialSharpeRatio:
         prod_sharpe = prod_calc.calculate_metrics(pnls, equity).sharpe_ratio
         ref_sharpe = _ref_sharpe_ratio(pnls, equity)
 
-        # Both use slightly different numpy vs pure-python std (ddof).
-        # numpy.std defaults to ddof=0 while reference uses ddof=1.
-        # Allow small relative tolerance due to this difference.
         if ref_sharpe == 0 and prod_sharpe == 0:
             return
         note(f"prod={prod_sharpe}, ref={ref_sharpe}, n={len(pnls)}")
-        # The production code uses np.std (ddof=0) while reference uses ddof=1.
-        # Ratio between them: sqrt(n/(n-1)). Verify they agree up to that factor.
-        n = len(pnls)
-        correction = math.sqrt(n / (n - 1))
-        assert math.isclose(prod_sharpe, ref_sharpe / correction, rel_tol=0.01) or \
-               math.isclose(prod_sharpe, ref_sharpe, rel_tol=0.05), (
+        assert math.isclose(prod_sharpe, ref_sharpe, rel_tol=0.01), (
             f"Sharpe divergence: prod={prod_sharpe}, ref={ref_sharpe}, "
             f"equity={equity}, pnls[:5]={pnls[:5]}"
         )
@@ -218,14 +207,9 @@ class TestDifferentialSortinoRatio:
         if ref_sortino == 0 and prod_sortino == 0:
             return
         note(f"prod={prod_sortino}, ref={ref_sortino}")
-        # Same ddof correction as Sharpe
-        neg_n = neg_count
-        if neg_n > 1:
-            correction = math.sqrt(neg_n / (neg_n - 1))
-            assert math.isclose(prod_sortino, ref_sortino / correction, rel_tol=0.02) or \
-                   math.isclose(prod_sortino, ref_sortino, rel_tol=0.10), (
-                f"Sortino divergence: prod={prod_sortino}, ref={ref_sortino}"
-            )
+        assert math.isclose(prod_sortino, ref_sortino, rel_tol=0.01), (
+            f"Sortino divergence: prod={prod_sortino}, ref={ref_sortino}"
+        )
 
 
 class TestDifferentialMaxDrawdown:
@@ -275,12 +259,10 @@ class TestDifferentialHistoricalVaR:
         prod_var = var_calc.historical_var(returns, confidence, portfolio_value)
         ref_var = _ref_historical_var(returns, confidence, portfolio_value)
 
-        # np.percentile uses interpolation; reference uses floor index.
-        # Allow some tolerance for the interpolation difference.
         if ref_var == 0 and prod_var == 0:
             return
         note(f"prod={prod_var}, ref={ref_var}, n={len(returns)}")
-        assert math.isclose(prod_var, ref_var, rel_tol=0.15, abs_tol=1.0), (
+        assert math.isclose(prod_var, ref_var, rel_tol=1e-9, abs_tol=1e-9), (
             f"VaR divergence: prod={prod_var}, ref={ref_var}, "
             f"conf={confidence}, pv={portfolio_value}"
         )

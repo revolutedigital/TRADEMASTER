@@ -54,9 +54,9 @@ export class PluginManager {
     }
 
     try {
-      const module = await import(/* webpackIgnore: true */ manifest.entryPoint);
-      this.loadedModules.set(pluginId, module);
-      return module;
+      const pluginModule = await import(/* webpackIgnore: true */ manifest.entryPoint);
+      this.loadedModules.set(pluginId, pluginModule);
+      return pluginModule;
     } catch (error) {
       console.error(`Failed to load plugin ${pluginId}:`, error);
       throw error;

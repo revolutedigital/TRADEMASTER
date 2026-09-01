@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 interface DepthLevel {
   price: number;
@@ -18,46 +18,25 @@ export function DepthChart({ symbol }: DepthChartProps) {
   const [loading, setLoading] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  useEffect(() => {
-    fetchDepth();
-    const interval = setInterval(fetchDepth, 5000);
-    return () => clearInterval(interval);
-  }, [symbol]);
-
-  useEffect(() => {
-    if (bids.length > 0 && asks.length > 0) drawChart();
-  }, [bids, asks]);
-
-  async function fetchDepth() {
+  const fetchDepth = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/market/depth/${symbol}`, { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
-        processBids(data.bids || []);
-        processAsks(data.asks || []);
+        const processLevels = (raw: [string, string][]) => {
+          let total = 0;
+          return raw.slice(0, 25).map(([price, quantity]) => {
+            total += parseFloat(quantity);
+            return { price: parseFloat(price), quantity: parseFloat(quantity), total };
+          });
+        };
+        setBids(processLevels(data.bids || []));
+        setAsks(processLevels(data.asks || []));
       }
     } catch {} finally { setLoading(false); }
-  }
+  }, [symbol]);
 
-  function processBids(raw: [string, string][]) {
-    let total = 0;
-    const processed = raw.slice(0, 25).map(([price, qty]) => {
-      total += parseFloat(qty);
-      return { price: parseFloat(price), quantity: parseFloat(qty), total };
-    });
-    setBids(processed);
-  }
-
-  function processAsks(raw: [string, string][]) {
-    let total = 0;
-    const processed = raw.slice(0, 25).map(([price, qty]) => {
-      total += parseFloat(qty);
-      return { price: parseFloat(price), quantity: parseFloat(qty), total };
-    });
-    setAsks(processed);
-  }
-
-  function drawChart() {
+  const drawChart = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -115,7 +94,17 @@ export function DepthChart({ symbol }: DepthChartProps) {
     ctx.lineWidth = 1;
     ctx.stroke();
     ctx.setLineDash([]);
-  }
+  }, [asks, bids]);
+
+  useEffect(() => {
+    void fetchDepth();
+    const refreshInterval = window.setInterval(fetchDepth, 5000);
+    return () => window.clearInterval(refreshInterval);
+  }, [fetchDepth]);
+
+  useEffect(() => {
+    if (bids.length > 0 && asks.length > 0) drawChart();
+  }, [asks.length, bids.length, drawChart]);
 
   if (loading) return <div className="bg-[#141922] rounded-xl p-6 h-64 animate-pulse" />;
 

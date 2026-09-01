@@ -109,6 +109,16 @@ async def activate_deployment(
             deployment_id=deployment_id,
             execution_mode=settings.execution_mode,
         )
+        if settings.execution_mode != TradingExecutionMode.PAPER:
+            from app.services.exchange.binance_ws import binance_ws_manager
+
+            try:
+                await binance_ws_manager.ensure_symbol(deployment.symbol)
+            except RuntimeError as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Binance market data is not active for this asset; strategy remains inactive",
+                ) from exc
         await db.commit()
         await db.refresh(deployment)
     except LookupError as exc:

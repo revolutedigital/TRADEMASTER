@@ -33,32 +33,31 @@ describe("Sidebar", () => {
     expect(screen.getByTestId("logo")).toBeInTheDocument();
   });
 
-  it("renders all navigation links (PT-BR labels)", () => {
+  it("renders the compact navigation links (PT-BR labels)", () => {
     render(<Sidebar />);
-    expect(screen.getByText("Painel")).toBeInTheDocument();
-    expect(screen.getByText("Trading")).toBeInTheDocument();
-    expect(screen.getByText("Sinais")).toBeInTheDocument();
-    expect(screen.getByText("Backtest")).toBeInTheDocument();
-    expect(screen.getByText("ML/IA")).toBeInTheDocument();
-    expect(screen.getByText("Alertas")).toBeInTheDocument();
+    expect(screen.getByText("Operar")).toBeInTheDocument();
+    expect(screen.getByText("Portfólio")).toBeInTheDocument();
+    expect(screen.getByText("Histórico")).toBeInTheDocument();
+    expect(screen.getByText("Configurações")).toBeInTheDocument();
   });
 
-  it("highlights Painel as active on root path", () => {
+  it("highlights Operar as active on its route", () => {
+    mockPathname = "/operar";
     render(<Sidebar />);
-    const painelLink = screen.getByText("Painel").closest("a");
-    expect(painelLink).toHaveAttribute("aria-current", "page");
+    const operarLink = screen.getByText("Operar").closest("a");
+    expect(operarLink).toHaveAttribute("aria-current", "page");
   });
 
   it("highlights correct link based on pathname", () => {
-    mockPathname = "/signals";
+    mockPathname = "/trading/history";
     render(<Sidebar />);
-    const sinaisLink = screen.getByText("Sinais").closest("a");
-    expect(sinaisLink).toHaveAttribute("aria-current", "page");
+    const historyLink = screen.getByText("Histórico").closest("a");
+    expect(historyLink).toHaveAttribute("aria-current", "page");
   });
 
-  it("renders Modo Testnet status", () => {
+  it("renders protected-execution status", () => {
     render(<Sidebar />);
-    expect(screen.getByText("Modo Testnet")).toBeInTheDocument();
+    expect(screen.getByText("Execução protegida")).toBeInTheDocument();
   });
 
   it("has correct navigation role and label", () => {

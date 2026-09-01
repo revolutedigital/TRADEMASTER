@@ -5,71 +5,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Logo } from "./logo";
-import {
-  LayoutDashboard,
-  CandlestickChart,
-  Briefcase,
-  Zap,
-  FlaskConical,
-  Settings,
-  Shield,
-  Menu,
-  X,
-  Brain,
-  Bell,
-  BarChart3,
-  ChevronDown,
-  History,
-  FileText,
-  GitCompare,
-  PieChart,
-  DollarSign,
-  Wrench,
-} from "lucide-react";
+import { CandlestickChart, Briefcase, Settings, Shield, Menu, X, History } from "lucide-react";
 
 interface NavItem {
   href: string;
   label: string;
   icon: React.ElementType;
-  children?: { href: string; label: string; icon: React.ElementType }[];
 }
 
 const navItems: NavItem[] = [
-  { href: "/", label: "Painel", icon: LayoutDashboard },
-  {
-    href: "/trading",
-    label: "Trading",
-    icon: CandlestickChart,
-    children: [
-      { href: "/trading", label: "Terminal", icon: CandlestickChart },
-      { href: "/trading/history", label: "Histórico", icon: History },
-      { href: "/trading/journal", label: "Diário", icon: FileText },
-      { href: "/trading/strategy-builder", label: "Estratégia", icon: Wrench },
-    ],
-  },
-  {
-    href: "/portfolio",
-    label: "Portfólio",
-    icon: Briefcase,
-    children: [
-      { href: "/portfolio", label: "Visão Geral", icon: Briefcase },
-      { href: "/portfolio/optimizer", label: "Otimizador", icon: PieChart },
-      { href: "/portfolio/fees", label: "Taxas", icon: DollarSign },
-    ],
-  },
-  { href: "/signals", label: "Sinais", icon: Zap },
-  {
-    href: "/backtest",
-    label: "Backtest",
-    icon: FlaskConical,
-    children: [
-      { href: "/backtest", label: "Executar", icon: FlaskConical },
-      { href: "/backtest/compare", label: "Comparar", icon: GitCompare },
-    ],
-  },
-  { href: "/ml", label: "ML/IA", icon: Brain },
-  { href: "/sentiment", label: "Sentimento", icon: BarChart3 },
-  { href: "/alerts", label: "Alertas", icon: Bell },
+  { href: "/operar", label: "Operar", icon: CandlestickChart },
+  { href: "/portfolio", label: "Portfólio", icon: Briefcase },
+  { href: "/trading/history", label: "Histórico", icon: History },
   { href: "/settings", label: "Configurações", icon: Settings },
 ];
 
@@ -83,73 +30,21 @@ function NavLink({
   onNavigate?: () => void;
 }) {
   const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
-  const [expanded, setExpanded] = useState(isActive && !!item.children);
-
-  useEffect(() => {
-    if (isActive && item.children) setExpanded(true);
-  }, [isActive, item.children]);
-
-  if (!item.children) {
-    return (
-      <Link
-        href={item.href}
-        onClick={onNavigate}
-        aria-current={isActive ? "page" : undefined}
-        className={cn(
-          "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150",
-          isActive
-            ? "bg-[var(--color-primary-light)] text-[var(--color-primary)]"
-            : "text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
-        )}
-      >
-        <item.icon className="h-4 w-4" />
-        {item.label}
-      </Link>
-    );
-  }
-
   return (
-    <div>
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className={cn(
-          "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150",
-          isActive
-            ? "text-[var(--color-primary)]"
-            : "text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
-        )}
-      >
-        <item.icon className="h-4 w-4" />
-        <span className="flex-1 text-left">{item.label}</span>
-        <ChevronDown
-          className={cn("h-3.5 w-3.5 transition-transform duration-200", expanded && "rotate-180")}
-        />
-      </button>
-      {expanded && (
-        <div className="ml-4 mt-0.5 space-y-0.5 border-l border-[var(--color-border)] pl-3 animate-fade-in">
-          {item.children.map((child) => {
-            const childActive = pathname === child.href;
-            return (
-              <Link
-                key={child.href}
-                href={child.href}
-                onClick={onNavigate}
-                aria-current={childActive ? "page" : undefined}
-                className={cn(
-                  "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-                  childActive
-                    ? "text-[var(--color-primary)] bg-[var(--color-primary-light)]"
-                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                )}
-              >
-                <child.icon className="h-3.5 w-3.5" />
-                {child.label}
-              </Link>
-            );
-          })}
-        </div>
+    <Link
+      href={item.href}
+      onClick={onNavigate}
+      aria-current={isActive ? "page" : undefined}
+      className={cn(
+        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150",
+        isActive
+          ? "bg-[var(--color-primary-light)] text-[var(--color-primary)]"
+          : "text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
       )}
-    </div>
+    >
+      <item.icon className="h-4 w-4" />
+      {item.label}
+    </Link>
   );
 }
 
@@ -174,7 +69,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       <div className="border-t border-[var(--color-border)] p-3">
         <div className="flex items-center gap-2 rounded-lg bg-[var(--color-background)] px-3 py-2">
           <Shield className="h-4 w-4 text-green-400" />
-          <span className="text-xs text-[var(--color-text-muted)]">Modo Testnet</span>
+          <span className="text-xs text-[var(--color-text-muted)]">Execução protegida</span>
         </div>
       </div>
     </>

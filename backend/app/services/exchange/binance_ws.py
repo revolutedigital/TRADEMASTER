@@ -22,6 +22,8 @@ class BinanceWebSocketManager:
         self._client: AsyncClient | None = None
         self._bsm: BinanceSocketManager | None = None
         self._tasks: list[asyncio.Task] = []
+        self._active_symbols: set[str] = set()
+        self._symbol_lock = asyncio.Lock()
         self._running: bool = False
         self._reconnect_count: int = 0
 
@@ -32,19 +34,7 @@ class BinanceWebSocketManager:
         self._running = True
 
         for symbol in settings.symbols_list:
-            for interval in KLINE_INTERVALS:
-                task = asyncio.create_task(
-                    self._kline_stream(symbol.lower(), interval),
-                    name=f"ws_kline_{symbol}_{interval}",
-                )
-                self._tasks.append(task)
-
-            # Trade stream per symbol
-            task = asyncio.create_task(
-                self._trade_stream(symbol.lower()),
-                name=f"ws_trade_{symbol}",
-            )
-            self._tasks.append(task)
+            await self.ensure_symbol(symbol)
 
         logger.info(
             "websocket_streams_started",
@@ -53,6 +43,40 @@ class BinanceWebSocketManager:
             total_streams=len(self._tasks),
         )
 
+    async def ensure_symbol(self, symbol: str) -> None:
+        """Attach one approved runtime asset without reconnecting other streams.
+
+        The catalog may expose hundreds of assets for research, but a stream is
+        created only after a strategy for one asset has been explicitly
+        activated.  This keeps stream count and exchange rate pressure bounded.
+        """
+        normalized_symbol = symbol.upper().strip()
+        if not normalized_symbol or self._bsm is None or not self._running:
+            raise RuntimeError("Binance market streams are not available for the selected asset")
+
+        async with self._symbol_lock:
+            if normalized_symbol in self._active_symbols:
+                return
+            for interval in KLINE_INTERVALS:
+                task = asyncio.create_task(
+                    self._kline_stream(normalized_symbol.lower(), interval),
+                    name=f"ws_kline_{normalized_symbol}_{interval}",
+                )
+                self._tasks.append(task)
+
+            self._tasks.append(
+                asyncio.create_task(
+                    self._trade_stream(normalized_symbol.lower()),
+                    name=f"ws_trade_{normalized_symbol}",
+                )
+            )
+            self._active_symbols.add(normalized_symbol)
+            logger.info(
+                "websocket_symbol_enabled",
+                symbol=normalized_symbol,
+                total_streams=len(self._tasks),
+            )
+
     async def stop(self) -> None:
         """Stop all WebSocket streams."""
         self._running = False
@@ -60,6 +84,7 @@ class BinanceWebSocketManager:
             task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks.clear()
+        self._active_symbols.clear()
         logger.info("websocket_streams_stopped")
 
     async def _kline_stream(self, symbol: str, interval: str) -> None:

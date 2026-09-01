@@ -83,6 +83,61 @@ class MarketDataCollector:
         )
         return total_inserted
 
+    async def ensure_public_history(
+        self,
+        db: AsyncSession,
+        *,
+        symbol: str,
+        interval: str = "1h",
+        days_back: int = 365,
+    ) -> int:
+        """Persist credential-free Binance Spot history for one selected asset.
+
+        Asset discovery and research intentionally use Binance's public market
+        data endpoint, not the account-bound Testnet/LIVE client.  The caller
+        owns the transaction so an incomplete study never leaves an approved
+        strategy behind.
+        """
+        from app.services.market.public_binance_data import public_binance_market_data
+
+        normalized_symbol = symbol.upper()
+        end_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+        next_start_ms = int(
+            (datetime.now(timezone.utc).timestamp() - days_back * 86_400) * 1000
+        )
+        total_inserted = 0
+
+        while next_start_ms < end_ms:
+            frame = await public_binance_market_data.klines(
+                symbol=normalized_symbol,
+                interval=interval,
+                limit=1000,
+                start_time=next_start_ms,
+            )
+            if frame.empty:
+                break
+
+            total_inserted += await self._insert_candles(
+                db,
+                frame,
+                normalized_symbol,
+                interval,
+            )
+            last_close_ms = int(frame["close_time"].iloc[-1].timestamp() * 1000)
+            next_start_ms = last_close_ms + 1
+            if len(frame) < 1000:
+                break
+
+        await db.flush()
+        logger.info(
+            "public_market_history_ready",
+            symbol=normalized_symbol,
+            interval=interval,
+            days_back=days_back,
+            candles_inserted=total_inserted,
+        )
+        return total_inserted
+
     async def store_kline(
         self,
         db: AsyncSession,

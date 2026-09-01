@@ -3,6 +3,7 @@
 import json
 import hashlib
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import TradingExecutionMode
 from app.core.logging import get_logger
 from app.models.backtest import BacktestResult
+from app.models.portfolio import Position
 from app.models.strategy_deployment import StrategyDeployment
 from app.schemas.trading import TechnicalStrategyConfig
 from app.services.backtest.technical_strategy import build_technical_strategy_signals
@@ -253,6 +255,36 @@ async def get_active_technical_strategy(
         signal_threshold=signal_threshold,
         atr_stop_multiplier=atr_stop_multiplier,
         risk_reward_ratio=risk_reward_ratio,
+    )
+
+
+async def get_runtime_symbols(
+    db: AsyncSession,
+    *,
+    execution_mode: TradingExecutionMode,
+    base_symbols: Iterable[str] | None = None,
+) -> list[str]:
+    """Return only assets that need live monitoring in this runtime ledger."""
+    from app.config import settings
+
+    active_strategy_symbols = await db.scalars(
+        select(StrategyDeployment.symbol).where(
+            StrategyDeployment.target_execution_mode == execution_mode.value,
+            StrategyDeployment.status == ACTIVE,
+        )
+    )
+    open_position_symbols = await db.scalars(
+        select(Position.symbol).where(
+            Position.execution_mode == execution_mode.value,
+            Position.is_open.is_(True),
+        )
+    )
+    return sorted(
+        {
+            *(base_symbols if base_symbols is not None else settings.symbols_list),
+            *(str(symbol).upper() for symbol in active_strategy_symbols),
+            *(str(symbol).upper() for symbol in open_position_symbols),
+        }
     )
 
 

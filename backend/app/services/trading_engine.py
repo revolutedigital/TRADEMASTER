@@ -957,8 +957,17 @@ class TradingEngine:
                     )
                     return
 
+            async with async_session_factory() as symbols_db:
+                from app.services.strategy_deployments import get_runtime_symbols
+
+                runtime_symbols = await get_runtime_symbols(
+                    symbols_db,
+                    execution_mode=settings.execution_mode,
+                    base_symbols=settings.symbols_list,
+                )
+
             prices = {}
-            for symbol in settings.symbols_list:
+            for symbol in runtime_symbols:
                 try:
                     price = await binance_client.get_ticker_price(symbol)
                     prices[symbol] = float(price)

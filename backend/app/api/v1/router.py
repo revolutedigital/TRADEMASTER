@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.api.v1.admin import router as admin_router
 from app.api.v1.alerts import router as alerts_router
+from app.api.v1.asset_intelligence import router as asset_intelligence_router
 from app.api.v1.api_keys import router as api_keys_router
 from app.api.v1.audit import router as audit_router
 from app.api.v1.auth import router as auth_router
@@ -31,6 +32,11 @@ api_router.include_router(dashboard_router, tags=["dashboard"])
 api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
 api_router.include_router(system_router, prefix="/system", tags=["system"])
 api_router.include_router(market_router, prefix="/market", tags=["market"])
+api_router.include_router(
+    asset_intelligence_router,
+    prefix="/asset-intelligence",
+    tags=["asset-intelligence"],
+)
 api_router.include_router(trading_router, prefix="/trading", tags=["trading"])
 api_router.include_router(portfolio_router, prefix="/portfolio", tags=["portfolio"])
 api_router.include_router(signals_router, prefix="/signals", tags=["signals"])

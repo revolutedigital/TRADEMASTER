@@ -1,0 +1,198 @@
+openapi: 3.1.0
+info:
+  title: TradeMaster Asset Intelligence API
+  version: 1.0.0
+  description: |
+    A single-asset workflow for the TradeMaster operator: choose an eligible
+    Binance Spot USDT pair, study its market data, train a predictive research
+    model, and select a reproducible technical strategy. The workflow never
+    activates an engine, arms LIVE execution, or sends an order. A selected
+    strategy still needs the existing evidence-gated deployment activation.
+servers:
+  - url: /api/v1
+paths:
+  /asset-intelligence/universe:
+    get:
+      operationId: listEligibleSpotAssets
+      summary: List liquid, tradeable Binance Spot USDT assets.
+      description: |
+        Returns pairs reported as TRADING and SPOT-capable by Binance. Stable
+        quote-like base assets and pairs below the server liquidity floor are
+        excluded. Catalog data is public market data and is cached server-side;
+        exchange credentials are never used or returned.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 30
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 250
+            default: 100
+      responses:
+        '200':
+          description: Eligible assets ordered by 24-hour quote volume.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetUniverseResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          description: Public Binance market data is temporarily unavailable.
+  /asset-intelligence/studies:
+    post:
+      operationId: createAssetIntelligenceStudy
+      summary: Study one asset and produce a predictive-model and strategy recommendation.
+      description: |
+        The server loads public OHLCV history for the requested eligible asset,
+        derives market-regime and liquidity evidence, trains and validates a
+        research-only predictive model, and compares a fixed bounded set of
+        Spot long-only technical strategy candidates. The winning candidate is
+        persisted as a reproducible backtest and submitted to the existing
+        walk-forward deployment gate for the active runtime mode. The model
+        must clear a balanced-accuracy floor and must not signal SELL before a
+        Spot long-only candidate is considered. A weak model or a rejected
+        strategy is returned transparently; neither can trade.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetStudyCreateRequest'
+      responses:
+        '201':
+          description: Study complete, with explicit evidence and next state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetStudy'
+        '400':
+          description: The selected asset cannot supply adequate usable history.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: The asset is not eligible or the strategy validation rejected it.
+        '503':
+          description: Public Binance market data is temporarily unavailable.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    Unauthorized:
+      description: Authentication is required.
+  schemas:
+    AssetStudyCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [symbol]
+      properties:
+        symbol:
+          type: string
+          pattern: '^[A-Z0-9]{5,20}$'
+          description: Binance Spot pair chosen from the eligible universe.
+    AssetUniverseItem:
+      type: object
+      additionalProperties: false
+      required: [symbol, base_asset, quote_asset, quote_volume_24h, price_change_pct_24h]
+      properties:
+        symbol:
+          type: string
+        base_asset:
+          type: string
+        quote_asset:
+          type: string
+          const: USDT
+        quote_volume_24h:
+          type: number
+        price_change_pct_24h:
+          type: number
+    AssetUniverseResponse:
+      type: object
+      additionalProperties: false
+      required: [assets, generated_at, minimum_quote_volume_24h]
+      properties:
+        assets:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssetUniverseItem'
+        generated_at:
+          type: string
+          format: date-time
+        minimum_quote_volume_24h:
+          type: number
+    AssetStudy:
+      type: object
+      additionalProperties: false
+      required:
+        - symbol
+        - execution_mode
+        - market_study
+        - predictive_model
+        - recommendation
+      properties:
+        symbol:
+          type: string
+        execution_mode:
+          type: string
+          enum: [PAPER, TESTNET, LIVE]
+        market_study:
+          type: object
+          required: [trend, volatility_pct, liquidity_quote_volume_24h, candles]
+          properties:
+            trend:
+              type: string
+              enum: [UPTREND, DOWNTREND, RANGE]
+            volatility_pct:
+              type: number
+            liquidity_quote_volume_24h:
+              type: number
+            candles:
+              type: integer
+        predictive_model:
+          type: object
+          required: [model_type, trained, validation_accuracy, samples, latest_signal]
+          properties:
+            model_type:
+              type: string
+              const: xgboost
+            trained:
+              type: boolean
+            validation_accuracy:
+              type: [number, 'null']
+              description: Held-out balanced accuracy across BUY, HOLD, and SELL classes.
+            samples:
+              type: integer
+            latest_signal:
+              type: string
+              enum: [BUY, HOLD, SELL, UNAVAILABLE]
+        recommendation:
+          type: object
+          required: [strategy_name, backtest_id, deployment_status, reasons]
+          properties:
+            strategy_name:
+              type: string
+            backtest_id:
+              type: [integer, 'null']
+            deployment_id:
+              type: [integer, 'null']
+            deployment_status:
+              type: string
+              enum: [APPROVED, REJECTED, UNAVAILABLE]
+            reasons:
+              type: array
+              items:
+                type: string

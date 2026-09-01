@@ -1,0 +1,100 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+
+const mockApiFetch = vi.hoisted(() => vi.fn());
+
+vi.mock("@/lib/utils", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/utils")>();
+  return {
+    ...actual,
+    apiFetch: mockApiFetch,
+  };
+});
+
+import OperarPage from "@/app/operar/page";
+
+const approvedStudy = {
+  symbol: "BTCUSDT",
+  execution_mode: "TESTNET",
+  market_study: {
+    trend: "UPTREND" as const,
+    volatility_pct: 2.4,
+    liquidity_quote_volume_24h: 120_000_000,
+    candles: 4_000,
+  },
+  predictive_model: {
+    trained: true,
+    validation_accuracy: 0.61,
+    samples: 3_900,
+    latest_signal: "BUY" as const,
+  },
+  recommendation: {
+    strategy_name: "SMA + RSI",
+    backtest_id: 41,
+    deployment_id: 12,
+    deployment_status: "APPROVED" as const,
+    reasons: ["Walk-forward aprovado"],
+  },
+};
+
+describe("OperarPage", () => {
+  beforeEach(() => {
+    mockApiFetch.mockReset();
+    mockApiFetch.mockImplementation((path: string) => {
+      if (path.startsWith("/api/v1/asset-intelligence/universe")) {
+        return Promise.resolve({
+          assets: [
+            { symbol: "BTCUSDT", base_asset: "BTC", quote_asset: "USDT", quote_volume_24h: 120_000_000, price_change_pct_24h: 1.2 },
+            { symbol: "SOLUSDT", base_asset: "SOL", quote_asset: "USDT", quote_volume_24h: 80_000_000, price_change_pct_24h: -0.4 },
+          ],
+        });
+      }
+      if (path === "/api/v1/trading/live/status") {
+        return Promise.resolve({ execution_mode: "TESTNET" });
+      }
+      if (path === "/api/v1/asset-intelligence/studies") {
+        return Promise.resolve(approvedStudy);
+      }
+      return Promise.resolve({});
+    });
+  });
+
+  it("presents one guided flow with a liquid asset catalog", async () => {
+    render(<OperarPage />);
+
+    expect(await screen.findByText("Escolha um ativo. A IA faz o resto.")).toBeInTheDocument();
+    expect(screen.getByText("Testnet protegido")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /BTC\/USDT/ })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /SOL\/USDT/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Estudar BTC/USDT" })).toBeInTheDocument();
+  });
+
+  it("studies the selected asset before allowing Testnet activation", async () => {
+    render(<OperarPage />);
+
+    const studyButton = await screen.findByRole("button", { name: "Estudar BTC/USDT" });
+    fireEvent.click(studyButton);
+
+    expect(await screen.findByText("Modelo preditivo")).toBeInTheDocument();
+    expect(screen.getByText("SMA + RSI")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ativar e acompanhar" })).toBeInTheDocument();
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      "/api/v1/asset-intelligence/studies",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ symbol: "BTCUSDT" }) }),
+    );
+  });
+
+  it("activates only the validated recommendation and then starts the engine", async () => {
+    render(<OperarPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Estudar BTC/USDT" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Ativar e acompanhar" }));
+
+    await waitFor(() => {
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        "/api/v1/strategy-deployments/12/activate",
+        expect.objectContaining({ method: "POST" }),
+      );
+      expect(mockApiFetch).toHaveBeenCalledWith("/api/v1/trading/engine/start", { method: "POST" });
+    });
+  });
+});

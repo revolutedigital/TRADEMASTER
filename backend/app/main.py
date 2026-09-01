@@ -252,6 +252,20 @@ async def _start_background_services() -> None:
     from app.services.exchange.binance_ws import binance_ws_manager
     try:
         await binance_ws_manager.start(binance_client._client)
+        # Reattach streams for strategies activated before a deployment or
+        # restart. The catalog is broad, but this restores only the small
+        # runtime set persisted in the active ledger.
+        from app.models.base import async_session_factory
+        from app.services.strategy_deployments import get_runtime_symbols
+
+        async with async_session_factory() as db:
+            runtime_symbols = await get_runtime_symbols(
+                db,
+                execution_mode=settings.execution_mode,
+                base_symbols=settings.symbols_list,
+            )
+        for symbol in runtime_symbols:
+            await binance_ws_manager.ensure_symbol(symbol)
         logger.info("binance_ws_started")
     except Exception as e:
         logger.error("binance_ws_start_failed", error=str(e))

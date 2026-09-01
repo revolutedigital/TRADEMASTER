@@ -19,7 +19,7 @@ router = APIRouter()
 @router.get("/universe", response_model=AssetUniverseResponse)
 async def list_eligible_assets(
     search: str = Query(default="", max_length=30),
-    limit: int = Query(default=100, ge=1, le=250),
+    limit: int = Query(default=100, ge=1, le=500),
     _user: dict = Depends(require_auth),
 ) -> dict[str, object]:
     """Return the liquid Spot USDT universe for the asset picker."""

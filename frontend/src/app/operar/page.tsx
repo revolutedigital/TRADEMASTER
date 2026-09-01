@@ -77,7 +77,7 @@ export default function OperarPage() {
 
     const loadUniverse = async () => {
       try {
-        const universe = await apiFetch<AssetUniverse>("/api/v1/asset-intelligence/universe?limit=250");
+        const universe = await apiFetch<AssetUniverse>("/api/v1/asset-intelligence/universe?limit=500");
         if (!active) return;
         setAssets(universe.assets);
         const preferred = universe.assets.find((asset) => asset.symbol === requestedSymbol)?.symbol;

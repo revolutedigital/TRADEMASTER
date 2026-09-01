@@ -69,7 +69,7 @@ class SpotAssetCatalog:
                 for asset in assets
                 if normalized_search in asset.symbol or normalized_search in asset.base_asset
             )
-        return list(assets[: min(max(limit, 1), 250)]), generated_at
+        return list(assets[: min(max(limit, 1), 500)]), generated_at
 
     async def require(self, symbol: str) -> SpotAsset:
         normalized_symbol = symbol.upper().strip()

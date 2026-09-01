@@ -9,4 +9,7 @@ def test_railway_runs_database_migrations_before_starting_the_api() -> None:
     config = tomllib.loads(config_path.read_text())
 
     assert config["deploy"]["preDeployCommand"] == "alembic upgrade head"
-    assert "uvicorn app.main:app" in config["deploy"]["startCommand"]
+    start_command = config["deploy"]["startCommand"]
+    assert "sh -c" in start_command
+    assert "uvicorn app.main:app" in start_command
+    assert "${PORT:-8000}" in start_command

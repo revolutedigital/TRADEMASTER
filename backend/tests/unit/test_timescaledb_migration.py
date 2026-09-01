@@ -37,3 +37,11 @@ def test_timescaledb_migration_keeps_plain_postgres_compatible(monkeypatch) -> N
     migration.upgrade()
 
     assert executed_sql == []
+
+
+def test_model_fields_migration_does_not_recreate_initial_ohlcv_index() -> None:
+    migration_path = (
+        Path(__file__).parents[2] / "alembic" / "versions" / "003_add_model_and_backtest_fields.py"
+    )
+
+    assert 'op.create_index("ix_ohlcv_symbol_interval_time"' not in migration_path.read_text()

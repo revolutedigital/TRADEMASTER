@@ -59,14 +59,13 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
 
-    # Add optimized indexes
-    op.create_index("ix_ohlcv_symbol_interval_time", "ohlcv", ["symbol", "interval", "open_time"])
+    # ``ix_ohlcv_symbol_interval_time`` already belongs to the initial OHLCV
+    # schema. Recreating it here breaks a fresh PostgreSQL bootstrap.
     op.create_index("ix_notifications_unread", "notifications", ["is_read"], postgresql_where=sa.text("is_read = false"))
 
 
 def downgrade() -> None:
     op.drop_index("ix_notifications_unread")
-    op.drop_index("ix_ohlcv_symbol_interval_time")
     op.drop_table("notifications")
     op.drop_table("backtest_results")
     op.drop_column("model_metadata", "data_version")

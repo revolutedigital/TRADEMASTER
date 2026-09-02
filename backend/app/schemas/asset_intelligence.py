@@ -52,3 +52,29 @@ class AssetStudyResponse(BaseModel):
     market_study: AssetMarketStudy
     predictive_model: PredictiveModelStudy
     recommendation: StrategyRecommendation
+
+
+class MarketOpportunityCandidate(BaseModel):
+    rank: int = Field(ge=1)
+    symbol: str
+    screening_score: float
+    market_trend: Literal["UPTREND", "DOWNTREND", "RANGE"]
+    price_change_pct_24h: float
+    quote_volume_24h: float
+    status: Literal["SHORTLISTED", "STUDYING", "APPROVED", "REJECTED", "UNAVAILABLE", "FAILED"]
+    study: AssetStudyResponse | None = None
+    error_message: str | None = None
+
+
+class MarketOpportunityScanResponse(BaseModel):
+    id: int
+    status: Literal["QUEUED", "RUNNING", "COMPLETED", "FAILED", "INTERRUPTED"]
+    total_assets: int = Field(ge=0)
+    screened_assets: int = Field(ge=0)
+    shortlisted_assets: int = Field(ge=0)
+    studied_assets: int = Field(ge=0)
+    failed_assets: int = Field(ge=0)
+    message: str | None = None
+    candidates: list[MarketOpportunityCandidate]
+    started_at: str | None = None
+    completed_at: str | None = None

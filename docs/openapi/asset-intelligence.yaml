@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: TradeMaster Asset Intelligence API
-  version: 1.0.0
+  version: 1.1.0
   description: |
     A single-asset workflow for the TradeMaster operator: choose an eligible
     Binance Spot USDT pair, study its market data, train a predictive research
@@ -85,6 +85,55 @@ paths:
           description: The asset is not eligible or the strategy validation rejected it.
         '503':
           description: Public Binance market data is temporarily unavailable.
+  /asset-intelligence/opportunity-scans:
+    post:
+      operationId: startMarketOpportunityScan
+      summary: Scan the whole eligible Spot universe for research candidates.
+      description: |
+        Starts (or returns the current) asynchronous market scan. Every asset
+        in the current eligible Spot USDT catalog is screened from public
+        market data; only the six highest-scoring candidates receive the
+        slower full predictive-model, backtest, and walk-forward study. The
+        screening rank is not a buy signal or a performance promise. This
+        endpoint never activates a deployment, starts the trading engine,
+        arms LIVE execution, or sends an order.
+      security:
+        - bearerAuth: []
+      responses:
+        '202':
+          description: A scan was started, or the existing active scan was returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketOpportunityScan'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          description: Public Binance market data is temporarily unavailable.
+  /asset-intelligence/opportunity-scans/{scan_id}:
+    get:
+      operationId: getMarketOpportunityScan
+      summary: Read market-scan progress and finalists.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: scan_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Current or completed market-scan evidence.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketOpportunityScan'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Scan does not exist.
 components:
   securitySchemes:
     bearerAuth:
@@ -196,3 +245,89 @@ components:
               type: array
               items:
                 type: string
+    MarketOpportunityCandidate:
+      type: object
+      additionalProperties: false
+      required:
+        - rank
+        - symbol
+        - screening_score
+        - market_trend
+        - price_change_pct_24h
+        - quote_volume_24h
+        - status
+        - study
+        - error_message
+      properties:
+        rank:
+          type: integer
+          minimum: 1
+        symbol:
+          type: string
+        screening_score:
+          type: number
+          description: Transparent technical/liquidity screening score, not an expected return.
+        market_trend:
+          type: string
+          enum: [UPTREND, DOWNTREND, RANGE]
+        price_change_pct_24h:
+          type: number
+        quote_volume_24h:
+          type: number
+        status:
+          type: string
+          enum: [SHORTLISTED, STUDYING, APPROVED, REJECTED, UNAVAILABLE, FAILED]
+        study:
+          oneOf:
+            - $ref: '#/components/schemas/AssetStudy'
+            - type: 'null'
+        error_message:
+          type: [string, 'null']
+    MarketOpportunityScan:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - status
+        - total_assets
+        - screened_assets
+        - shortlisted_assets
+        - studied_assets
+        - failed_assets
+        - message
+        - candidates
+        - started_at
+        - completed_at
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+          enum: [QUEUED, RUNNING, COMPLETED, FAILED, INTERRUPTED]
+        total_assets:
+          type: integer
+          minimum: 0
+        screened_assets:
+          type: integer
+          minimum: 0
+        shortlisted_assets:
+          type: integer
+          minimum: 0
+        studied_assets:
+          type: integer
+          minimum: 0
+        failed_assets:
+          type: integer
+          minimum: 0
+        message:
+          type: [string, 'null']
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/MarketOpportunityCandidate'
+        started_at:
+          type: [string, 'null']
+          format: date-time
+        completed_at:
+          type: [string, 'null']
+          format: date-time

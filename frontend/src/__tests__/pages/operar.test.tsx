@@ -37,6 +37,30 @@ const approvedStudy = {
   },
 };
 
+const completedMarketScan = {
+  id: 71,
+  status: "COMPLETED" as const,
+  total_assets: 240,
+  screened_assets: 240,
+  shortlisted_assets: 6,
+  studied_assets: 6,
+  failed_assets: 4,
+  message: "Varredura concluída: 6 ativos passaram pelo estudo completo. Nenhuma estratégia foi ativada.",
+  candidates: [
+    {
+      rank: 1,
+      symbol: "SOLUSDT",
+      screening_score: 82.5,
+      market_trend: "UPTREND" as const,
+      price_change_pct_24h: 2.4,
+      quote_volume_24h: 80_000_000,
+      status: "APPROVED" as const,
+      study: { ...approvedStudy, symbol: "SOLUSDT" },
+      error_message: null,
+    },
+  ],
+};
+
 describe("OperarPage", () => {
   beforeEach(() => {
     mockApiFetch.mockReset();
@@ -54,6 +78,9 @@ describe("OperarPage", () => {
       }
       if (path === "/api/v1/asset-intelligence/studies") {
         return Promise.resolve(approvedStudy);
+      }
+      if (path === "/api/v1/asset-intelligence/opportunity-scans") {
+        return Promise.resolve(completedMarketScan);
       }
       return Promise.resolve({});
     });
@@ -96,5 +123,22 @@ describe("OperarPage", () => {
       );
       expect(mockApiFetch).toHaveBeenCalledWith("/api/v1/trading/engine/start", { method: "POST" });
     });
+  });
+
+  it("scans the market and lets the operator open a finalist study without activation", async () => {
+    render(<OperarPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Buscar oportunidades no mercado" }));
+
+    expect(await screen.findByText("Oportunidades encontradas")).toBeInTheDocument();
+    expect(screen.getByText(/#1 SOL\/USDT/)).toBeInTheDocument();
+    expect(screen.getByText("Estratégia validada")).toBeInTheDocument();
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      "/api/v1/asset-intelligence/opportunity-scans",
+      expect.objectContaining({ method: "POST" }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Abrir estudo" }));
+    expect(await screen.findByText("SMA + RSI")).toBeInTheDocument();
   });
 });

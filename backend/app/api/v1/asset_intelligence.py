@@ -1,6 +1,6 @@
 """Simplified single-asset intelligence endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_auth
@@ -8,8 +8,13 @@ from app.schemas.asset_intelligence import (
     AssetStudyCreateRequest,
     AssetStudyResponse,
     AssetUniverseResponse,
+    MarketOpportunityScanResponse,
 )
 from app.services.asset_intelligence import AssetIntelligenceError, study_asset
+from app.services.market_opportunity_scans import (
+    market_opportunity_scan_service,
+    serialize_scan,
+)
 from app.services.market.public_binance_data import PublicMarketDataUnavailable
 from app.services.market.spot_asset_catalog import MIN_QUOTE_VOLUME_24H, spot_asset_catalog
 
@@ -73,3 +78,55 @@ async def create_asset_study(
         user_agent=request.headers.get("user-agent"),
     )
     return study
+
+
+@router.post("/opportunity-scans", response_model=MarketOpportunityScanResponse, status_code=202)
+async def start_market_opportunity_scan(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_auth),
+) -> dict[str, object]:
+    """Start one non-executing scan across the full eligible Spot universe."""
+    started = False
+    try:
+        scan, started = await market_opportunity_scan_service.start_or_reuse(
+            db,
+            requested_by=str(user.get("sub", "admin")),
+        )
+        if started:
+            await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    persisted_scan = await market_opportunity_scan_service.get(db, scan.id)
+    if persisted_scan is None:
+        raise HTTPException(status_code=404, detail="Market opportunity scan was not found")
+
+    if started:
+        from app.core.audit import audit_logger
+
+        await audit_logger.log_event(
+            action="MARKET_OPPORTUNITY_SCAN_STARTED",
+            user_id=str(user.get("sub", "admin")),
+            resource=f"market-opportunity-scan:{persisted_scan.id}",
+            details={"scope": "eligible_spot_usdt_catalog", "execution_side_effects": "none"},
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+        market_opportunity_scan_service.launch(persisted_scan.id)
+
+    return serialize_scan(persisted_scan)
+
+
+@router.get("/opportunity-scans/{scan_id}", response_model=MarketOpportunityScanResponse)
+async def get_market_opportunity_scan(
+    scan_id: int = Path(ge=1),
+    db: AsyncSession = Depends(get_db),
+    _user: dict = Depends(require_auth),
+) -> dict[str, object]:
+    """Return durable progress and research evidence for one market scan."""
+    scan = await market_opportunity_scan_service.get(db, scan_id)
+    if scan is None:
+        raise HTTPException(status_code=404, detail="Market opportunity scan was not found")
+    return serialize_scan(scan)

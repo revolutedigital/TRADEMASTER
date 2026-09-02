@@ -64,11 +64,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         import app.models.event  # noqa: F401
         import app.models.execution_release  # noqa: F401
         import app.models.strategy_deployment  # noqa: F401
+        import app.models.market_opportunity_scan  # noqa: F401
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         logger.info("database_tables_ready")
     except Exception as e:
         logger.warning("database_setup_failed", error=str(e))
+
+    # A market scan is an in-process async job. If Railway restarts midway,
+    # leave durable evidence but never pretend its work is still running.
+    try:
+        from app.services.market_opportunity_scans import market_opportunity_scan_service
+
+        interrupted_scans = await market_opportunity_scan_service.recover_interrupted_scans()
+        if interrupted_scans:
+            logger.warning("market_opportunity_scans_interrupted_on_startup", count=interrupted_scans)
+    except Exception as e:
+        logger.warning("market_opportunity_scan_recovery_failed", error=str(e))
 
     # --- Phase 0b: Rehydrate event store from PostgreSQL ---
     try:
@@ -406,6 +418,9 @@ async def _start_background_services_offline() -> None:
 
 async def _stop_background_services() -> None:
     """Gracefully stop all background services."""
+    from app.services.market_opportunity_scans import market_opportunity_scan_service
+    await market_opportunity_scan_service.stop_all()
+
     from app.services.scheduler import scheduler
     await scheduler.stop_all()
 

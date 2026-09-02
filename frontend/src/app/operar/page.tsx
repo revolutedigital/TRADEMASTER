@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Brain, CheckCircle2, ChevronRight, Loader2, Play, Search, ShieldCheck } from "lucide-react";
+import { Brain, ChevronRight, Loader2, Play, Search, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,6 +45,32 @@ interface AssetStudy {
   };
 }
 
+type OpportunityScanStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "INTERRUPTED";
+
+interface OpportunityCandidate {
+  rank: number;
+  symbol: string;
+  screening_score: number;
+  market_trend: AssetStudy["market_study"]["trend"];
+  price_change_pct_24h: number;
+  quote_volume_24h: number;
+  status: "SHORTLISTED" | "STUDYING" | "APPROVED" | "REJECTED" | "UNAVAILABLE" | "FAILED";
+  study: AssetStudy | null;
+  error_message: string | null;
+}
+
+interface OpportunityScan {
+  id: number;
+  status: OpportunityScanStatus;
+  total_assets: number;
+  screened_assets: number;
+  shortlisted_assets: number;
+  studied_assets: number;
+  failed_assets: number;
+  message: string | null;
+  candidates: OpportunityCandidate[];
+}
+
 function assetLabel(symbol: string) {
   return symbol.endsWith("USDT") ? `${symbol.slice(0, -4)}/USDT` : symbol;
 }
@@ -60,14 +86,33 @@ function executionModeLabel(mode: ExecutionMode | null) {
   return "Confirmando ambiente";
 }
 
+function opportunityScanStatusLabel(status: OpportunityScanStatus) {
+  if (status === "QUEUED") return "Preparando busca";
+  if (status === "RUNNING") return "Buscando oportunidades";
+  if (status === "COMPLETED") return "Busca concluída";
+  if (status === "FAILED") return "Busca indisponível";
+  return "Busca interrompida";
+}
+
+function candidateStatusLabel(status: OpportunityCandidate["status"]) {
+  if (status === "SHORTLISTED") return "Finalista";
+  if (status === "STUDYING") return "Estudando";
+  if (status === "APPROVED") return "Estratégia validada";
+  if (status === "REJECTED") return "Estratégia não aprovada";
+  if (status === "UNAVAILABLE") return "Sem evidência suficiente";
+  return "Estudo indisponível";
+}
+
 export default function OperarPage() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [selectedSymbol, setSelectedSymbol] = useState("");
   const [executionMode, setExecutionMode] = useState<ExecutionMode | null>(null);
   const [search, setSearch] = useState("");
   const [study, setStudy] = useState<AssetStudy | null>(null);
+  const [opportunityScan, setOpportunityScan] = useState<OpportunityScan | null>(null);
   const [loadingAssets, setLoadingAssets] = useState(true);
   const [studying, setStudying] = useState(false);
+  const [scanningMarket, setScanningMarket] = useState(false);
   const [activating, setActivating] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -103,6 +148,31 @@ export default function OperarPage() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!opportunityScan || !["QUEUED", "RUNNING"].includes(opportunityScan.status)) return;
+
+    let active = true;
+    const poll = async () => {
+      try {
+        const nextScan = await apiFetch<OpportunityScan>(
+          `/api/v1/asset-intelligence/opportunity-scans/${opportunityScan.id}`,
+        );
+        if (active) setOpportunityScan(nextScan);
+      } catch (err) {
+        if (active) {
+          setMessage(err instanceof Error ? err.message : "Não foi possível acompanhar a busca de oportunidades.");
+        }
+      }
+    };
+
+    const interval = window.setInterval(() => void poll(), 2_500);
+    void poll();
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [opportunityScan?.id, opportunityScan?.status]);
 
   const filteredAssets = useMemo(() => {
     const normalized = search.trim().toUpperCase();
@@ -142,6 +212,37 @@ export default function OperarPage() {
     }
   };
 
+  const searchMarketOpportunities = async () => {
+    setScanningMarket(true);
+    setMessage(null);
+    try {
+      const scan = await apiFetch<OpportunityScan>("/api/v1/asset-intelligence/opportunity-scans", {
+        method: "POST",
+      });
+      setOpportunityScan(scan);
+      setMessage(
+        scan.status === "COMPLETED"
+          ? "A última busca já está concluída. Escolha um dos ativos estudados abaixo."
+          : "A busca está varrendo o mercado. Você pode continuar navegando enquanto ela trabalha.",
+      );
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Não foi possível iniciar a busca de oportunidades.");
+    } finally {
+      setScanningMarket(false);
+    }
+  };
+
+  const selectOpportunityCandidate = (candidate: OpportunityCandidate) => {
+    setSelectedSymbol(candidate.symbol);
+    setSearch("");
+    setStudy(candidate.study);
+    setMessage(
+      candidate.study
+        ? `${assetLabel(candidate.symbol)} já foi estudado na busca de mercado.`
+        : `${assetLabel(candidate.symbol)} selecionado para estudo detalhado.`,
+    );
+  };
+
   const activateRecommendation = async () => {
     if (!study?.recommendation.deployment_id) return;
     setActivating(true);
@@ -174,6 +275,22 @@ export default function OperarPage() {
           {executionModeLabel(executionMode)}
         </Badge>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Buscar oportunidades no mercado</CardTitle>
+          <Badge variant="default">Todos os ativos líquidos</Badge>
+        </CardHeader>
+        <div className="flex flex-col gap-3 px-0 pt-0 sm:flex-row sm:items-center sm:justify-between">
+          <p className="max-w-2xl text-sm text-[var(--color-text-muted)]">
+            Varremos todo o catálogo Spot / USDT e estudamos a fundo apenas os seis finalistas. A busca não ativa estratégia nem envia ordem.
+          </p>
+          <Button onClick={searchMarketOpportunities} disabled={loadingAssets || scanningMarket || assets.length === 0} className="shrink-0">
+            {scanningMarket ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            {scanningMarket ? "Iniciando busca..." : "Buscar oportunidades no mercado"}
+          </Button>
+        </div>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -234,6 +351,58 @@ export default function OperarPage() {
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm text-[var(--color-text-muted)]">
           {message}
         </div>
+      )}
+
+      {opportunityScan && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Oportunidades encontradas</CardTitle>
+            <Badge variant={opportunityScan.status === "COMPLETED" ? "success" : opportunityScan.status === "FAILED" || opportunityScan.status === "INTERRUPTED" ? "danger" : "warning"}>
+              {opportunityScanStatusLabel(opportunityScan.status)}
+            </Badge>
+          </CardHeader>
+          <div className="space-y-4 px-0 pt-0">
+            <div>
+              <div className="mb-2 flex items-center justify-between text-xs text-[var(--color-text-muted)]">
+                <span>{opportunityScan.message ?? "Preparando a busca."}</span>
+                <span>{opportunityScan.screened_assets}/{opportunityScan.total_assets || "—"}</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-[var(--color-background)]">
+                <div
+                  className="h-full rounded-full bg-[var(--color-primary)] transition-all"
+                  style={{ width: `${opportunityScan.total_assets > 0 ? Math.min(100, (opportunityScan.screened_assets / opportunityScan.total_assets) * 100) : 0}%` }}
+                />
+              </div>
+            </div>
+
+            {opportunityScan.candidates.length > 0 && (
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                {opportunityScan.candidates.map((candidate) => (
+                  <div key={candidate.symbol} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-medium">#{candidate.rank} {assetLabel(candidate.symbol)}</p>
+                        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                          {trendLabel(candidate.market_trend)} · pontuação {candidate.screening_score.toFixed(1)}
+                        </p>
+                      </div>
+                      <Badge variant={candidate.status === "APPROVED" ? "success" : candidate.status === "FAILED" ? "danger" : "default"}>
+                        {candidateStatusLabel(candidate.status)}
+                      </Badge>
+                    </div>
+                    <p className="mt-3 text-xs text-[var(--color-text-muted)]">
+                      Vol. 24h ${formatNumber(candidate.quote_volume_24h, 0)} · {candidate.price_change_pct_24h >= 0 ? "+" : ""}{candidate.price_change_pct_24h.toFixed(2)}%
+                    </p>
+                    {candidate.error_message && <p className="mt-2 text-xs text-red-400">{candidate.error_message}</p>}
+                    <Button className="mt-3 w-full" onClick={() => selectOpportunityCandidate(candidate)}>
+                      {candidate.study ? "Abrir estudo" : "Selecionar ativo"}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Card>
       )}
 
       {study && (

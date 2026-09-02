@@ -8,6 +8,7 @@ from fastapi import HTTPException
 
 from app.api.v1.asset_intelligence import (
     create_asset_study,
+    get_asset_study,
     get_market_opportunity_scan,
     list_eligible_assets,
     start_market_opportunity_scan,
@@ -44,46 +45,58 @@ async def test_study_commits_evidence_but_does_not_activate_or_order() -> None:
     request = MagicMock()
     request.client.host = "127.0.0.1"
     request.headers.get.return_value = "pytest"
-    study = {
+    asset = SpotAsset(
+        symbol="SOLUSDT",
+        base_asset="SOL",
+        quote_asset="USDT",
+        quote_volume_24h=2_000_000.0,
+        price_change_pct_24h=3.4,
+    )
+    job = MagicMock(id=18)
+    expected_response = {
+        "id": 18,
         "symbol": "SOLUSDT",
-        "execution_mode": "TESTNET",
-        "market_study": {
-            "trend": "UPTREND",
-            "volatility_pct": 3.1,
-            "liquidity_quote_volume_24h": 2_000_000.0,
-            "candles": 4_000,
-        },
-        "predictive_model": {
-            "model_type": "xgboost",
-            "trained": True,
-            "validation_accuracy": 0.54,
-            "samples": 3_900,
-            "latest_signal": "BUY",
-        },
-        "recommendation": {
-            "strategy_name": "Tendência SMA + RSI",
-            "backtest_id": 11,
-            "deployment_id": 12,
-            "deployment_status": "APPROVED",
-            "reasons": [],
-        },
+        "status": "QUEUED",
+        "message": "Aguardando início do estudo completo.",
+        "study": None,
+        "error_message": None,
+        "started_at": None,
+        "completed_at": None,
     }
 
     with (
-        patch("app.api.v1.asset_intelligence.study_asset", new=AsyncMock(return_value=study)) as study_asset,
+        patch(
+            "app.api.v1.asset_intelligence.spot_asset_catalog.require",
+            new=AsyncMock(return_value=asset),
+        ),
+        patch(
+            "app.api.v1.asset_intelligence.market_opportunity_scan_service.get_active",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.api.v1.asset_intelligence.asset_study_job_service.start_or_reuse",
+            new=AsyncMock(return_value=(job, True)),
+        ) as start_study,
+        patch(
+            "app.api.v1.asset_intelligence.asset_study_job_service.get",
+            new=AsyncMock(return_value=job),
+        ),
+        patch("app.api.v1.asset_intelligence.serialize_study_job", return_value=expected_response),
+        patch("app.api.v1.asset_intelligence.asset_study_job_service.launch") as launch_study,
         patch("app.core.audit.audit_logger.log_event", new=AsyncMock()) as audit_event,
     ):
-        response = await create_asset_study(
+        result = await create_asset_study(
             body=AssetStudyCreateRequest(symbol="SOLUSDT"),
             request=request,
             db=database,
             user={"sub": "operator"},
         )
 
-    assert response == study
-    study_asset.assert_awaited_once_with(database, symbol="SOLUSDT")
+    assert result == expected_response
+    start_study.assert_awaited_once_with(database, symbol="SOLUSDT", requested_by="operator")
     database.commit.assert_awaited_once()
     database.rollback.assert_not_awaited()
+    launch_study.assert_called_once_with(18)
     audit_event.assert_awaited_once()
 
 
@@ -93,7 +106,7 @@ async def test_invalid_asset_study_rolls_back_without_an_activation_path() -> No
 
     with (
         patch(
-            "app.api.v1.asset_intelligence.study_asset",
+            "app.api.v1.asset_intelligence.spot_asset_catalog.require",
             new=AsyncMock(side_effect=ValueError("pair is not eligible")),
         ),
         pytest.raises(HTTPException, match="pair is not eligible") as error,
@@ -108,6 +121,20 @@ async def test_invalid_asset_study_rolls_back_without_an_activation_path() -> No
     assert error.value.status_code == 409
     database.rollback.assert_awaited_once()
     database.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_study_job_read_returns_404_when_the_id_does_not_exist() -> None:
+    with (
+        patch(
+            "app.api.v1.asset_intelligence.asset_study_job_service.get",
+            new=AsyncMock(return_value=None),
+        ),
+        pytest.raises(HTTPException, match="was not found") as error,
+    ):
+        await get_asset_study(study_id=18, db=AsyncMock(), _user={"sub": "operator"})
+
+    assert error.value.status_code == 404
 
 
 @pytest.mark.asyncio

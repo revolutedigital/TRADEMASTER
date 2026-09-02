@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: TradeMaster Asset Intelligence API
-  version: 1.1.0
+  version: 1.2.0
   description: |
     A single-asset workflow for the TradeMaster operator: choose an eligible
     Binance Spot USDT pair, study its market data, train a predictive research
@@ -51,9 +51,14 @@ paths:
   /asset-intelligence/studies:
     post:
       operationId: createAssetIntelligenceStudy
-      summary: Study one asset and produce a predictive-model and strategy recommendation.
+      summary: Queue a full study for one asset without holding the browser request open.
       description: |
-        The server loads public OHLCV history for the requested eligible asset,
+        Queues (or returns) the current durable study job for the requested
+        eligible asset. The full research can take longer than an HTTP gateway
+        allows because it loads public OHLCV history, trains the model, runs
+        the backtest, and completes the walk-forward evidence. Poll the job
+        URL until it is COMPLETED, FAILED, or INTERRUPTED. The study itself
+        loads public OHLCV history,
         derives market-regime and liquidity evidence, trains and validates a
         research-only predictive model, and compares a fixed bounded set of
         Spot long-only technical strategy candidates. The winning candidate is
@@ -71,20 +76,40 @@ paths:
             schema:
               $ref: '#/components/schemas/AssetStudyCreateRequest'
       responses:
-        '201':
-          description: Study complete, with explicit evidence and next state.
+        '202':
+          description: Study queued, or the active durable study job was returned.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AssetStudy'
-        '400':
-          description: The selected asset cannot supply adequate usable history.
+                $ref: '#/components/schemas/AssetStudyJob'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '409':
-          description: The asset is not eligible or the strategy validation rejected it.
-        '503':
-          description: Public Binance market data is temporarily unavailable.
+          description: The selected asset is not eligible.
+  /asset-intelligence/studies/{study_id}:
+    get:
+      operationId: getAssetIntelligenceStudy
+      summary: Read full-study progress and result.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: study_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Current or completed durable study result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetStudyJob'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Study job does not exist.
   /asset-intelligence/opportunity-scans:
     post:
       operationId: startMarketOpportunityScan
@@ -245,6 +270,40 @@ components:
               type: array
               items:
                 type: string
+    AssetStudyJob:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - symbol
+        - status
+        - message
+        - study
+        - error_message
+        - started_at
+        - completed_at
+      properties:
+        id:
+          type: integer
+        symbol:
+          type: string
+        status:
+          type: string
+          enum: [QUEUED, RUNNING, COMPLETED, FAILED, INTERRUPTED]
+        message:
+          type: [string, 'null']
+        study:
+          oneOf:
+            - $ref: '#/components/schemas/AssetStudy'
+            - type: 'null'
+        error_message:
+          type: [string, 'null']
+        started_at:
+          type: [string, 'null']
+          format: date-time
+        completed_at:
+          type: [string, 'null']
+          format: date-time
     MarketOpportunityCandidate:
       type: object
       additionalProperties: false

@@ -100,6 +100,10 @@ class MarketOpportunityScanService:
         )
         return result.scalar_one_or_none()
 
+    async def get_active(self, db: AsyncSession) -> MarketOpportunityScan | None:
+        """Expose the active broad scan so other research cannot duplicate it."""
+        return await self._active_scan(db)
+
     async def recover_interrupted_scans(self) -> int:
         """Make restarts honest: a vanished asyncio task is never reported as running."""
         async with async_session_factory() as db:
@@ -145,7 +149,7 @@ class MarketOpportunityScanService:
 
                 finalists = await self._screen_assets(db, scan, assets)
                 persisted_finalists = await self._persist_finalists(db, scan, finalists)
-                await self._study_finalists(db, scan, persisted_finalists)
+                scan = await self._study_finalists(db, scan, persisted_finalists)
 
                 scan.status = "COMPLETED"
                 scan.completed_at = datetime.now(UTC)
@@ -252,7 +256,7 @@ class MarketOpportunityScanService:
         db: AsyncSession,
         scan: MarketOpportunityScan,
         candidates: list[PersistedOpportunityCandidate],
-    ) -> None:
+    ) -> MarketOpportunityScan:
         candidate_ids = [candidate.id for candidate in candidates]
         for index, candidate_id in enumerate(candidate_ids, start=1):
             candidate = await db.get(PersistedOpportunityCandidate, candidate_id)
@@ -295,6 +299,8 @@ class MarketOpportunityScanService:
                     error="O estudo completo não pôde ser concluído para este ativo.",
                 )
                 scan = await self._require_scan(db, scan.id)
+
+        return await self._require_scan(db, scan.id)
 
     async def _mark_candidate_failed(
         self,

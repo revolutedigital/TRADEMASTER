@@ -63,6 +63,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         import app.models.user  # noqa: F401
         import app.models.event  # noqa: F401
         import app.models.execution_release  # noqa: F401
+        import app.models.asset_study_job  # noqa: F401
         import app.models.strategy_deployment  # noqa: F401
         import app.models.market_opportunity_scan  # noqa: F401
         async with engine.begin() as conn:
@@ -74,9 +75,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # A market scan is an in-process async job. If Railway restarts midway,
     # leave durable evidence but never pretend its work is still running.
     try:
+        from app.services.asset_study_jobs import asset_study_job_service
         from app.services.market_opportunity_scans import market_opportunity_scan_service
 
+        interrupted_studies = await asset_study_job_service.recover_interrupted_jobs()
         interrupted_scans = await market_opportunity_scan_service.recover_interrupted_scans()
+        if interrupted_studies:
+            logger.warning("asset_study_jobs_interrupted_on_startup", count=interrupted_studies)
         if interrupted_scans:
             logger.warning("market_opportunity_scans_interrupted_on_startup", count=interrupted_scans)
     except Exception as e:
@@ -418,6 +423,9 @@ async def _start_background_services_offline() -> None:
 
 async def _stop_background_services() -> None:
     """Gracefully stop all background services."""
+    from app.services.asset_study_jobs import asset_study_job_service
+    await asset_study_job_service.stop_all()
+
     from app.services.market_opportunity_scans import market_opportunity_scan_service
     await market_opportunity_scan_service.stop_all()
 

@@ -54,6 +54,17 @@ class AssetStudyResponse(BaseModel):
     recommendation: StrategyRecommendation
 
 
+class AssetStudyJobResponse(BaseModel):
+    id: int
+    symbol: str
+    status: Literal["QUEUED", "RUNNING", "COMPLETED", "FAILED", "INTERRUPTED"]
+    message: str | None = None
+    study: AssetStudyResponse | None = None
+    error_message: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
+
+
 class MarketOpportunityCandidate(BaseModel):
     rank: int = Field(ge=1)
     symbol: str

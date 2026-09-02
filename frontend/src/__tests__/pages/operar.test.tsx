@@ -37,6 +37,15 @@ const approvedStudy = {
   },
 };
 
+const completedStudyJob = {
+  id: 11,
+  symbol: "BTCUSDT",
+  status: "COMPLETED" as const,
+  message: "Estudo concluído. Nenhuma estratégia foi ativada.",
+  study: approvedStudy,
+  error_message: null,
+};
+
 const completedMarketScan = {
   id: 71,
   status: "COMPLETED" as const,
@@ -77,7 +86,7 @@ describe("OperarPage", () => {
         return Promise.resolve({ execution_mode: "TESTNET" });
       }
       if (path === "/api/v1/asset-intelligence/studies") {
-        return Promise.resolve(approvedStudy);
+        return Promise.resolve(completedStudyJob);
       }
       if (path === "/api/v1/asset-intelligence/opportunity-scans") {
         return Promise.resolve(completedMarketScan);

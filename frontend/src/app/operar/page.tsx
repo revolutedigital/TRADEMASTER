@@ -45,6 +45,17 @@ interface AssetStudy {
   };
 }
 
+type AssetStudyJobStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "INTERRUPTED";
+
+interface AssetStudyJob {
+  id: number;
+  symbol: string;
+  status: AssetStudyJobStatus;
+  message: string | null;
+  study: AssetStudy | null;
+  error_message: string | null;
+}
+
 type OpportunityScanStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "INTERRUPTED";
 
 interface OpportunityCandidate {
@@ -109,6 +120,7 @@ export default function OperarPage() {
   const [executionMode, setExecutionMode] = useState<ExecutionMode | null>(null);
   const [search, setSearch] = useState("");
   const [study, setStudy] = useState<AssetStudy | null>(null);
+  const [studyJob, setStudyJob] = useState<AssetStudyJob | null>(null);
   const [opportunityScan, setOpportunityScan] = useState<OpportunityScan | null>(null);
   const [loadingAssets, setLoadingAssets] = useState(true);
   const [studying, setStudying] = useState(false);
@@ -174,6 +186,43 @@ export default function OperarPage() {
     };
   }, [opportunityScan?.id, opportunityScan?.status]);
 
+  useEffect(() => {
+    if (!studyJob || !["QUEUED", "RUNNING"].includes(studyJob.status)) return;
+
+    let active = true;
+    const poll = async () => {
+      try {
+        const nextJob = await apiFetch<AssetStudyJob>(`/api/v1/asset-intelligence/studies/${studyJob.id}`);
+        if (!active) return;
+        setStudyJob(nextJob);
+        if (nextJob.status === "COMPLETED" && nextJob.study) {
+          setStudy(nextJob.study);
+          setMessage(
+            nextJob.study.recommendation.deployment_status === "APPROVED"
+              ? "Estratégia validada. Ela ainda não opera até você ativar."
+              : "O ativo foi estudado, mas não atingiu os critérios de segurança para operar.",
+          );
+          setStudying(false);
+        } else if (nextJob.status === "FAILED" || nextJob.status === "INTERRUPTED") {
+          setMessage(nextJob.error_message ?? nextJob.message ?? "O estudo não pôde ser concluído agora.");
+          setStudying(false);
+        }
+      } catch (err) {
+        if (active) {
+          setMessage(err instanceof Error ? err.message : "Não foi possível acompanhar o estudo.");
+          setStudying(false);
+        }
+      }
+    };
+
+    const interval = window.setInterval(() => void poll(), 2_500);
+    void poll();
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [studyJob?.id, studyJob?.status]);
+
   const filteredAssets = useMemo(() => {
     const normalized = search.trim().toUpperCase();
     if (!normalized) return assets;
@@ -195,19 +244,25 @@ export default function OperarPage() {
     setMessage(null);
     setStudy(null);
     try {
-      const result = await apiFetch<AssetStudy>("/api/v1/asset-intelligence/studies", {
+      const job = await apiFetch<AssetStudyJob>("/api/v1/asset-intelligence/studies", {
         method: "POST",
         body: JSON.stringify({ symbol: selectedSymbol }),
       });
-      setStudy(result);
-      setMessage(
-        result.recommendation.deployment_status === "APPROVED"
-          ? "Estratégia validada. Ela ainda não opera até você ativar."
-          : "O ativo foi estudado, mas não atingiu os critérios de segurança para operar.",
-      );
+      setStudyJob(job);
+      if (job.status === "COMPLETED" && job.study) {
+        setStudy(job.study);
+        setStudying(false);
+        setMessage("O estudo já estava concluído. Nenhuma estratégia foi ativada.");
+      } else if (job.status === "FAILED" || job.status === "INTERRUPTED") {
+        setStudying(false);
+        setMessage(job.error_message ?? job.message ?? "O estudo não pôde ser concluído agora.");
+      } else if (job.symbol !== selectedSymbol) {
+        setMessage(`O estudo de ${assetLabel(job.symbol)} já está em andamento. Assim que terminar, você poderá iniciar outro.`);
+      } else {
+        setMessage("Estudo iniciado em segundo plano. Você pode continuar usando a plataforma enquanto a IA analisa o ativo.");
+      }
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Não foi possível concluir o estudo deste ativo.");
-    } finally {
       setStudying(false);
     }
   };
@@ -260,6 +315,8 @@ export default function OperarPage() {
       setActivating(false);
     }
   };
+
+  const marketScanIsStudying = opportunityScan?.status === "QUEUED" || opportunityScan?.status === "RUNNING";
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -340,9 +397,9 @@ export default function OperarPage() {
           <p className="max-w-2xl text-sm text-[var(--color-text-muted)]">
             A IA avalia tendência, volatilidade e liquidez; treina um modelo temporal para este ativo; compara estratégias adequadas ao regime atual e valida a vencedora fora da amostra.
           </p>
-          <Button onClick={studySelectedAsset} disabled={!selectedSymbol || studying} className="shrink-0">
-            {studying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
-            {studying ? "Estudando mercado..." : `Estudar ${assetLabel(selectedSymbol)}`}
+          <Button onClick={studySelectedAsset} disabled={!selectedSymbol || studying || marketScanIsStudying} className="shrink-0">
+            {studying || marketScanIsStudying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
+            {marketScanIsStudying ? "Busca ampla estudando..." : studying ? "Estudando em segundo plano..." : `Estudar ${assetLabel(selectedSymbol)}`}
           </Button>
         </div>
       </Card>

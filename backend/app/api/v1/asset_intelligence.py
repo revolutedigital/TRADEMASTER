@@ -6,11 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_db, require_auth
 from app.schemas.asset_intelligence import (
     AssetStudyCreateRequest,
-    AssetStudyResponse,
+    AssetStudyJobResponse,
     AssetUniverseResponse,
     MarketOpportunityScanResponse,
 )
-from app.services.asset_intelligence import AssetIntelligenceError, study_asset
+from app.services.asset_study_jobs import asset_study_job_service, serialize_study_job
 from app.services.market_opportunity_scans import (
     market_opportunity_scan_service,
     serialize_scan,
@@ -39,45 +39,77 @@ async def list_eligible_assets(
     }
 
 
-@router.post("/studies", response_model=AssetStudyResponse, status_code=201)
+@router.post("/studies", response_model=AssetStudyJobResponse, status_code=202)
 async def create_asset_study(
     body: AssetStudyCreateRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_auth),
 ) -> dict[str, object]:
-    """Study, train, compare, and validate a strategy for one selected asset."""
+    """Queue durable research so full training never exhausts the browser request."""
+    started = False
     try:
-        study = await study_asset(db, symbol=body.symbol)
-        await db.commit()
+        asset = await spot_asset_catalog.require(body.symbol)
+        active_scan = await market_opportunity_scan_service.get_active(db)
+        if active_scan is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "A busca de oportunidades já está estudando candidatos. "
+                    "Aguarde ela terminar antes de iniciar um estudo individual."
+                ),
+            )
+        job, started = await asset_study_job_service.start_or_reuse(
+            db,
+            symbol=asset.symbol,
+            requested_by=str(user.get("sub", "admin")),
+        )
+        if started:
+            await db.commit()
     except ValueError as exc:
         await db.rollback()
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except AssetIntelligenceError as exc:
-        await db.rollback()
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except PublicMarketDataUnavailable as exc:
         await db.rollback()
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except HTTPException:
+        await db.rollback()
+        raise
     except Exception:
         await db.rollback()
         raise
 
-    from app.core.audit import audit_logger
+    persisted_job = await asset_study_job_service.get(db, job.id)
+    if persisted_job is None:
+        raise HTTPException(status_code=404, detail="Asset study job was not found")
 
-    await audit_logger.log_event(
-        action="ASSET_INTELLIGENCE_STUDY_COMPLETED",
-        user_id=str(user.get("sub", "admin")),
-        resource=f"asset-intelligence:{study['symbol']}",
-        details={
-            "execution_mode": study["execution_mode"],
-            "deployment_id": study["recommendation"]["deployment_id"],  # type: ignore[index]
-            "deployment_status": study["recommendation"]["deployment_status"],  # type: ignore[index]
-        },
-        ip_address=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
-    )
-    return study
+    if started:
+        from app.core.audit import audit_logger
+
+        await audit_logger.log_event(
+            action="ASSET_INTELLIGENCE_STUDY_STARTED",
+            user_id=str(user.get("sub", "admin")),
+            resource=f"asset-study-job:{persisted_job.id}",
+            details={"symbol": persisted_job.symbol, "execution_side_effects": "none"},
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+        asset_study_job_service.launch(persisted_job.id)
+
+    return serialize_study_job(persisted_job)
+
+
+@router.get("/studies/{study_id}", response_model=AssetStudyJobResponse)
+async def get_asset_study(
+    study_id: int = Path(ge=1),
+    db: AsyncSession = Depends(get_db),
+    _user: dict = Depends(require_auth),
+) -> dict[str, object]:
+    """Return progress and final evidence for a durable full-asset study."""
+    job = await asset_study_job_service.get(db, study_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Asset study job was not found")
+    return serialize_study_job(job)
 
 
 @router.post("/opportunity-scans", response_model=MarketOpportunityScanResponse, status_code=202)

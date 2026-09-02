@@ -30,6 +30,23 @@ class AssetMarketStudy(BaseModel):
     candles: int
 
 
+class AssetPatternStudy(BaseModel):
+    """Bounded, explainable market-pattern assessment for one closed candle series."""
+
+    regime: Literal["UPTREND", "DOWNTREND", "RANGE", "COMPRESSION", "STRESS"]
+    pattern: Literal[
+        "TREND_CONTINUATION",
+        "COMPRESSION_BREAKOUT",
+        "MEAN_REVERSION",
+        "OBSERVATION_ONLY",
+    ]
+    confidence: float = Field(ge=0, le=1)
+    relative_volume: float = Field(ge=0)
+    taker_buy_imbalance: float | None = Field(default=None, ge=-1, le=1)
+    flow_data_available: bool
+    explanation: str = Field(min_length=1, max_length=500)
+
+
 class PredictiveModelStudy(BaseModel):
     model_type: Literal["xgboost"] = "xgboost"
     trained: bool
@@ -50,6 +67,7 @@ class AssetStudyResponse(BaseModel):
     symbol: str
     execution_mode: Literal["PAPER", "TESTNET", "LIVE"]
     market_study: AssetMarketStudy
+    pattern_study: AssetPatternStudy
     predictive_model: PredictiveModelStudy
     recommendation: StrategyRecommendation
 

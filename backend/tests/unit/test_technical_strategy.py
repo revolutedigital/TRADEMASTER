@@ -79,6 +79,35 @@ def test_strategy_configuration_rejects_invalid_breakout_window() -> None:
         )
 
 
+def test_volume_confirmation_requires_relative_volume_and_taker_flow_when_available() -> None:
+    candles = pd.DataFrame(
+        {
+            "close": [100.0] * 50,
+            "volume": [100.0] * 49 + [250.0],
+            "quote_volume": [10_000.0] * 49 + [25_000.0],
+            "taker_buy_quote": [5_000.0] * 49 + [17_500.0],
+        }
+    )
+    strategy = TechnicalStrategyConfig(
+        kind="technical_ensemble",
+        indicators=["sma", "volume_confirmation"],
+        indicator_params={
+            "sma": {"sma_short": 2, "sma_long": 5},
+            "volume_confirmation": {
+                "volume_lookback": 20,
+                "min_relative_volume": 1.5,
+                "min_taker_imbalance": 0.2,
+            },
+        },
+        min_confirmations=2,
+    )
+
+    signals, _definition = build_technical_strategy_signals(candles, strategy)
+
+    assert signals.iloc[-1] == 0.0  # No crossover: flow confirms but never trades alone.
+    assert signals.iloc[-2] == 0.0
+
+
 def test_spot_long_only_backtest_closes_on_sell_signal_without_opening_short() -> None:
     candles = pd.DataFrame(
         {
@@ -115,9 +144,7 @@ def test_backtest_response_exposes_complete_metrics_and_strategy_audit() -> None
     signals = pd.Series(0.0, index=candles.index)
     signals.iloc[60] = 1.0
     signals.iloc[61] = -1.0
-    result = BacktestEngine(initial_capital=1_000, allow_short=False).run(
-        candles, signals=signals
-    )
+    result = BacktestEngine(initial_capital=1_000, allow_short=False).run(candles, signals=signals)
 
     response = _backtest_response(
         result,

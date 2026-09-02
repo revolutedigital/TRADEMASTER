@@ -69,6 +69,8 @@ class PublicBinanceMarketData:
                     "close_time",
                     "quote_volume",
                     "trade_count",
+                    "taker_buy_base",
+                    "taker_buy_quote",
                 ]
             )
 
@@ -92,13 +94,26 @@ class PublicBinanceMarketData:
             )
             frame["open_time"] = pd.to_datetime(frame["open_time"], unit="ms", utc=True)
             frame["close_time"] = pd.to_datetime(frame["close_time"], unit="ms", utc=True)
-            for column in ("open", "high", "low", "close", "volume", "quote_volume"):
+            for column in (
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "quote_volume",
+                "taker_buy_base",
+                "taker_buy_quote",
+            ):
                 frame[column] = pd.to_numeric(frame[column], errors="coerce")
-            frame["trade_count"] = pd.to_numeric(frame["trade_count"], errors="coerce").fillna(0).astype(int)
+            frame["trade_count"] = (
+                pd.to_numeric(frame["trade_count"], errors="coerce").fillna(0).astype(int)
+            )
         except (TypeError, ValueError) as exc:
-            raise PublicMarketDataUnavailable("Binance returned malformed candlestick data") from exc
+            raise PublicMarketDataUnavailable(
+                "Binance returned malformed candlestick data"
+            ) from exc
 
-        return frame[
+        closed_frame = frame[
             [
                 "open_time",
                 "open",
@@ -109,8 +124,12 @@ class PublicBinanceMarketData:
                 "close_time",
                 "quote_volume",
                 "trade_count",
+                "taker_buy_base",
+                "taker_buy_quote",
             ]
         ].dropna()
+        now = pd.Timestamp(datetime.now(timezone.utc))
+        return closed_frame.loc[closed_frame["close_time"] <= now].reset_index(drop=True)
 
     async def _get_json(
         self,
@@ -125,7 +144,9 @@ class PublicBinanceMarketData:
                 return response.json()
         except (httpx.HTTPError, ValueError) as exc:
             logger.warning("public_binance_market_data_unavailable", path=path, error=str(exc))
-            raise PublicMarketDataUnavailable("Public Binance market data is temporarily unavailable") from exc
+            raise PublicMarketDataUnavailable(
+                "Public Binance market data is temporarily unavailable"
+            ) from exc
 
 
 public_binance_market_data = PublicBinanceMarketData()

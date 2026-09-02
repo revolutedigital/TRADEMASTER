@@ -163,6 +163,8 @@ class BinanceWebSocketManager:
                 "close_time": k["T"],
                 "quote_volume": float(k["q"]),
                 "trade_count": k["n"],
+                "taker_buy_base": float(k["V"]),
+                "taker_buy_quote": float(k["Q"]),
             },
         )
         await event_bus.publish(event)

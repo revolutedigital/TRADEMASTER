@@ -49,6 +49,16 @@ class ApprovedTrade:
     risk_checks_passed: list[str]
 
 
+@dataclass(frozen=True)
+class EffectiveRiskLimits:
+    """The limits actually enforced for the current execution destination."""
+
+    max_risk_per_trade: float
+    max_portfolio_exposure: float
+    max_single_asset_exposure: float
+    canary: bool
+
+
 class RiskManager:
     """Pre-trade validation chain. ALL checks must pass before execution.
 
@@ -80,17 +90,21 @@ class RiskManager:
         checks_passed = []
         self._validate_proposal(proposal)
         checks_passed.append("finite_market_inputs")
+        limits = self.effective_limits()
+        position_sizer = PositionSizer(
+            max_risk_per_trade=limits.max_risk_per_trade,
+            max_single_asset_exposure=limits.max_single_asset_exposure,
+            kelly_fraction=settings.trading_kelly_fraction,
+        )
+        if limits.canary:
+            checks_passed.append("testnet_canary_limits")
 
         # 1. Circuit breaker check
         cb_state = circuit_breaker.update(proposal.current_equity)
         if cb_state == CircuitBreakerState.HALTED:
-            raise DrawdownCircuitBreakerError(
-                f"Trading HALTED. Circuit breaker state: {cb_state}"
-            )
+            raise DrawdownCircuitBreakerError(f"Trading HALTED. Circuit breaker state: {cb_state}")
         if cb_state == CircuitBreakerState.PAUSED:
-            raise DrawdownCircuitBreakerError(
-                f"Trading PAUSED. Circuit breaker state: {cb_state}"
-            )
+            raise DrawdownCircuitBreakerError(f"Trading PAUSED. Circuit breaker state: {cb_state}")
         checks_passed.append("circuit_breaker")
 
         # 2. Position sizing — Kelly criterion when we have enough data
@@ -105,7 +119,7 @@ class RiskManager:
             and self._perf_stats.avg_loss > 0
             and self._perf_stats.win_rate > 0
         ):
-            position_size = self._position_sizer.fractional_kelly(
+            position_size = position_sizer.fractional_kelly(
                 equity=proposal.current_equity,
                 win_rate=self._perf_stats.win_rate,
                 avg_win=self._perf_stats.avg_win,
@@ -121,7 +135,7 @@ class RiskManager:
                 method=position_size.method,
             )
         else:
-            position_size = self._position_sizer.volatility_scaled(
+            position_size = position_sizer.volatility_scaled(
                 equity=proposal.current_equity,
                 price=proposal.entry_price,
                 atr=proposal.atr,
@@ -132,6 +146,7 @@ class RiskManager:
         position_size.quantity *= multiplier
         position_size.notional_value *= multiplier
         position_size.risk_amount *= multiplier
+        position_size.risk_pct *= multiplier
 
         if position_size.quantity <= 0:
             raise RiskLimitExceededError("Position size calculated as zero")
@@ -149,7 +164,7 @@ class RiskManager:
 
         # 3. Exposure check - single asset
         new_symbol_exposure = proposal.symbol_exposure + position_size.notional_value
-        max_symbol = proposal.current_equity * settings.trading_max_single_asset_exposure
+        max_symbol = proposal.current_equity * limits.max_single_asset_exposure
         if new_symbol_exposure > max_symbol:
             raise RiskLimitExceededError(
                 f"Single asset exposure {new_symbol_exposure:.2f} exceeds max {max_symbol:.2f}"
@@ -158,7 +173,7 @@ class RiskManager:
 
         # 4. Exposure check - total portfolio
         new_total_exposure = proposal.current_exposure + position_size.notional_value
-        max_total = proposal.current_equity * settings.trading_max_portfolio_exposure
+        max_total = proposal.current_equity * limits.max_portfolio_exposure
         if new_total_exposure > max_total:
             raise RiskLimitExceededError(
                 f"Total exposure {new_total_exposure:.2f} exceeds max {max_total:.2f}"
@@ -204,6 +219,32 @@ class RiskManager:
             stop_loss=stop_loss,
             position_size=position_size,
             risk_checks_passed=checks_passed,
+        )
+
+    @staticmethod
+    def effective_limits() -> EffectiveRiskLimits:
+        """Resolve Testnet canary caps without changing PAPER or LIVE policy."""
+        if settings.execution_mode.value == "TESTNET":
+            return EffectiveRiskLimits(
+                max_risk_per_trade=min(
+                    settings.trading_max_risk_per_trade,
+                    settings.testnet_canary_max_risk_per_trade,
+                ),
+                max_portfolio_exposure=min(
+                    settings.trading_max_portfolio_exposure,
+                    settings.testnet_canary_max_portfolio_exposure,
+                ),
+                max_single_asset_exposure=min(
+                    settings.trading_max_single_asset_exposure,
+                    settings.testnet_canary_max_single_asset_exposure,
+                ),
+                canary=True,
+            )
+        return EffectiveRiskLimits(
+            max_risk_per_trade=settings.trading_max_risk_per_trade,
+            max_portfolio_exposure=settings.trading_max_portfolio_exposure,
+            max_single_asset_exposure=settings.trading_max_single_asset_exposure,
+            canary=False,
         )
 
     @staticmethod
@@ -259,7 +300,6 @@ class RiskManager:
         ):
             raise RiskLimitExceededError("Short protection prices are not ordered around entry")
 
-
     async def refresh_performance_stats(self, db) -> None:
         """Refresh cached performance stats from DB (called periodically)."""
         import time
@@ -301,7 +341,9 @@ class RiskManager:
 
         return {
             "unrealized_pnl": round(unrealized_pnl, 2),
-            "unrealized_pnl_pct": round(unrealized_pnl / (entry * quantity), 4) if entry * quantity > 0 else 0,
+            "unrealized_pnl_pct": round(unrealized_pnl / (entry * quantity), 4)
+            if entry * quantity > 0
+            else 0,
             "notional_value": round(notional, 2),
             "risk_reward_ratio": round(risk_reward, 2),
             "distance_to_stop_pct": round(distance_to_stop, 4),

@@ -44,3 +44,23 @@ def test_one_hour_walk_forward_uses_one_hour_candle_cadence() -> None:
     )
 
     assert len(result.windows) == 1
+
+
+def test_walk_forward_embargo_excludes_candles_between_training_and_test() -> None:
+    frame = _candles(1_000)
+    signals = pd.Series(np.zeros(len(frame)))
+
+    result = run_walk_forward(
+        df=frame,
+        signals=signals,
+        train_days=10,
+        test_days=5,
+        step_days=5,
+        allow_short=False,
+        candles_per_day=candles_per_day("1h"),
+        embargo_candles=7,
+    )
+
+    assert result.windows[0].train_end == 240
+    assert result.windows[0].embargo_candles == 7
+    assert result.windows[0].test_start == 247

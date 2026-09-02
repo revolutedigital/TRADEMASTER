@@ -84,6 +84,14 @@ class Settings(BaseSettings):
     trading_max_total_drawdown: float = Field(default=0.15, ge=0.05, le=0.50)
     trading_kelly_fraction: float = Field(default=0.15, gt=0, le=0.50)
 
+    # Testnet starts as a deliberately small canary. These are hard upper
+    # bounds in code, not dashboard defaults: the first validated strategies
+    # can never fan out across the full catalog or inherit LIVE-size risk.
+    testnet_canary_max_active_strategies: int = Field(default=3, ge=1, le=3)
+    testnet_canary_max_risk_per_trade: float = Field(default=0.0025, gt=0, le=0.0025)
+    testnet_canary_max_portfolio_exposure: float = Field(default=0.20, gt=0, le=0.20)
+    testnet_canary_max_single_asset_exposure: float = Field(default=0.05, gt=0, le=0.05)
+
     # Webhook alerts (Slack/Discord/custom — optional)
     risk_alert_webhook_url: str = ""
     trade_alert_webhook_url: str = ""
@@ -92,13 +100,9 @@ class Settings(BaseSettings):
     def _validate_secrets(self) -> "Settings":
         if self.app_env == "production":
             if not self.jwt_secret_key or len(self.jwt_secret_key) < 32:
-                raise ValueError(
-                    "jwt_secret_key must be set (min 32 chars) in production"
-                )
+                raise ValueError("jwt_secret_key must be set (min 32 chars) in production")
             if not self.admin_password or len(self.admin_password) < 8:
-                raise ValueError(
-                    "admin_password must be set (min 8 chars) in production"
-                )
+                raise ValueError("admin_password must be set (min 8 chars) in production")
         else:
             if not self.jwt_secret_key:
                 self.jwt_secret_key = secrets.token_urlsafe(32)

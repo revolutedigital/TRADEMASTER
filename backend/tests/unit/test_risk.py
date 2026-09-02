@@ -190,6 +190,19 @@ class TestDrawdownCircuitBreaker:
 
 
 class TestRiskManager:
+    def test_testnet_canary_limits_override_general_risk_defaults(self, monkeypatch):
+        from app.services.risk import manager as manager_module
+
+        monkeypatch.setattr(manager_module.settings, "paper_mode", False)
+        monkeypatch.setattr(manager_module.settings, "binance_testnet", True)
+
+        limits = RiskManager.effective_limits()
+
+        assert limits.canary is True
+        assert limits.max_risk_per_trade == 0.0025
+        assert limits.max_portfolio_exposure == 0.20
+        assert limits.max_single_asset_exposure == 0.05
+
     def test_valid_trade_passes(self):
         rm = RiskManager()
         circuit_breaker_module = __import__(

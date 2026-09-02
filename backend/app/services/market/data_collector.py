@@ -44,9 +44,7 @@ class MarketDataCollector:
         )
 
         # Calculate start time
-        start_ms = int(
-            (datetime.now(timezone.utc).timestamp() - days_back * 86400) * 1000
-        )
+        start_ms = int((datetime.now(timezone.utc).timestamp() - days_back * 86400) * 1000)
         end_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
 
         total_inserted = 0
@@ -102,9 +100,7 @@ class MarketDataCollector:
 
         normalized_symbol = symbol.upper()
         end_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-        next_start_ms = int(
-            (datetime.now(timezone.utc).timestamp() - days_back * 86_400) * 1000
-        )
+        next_start_ms = int((datetime.now(timezone.utc).timestamp() - days_back * 86_400) * 1000)
         total_inserted = 0
 
         while next_start_ms < end_ms:
@@ -171,7 +167,9 @@ class MarketDataCollector:
             )
 
         open_time = _strip_tz(pd.Timestamp(data["open_time"], unit="ms", tz="UTC").to_pydatetime())
-        close_time = _strip_tz(pd.Timestamp(data["close_time"], unit="ms", tz="UTC").to_pydatetime())
+        close_time = _strip_tz(
+            pd.Timestamp(data["close_time"], unit="ms", tz="UTC").to_pydatetime()
+        )
 
         values = {
             "symbol": symbol,
@@ -185,6 +183,8 @@ class MarketDataCollector:
             "close_time": close_time,
             "quote_volume": data.get("quote_volume", 0),
             "trade_count": data.get("trade_count", 0),
+            "taker_buy_base": data.get("taker_buy_base", 0),
+            "taker_buy_quote": data.get("taker_buy_quote", 0),
         }
 
         stmt = (
@@ -206,11 +206,11 @@ class MarketDataCollector:
         symbol: str,
         interval: str,
     ) -> int:
-        """Bulk insert candles from a DataFrame, skipping duplicates.
+        """Bulk synchronize candles from a public DataFrame.
 
-        Uses PostgreSQL INSERT ... ON CONFLICT DO NOTHING against the
-        unique index on (symbol, interval, open_time) so we avoid the
-        N+1 SELECT-per-row pattern.
+        Uses PostgreSQL upsert against the unique candle key. This backfills
+        newly retained flow fields for previously stored public candles while
+        avoiding an N+1 query pattern.
         """
         if df.empty:
             return 0
@@ -228,16 +228,27 @@ class MarketDataCollector:
                 "close_time": _strip_tz(row["close_time"].to_pydatetime()),
                 "quote_volume": float(row["quote_volume"]),
                 "trade_count": int(row["trade_count"]),
+                "taker_buy_base": float(row.get("taker_buy_base", 0)),
+                "taker_buy_quote": float(row.get("taker_buy_quote", 0)),
             }
             for _, row in df.iterrows()
         ]
 
-        stmt = (
-            pg_insert(OHLCV)
-            .values(rows)
-            .on_conflict_do_nothing(
-                index_elements=["symbol", "interval", "open_time"],
-            )
+        insert_stmt = pg_insert(OHLCV).values(rows)
+        stmt = insert_stmt.on_conflict_do_update(
+            index_elements=["symbol", "interval", "open_time"],
+            set_={
+                "open": insert_stmt.excluded.open,
+                "high": insert_stmt.excluded.high,
+                "low": insert_stmt.excluded.low,
+                "close": insert_stmt.excluded.close,
+                "volume": insert_stmt.excluded.volume,
+                "close_time": insert_stmt.excluded.close_time,
+                "quote_volume": insert_stmt.excluded.quote_volume,
+                "trade_count": insert_stmt.excluded.trade_count,
+                "taker_buy_base": insert_stmt.excluded.taker_buy_base,
+                "taker_buy_quote": insert_stmt.excluded.taker_buy_quote,
+            },
         )
         result = await db.execute(stmt)
         return result.rowcount
@@ -272,6 +283,8 @@ class MarketDataCollector:
                 "close_time": c.close_time,
                 "quote_volume": float(c.quote_volume),
                 "trade_count": c.trade_count,
+                "taker_buy_base": float(getattr(c, "taker_buy_base", 0)),
+                "taker_buy_quote": float(getattr(c, "taker_buy_quote", 0)),
             }
             for c in reversed(candles)
         ]

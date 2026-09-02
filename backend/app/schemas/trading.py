@@ -132,7 +132,24 @@ TechnicalIndicator = Literal[
     "bollinger",
     "engulfing",
     "breakout",
+    "volume_confirmation",
 ]
+
+
+class PatternResearchContext(BaseModel):
+    """Auditable pattern context captured with an automatic strategy candidate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    library_version: Literal["pattern-library-v1"] = "pattern-library-v1"
+    regime: Literal["UPTREND", "DOWNTREND", "RANGE", "COMPRESSION", "STRESS"]
+    pattern: Literal["TREND_CONTINUATION", "COMPRESSION_BREAKOUT", "MEAN_REVERSION"]
+    selection_end_time: str
+    validation_start_time: str
+    selection_oos_windows: int = Field(ge=0)
+    selection_oos_trades: int = Field(ge=0)
+    selection_oos_return_pct: float
+    selection_oos_profit_factor: float
 
 
 class TechnicalStrategyConfig(BaseModel):
@@ -145,6 +162,7 @@ class TechnicalStrategyConfig(BaseModel):
     indicator_params: dict[str, dict[str, float]] = Field(default_factory=dict)
     min_confirmations: int = Field(default=1, ge=1, le=7)
     execution_profile: Literal["spot_long_only"] = "spot_long_only"
+    research_context: PatternResearchContext | None = None
 
     @model_validator(mode="after")
     def validate_parameters(self) -> "TechnicalStrategyConfig":
@@ -161,6 +179,11 @@ class TechnicalStrategyConfig(BaseModel):
             "bollinger": {"bb_period", "bb_std"},
             "engulfing": set(),
             "breakout": {"breakout_lookback"},
+            "volume_confirmation": {
+                "volume_lookback",
+                "min_relative_volume",
+                "min_taker_imbalance",
+            },
         }
         for indicator, parameters in self.indicator_params.items():
             if indicator not in self.indicators:
@@ -207,6 +230,13 @@ class TechnicalStrategyConfig(BaseModel):
         breakout = self.indicator_params.get("breakout", {})
         if not 5 <= breakout.get("breakout_lookback", 20) <= 200:
             raise ValueError("breakout_lookback must be between 5 and 200")
+        volume_confirmation = self.indicator_params.get("volume_confirmation", {})
+        if not 10 <= volume_confirmation.get("volume_lookback", 48) <= 240:
+            raise ValueError("volume_lookback must be between 10 and 240")
+        if not 0.5 <= volume_confirmation.get("min_relative_volume", 1.0) <= 5:
+            raise ValueError("min_relative_volume must be between 0.5 and 5")
+        if not -0.75 <= volume_confirmation.get("min_taker_imbalance", 0.0) <= 0.75:
+            raise ValueError("min_taker_imbalance must be between -0.75 and 0.75")
         return self
 
 

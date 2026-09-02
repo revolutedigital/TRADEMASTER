@@ -22,6 +22,15 @@ const approvedStudy = {
     liquidity_quote_volume_24h: 120_000_000,
     candles: 4_000,
   },
+  pattern_study: {
+    regime: "UPTREND" as const,
+    pattern: "TREND_CONTINUATION" as const,
+    confidence: 0.74,
+    relative_volume: 1.24,
+    taker_buy_imbalance: 0.18,
+    flow_data_available: true,
+    explanation: "Tendência e fluxo confirmam continuação.",
+  },
   predictive_model: {
     trained: true,
     validation_accuracy: 0.61,

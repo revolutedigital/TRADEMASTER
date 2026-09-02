@@ -81,20 +81,21 @@ def build_technical_strategy_signals(
                 candles,
                 lookback=int(parameters.get("breakout_lookback", 20)),
             )
+        elif indicator == "volume_confirmation":
+            votes[indicator] = _volume_confirmation(
+                candles,
+                lookback=int(parameters.get("volume_lookback", 48)),
+                min_relative_volume=float(parameters.get("min_relative_volume", 1.0)),
+                min_taker_imbalance=float(parameters.get("min_taker_imbalance", 0.0)),
+            )
 
     vote_frame = pd.DataFrame(votes, index=candles.index).fillna(0.0)
     positive_votes = (vote_frame > 0).sum(axis=1)
     negative_votes = (vote_frame < 0).sum(axis=1)
 
     signals = pd.Series(0.0, index=candles.index, dtype=float)
-    bullish = (
-        (positive_votes >= strategy.min_confirmations)
-        & (positive_votes > negative_votes)
-    )
-    bearish = (
-        (negative_votes >= strategy.min_confirmations)
-        & (negative_votes > positive_votes)
-    )
+    bullish = (positive_votes >= strategy.min_confirmations) & (positive_votes > negative_votes)
+    bearish = (negative_votes >= strategy.min_confirmations) & (negative_votes > positive_votes)
     signals.loc[bullish] = 1.0
     signals.loc[bearish] = -1.0
 
@@ -211,6 +212,43 @@ def _breakout_signal(candles: pd.DataFrame, *, lookback: int) -> pd.Series:
     signals.loc[above_range & ~above_range.shift(1, fill_value=False)] = 1.0
     signals.loc[below_range & ~below_range.shift(1, fill_value=False)] = -1.0
     return signals
+
+
+def _volume_confirmation(
+    candles: pd.DataFrame,
+    *,
+    lookback: int,
+    min_relative_volume: float,
+    min_taker_imbalance: float,
+) -> pd.Series:
+    """Return a bullish gate when closed-candle quote flow confirms an entry.
+
+    This is intentionally not an independent trading signal. It stays positive
+    while flow is confirmed so a price crossover on the same bar can use it as
+    a second vote. If historical taker data is unavailable, the gate falls
+    back to relative quote volume rather than inventing aggressor direction.
+    """
+    _require_columns(candles, "close", "volume")
+    close = pd.to_numeric(candles["close"], errors="coerce")
+    if "quote_volume" in candles:
+        quote_volume = pd.to_numeric(candles["quote_volume"], errors="coerce")
+        quote_volume = quote_volume.where(
+            quote_volume > 0, pd.to_numeric(candles["volume"], errors="coerce") * close
+        )
+    else:
+        quote_volume = pd.to_numeric(candles["volume"], errors="coerce") * close
+
+    baseline = quote_volume.shift(1).rolling(lookback, min_periods=lookback).median()
+    relative_volume = quote_volume / baseline.replace(0, float("nan"))
+    confirmed = relative_volume >= min_relative_volume
+
+    if "taker_buy_quote" in candles:
+        taker_buy_quote = pd.to_numeric(candles["taker_buy_quote"], errors="coerce")
+        imbalance = 2 * taker_buy_quote / quote_volume.replace(0, float("nan")) - 1
+        taker_available = taker_buy_quote.rolling(lookback, min_periods=1).max() > 0
+        confirmed = confirmed & (~taker_available | (imbalance >= min_taker_imbalance))
+
+    return confirmed.fillna(False).astype(float)
 
 
 def _require_columns(candles: pd.DataFrame, *columns: str) -> None:

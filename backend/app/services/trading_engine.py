@@ -404,9 +404,7 @@ class TradingEngine:
                     features_snapshot=_serialize_signal_evidence(
                         signal_source=signal_source,
                         active_strategy_id=(
-                            active_strategy.deployment_id
-                            if active_strategy is not None
-                            else None
+                            active_strategy.deployment_id if active_strategy is not None else None
                         ),
                         signal_threshold=signal_threshold,
                         agreement_ratio=signal_agreement,
@@ -545,8 +543,9 @@ class TradingEngine:
                 approved = self._risk_manager.validate_trade(proposal)
                 # Scale quantity by regime multiplier, then re-validate exposure limits
                 adjusted_qty = float(approved.quantity) * regime_state.position_size_mult
-                max_symbol_notional = equity * settings.trading_max_single_asset_exposure
-                max_total_notional = equity * settings.trading_max_portfolio_exposure
+                effective_limits = self._risk_manager.effective_limits()
+                max_symbol_notional = equity * effective_limits.max_single_asset_exposure
+                max_total_notional = equity * effective_limits.max_portfolio_exposure
                 adjusted_notional = adjusted_qty * current_price
                 if symbol_exposure + adjusted_notional > max_symbol_notional:
                     adjusted_qty = max(
@@ -1093,7 +1092,9 @@ class TradingEngine:
             or actual_quantity != expected_quantity
             or actual_price is None
         ):
-            raise OrderExecutionError("paper exit order was not fully filled; position remains open")
+            raise OrderExecutionError(
+                "paper exit order was not fully filled; position remains open"
+            )
         return await portfolio_tracker.close_position(db, position, float(actual_price))
 
 
@@ -1132,9 +1133,7 @@ def _serialize_signal_evidence(
             "market": str(getattr(regime_state, "market", "UNKNOWN")),
             "volatility": str(getattr(regime_state, "volatility", "UNKNOWN")),
             "confidence": float(getattr(regime_state, "confidence", 0.0)),
-            "position_size_multiplier": float(
-                getattr(regime_state, "position_size_mult", 1.0)
-            ),
+            "position_size_multiplier": float(getattr(regime_state, "position_size_mult", 1.0)),
         },
         "price": float(price),
         "atr": float(atr),

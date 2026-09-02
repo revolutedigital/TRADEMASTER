@@ -39,7 +39,7 @@ def _source_backtest(**overrides):
                 "execution_profile": "spot_long_only",
             }
         ),
-        "total_trades": 24,
+        "total_trades": 50,
         "total_return_pct": 0.08,
         "profit_factor": 1.4,
         "max_drawdown_pct": 0.1,
@@ -58,10 +58,11 @@ def _walk_forward_result() -> WalkForwardResult:
             window_idx=idx,
             train_start=0,
             train_end=100,
+            embargo_candles=5,
             test_start=100,
             test_end=150,
             train_trades=10,
-            test_trades=8,
+            test_trades=17,
             train_return_pct=0.05,
             train_sharpe=1.4,
             test_win_rate=0.6,
@@ -74,7 +75,7 @@ def _walk_forward_result() -> WalkForwardResult:
     ]
     return WalkForwardResult(
         windows=windows,
-        total_test_trades=24,
+        total_test_trades=51,
         avg_win_rate=0.6,
         avg_return_pct=0.03,
         avg_sharpe=1.1,
@@ -99,9 +100,9 @@ def _fresh_candles(count: int) -> pd.DataFrame:
 
 
 def test_required_walk_forward_history_respects_the_candle_interval() -> None:
-    assert required_walk_forward_candles("1h") == 2_520
-    assert required_walk_forward_candles("4h") == 630
-    assert required_walk_forward_candles("15m") == 10_080
+    assert required_walk_forward_candles("1h") == 2_525
+    assert required_walk_forward_candles("4h") == 635
+    assert required_walk_forward_candles("15m") == 10_085
 
 
 def test_source_evidence_rejects_unfit_metrics() -> None:
@@ -123,7 +124,7 @@ async def test_create_persists_approved_fresh_walk_forward_evidence() -> None:
     database.scalar = AsyncMock(return_value=_source_backtest())
     database.add = MagicMock()
     database.flush = AsyncMock()
-    candles = _fresh_candles(2_520)
+    candles = _fresh_candles(2_525)
 
     with (
         patch(
@@ -143,7 +144,7 @@ async def test_create_persists_approved_fresh_walk_forward_evidence() -> None:
 
     assert deployment.status == APPROVED
     assert deployment.walk_forward_windows == 3
-    assert deployment.total_test_trades == 24
+    assert deployment.total_test_trades == 51
     assert json.loads(deployment.execution_config_json)["risk_reward_ratio"] == 2.0
     database.add.assert_called_once_with(deployment)
 
@@ -175,7 +176,7 @@ async def test_create_rejects_stale_candle_history_before_walk_forward() -> None
     database.scalar = AsyncMock(return_value=_source_backtest())
     database.add = MagicMock()
     database.flush = AsyncMock()
-    stale_candles = _fresh_candles(2_520)
+    stale_candles = _fresh_candles(2_525)
     stale_candles["close_time"] = stale_candles["close_time"] - timedelta(days=1)
 
     with (
@@ -204,7 +205,7 @@ async def test_create_rejects_discontinuous_candle_history_before_walk_forward()
     database.scalar = AsyncMock(return_value=_source_backtest())
     database.add = MagicMock()
     database.flush = AsyncMock()
-    discontinuous_candles = _fresh_candles(2_520)
+    discontinuous_candles = _fresh_candles(2_525)
     discontinuous_candles.loc[250, "close_time"] = discontinuous_candles.loc[249, "close_time"]
 
     with (
@@ -258,6 +259,31 @@ async def test_activation_requires_matching_runtime_mode_and_replaces_old_active
             deployment_id=11,
             execution_mode=TradingExecutionMode.TESTNET,
         )
+
+
+@pytest.mark.asyncio
+async def test_testnet_activation_stops_at_the_portfolio_wide_canary_cap() -> None:
+    deployment = SimpleNamespace(
+        id=22,
+        symbol="SOLUSDT",
+        interval="1h",
+        target_execution_mode="TESTNET",
+        status=APPROVED,
+        activated_at=None,
+        deactivated_at=None,
+    )
+    database = AsyncMock()
+    database.scalar = AsyncMock(side_effect=[deployment, 3])
+    database.execute = AsyncMock()
+
+    with pytest.raises(StrategyDeploymentSourceError, match="canary is limited"):
+        await activate_strategy_deployment(
+            database,
+            deployment_id=22,
+            execution_mode=TradingExecutionMode.TESTNET,
+        )
+
+    assert deployment.status == APPROVED
 
 
 @pytest.mark.asyncio

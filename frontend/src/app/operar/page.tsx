@@ -30,6 +30,15 @@ interface AssetStudy {
     liquidity_quote_volume_24h: number;
     candles: number;
   };
+  pattern_study: {
+    regime: "UPTREND" | "DOWNTREND" | "RANGE" | "COMPRESSION" | "STRESS";
+    pattern: "TREND_CONTINUATION" | "COMPRESSION_BREAKOUT" | "MEAN_REVERSION" | "OBSERVATION_ONLY";
+    confidence: number;
+    relative_volume: number;
+    taker_buy_imbalance: number | null;
+    flow_data_available: boolean;
+    explanation: string;
+  };
   predictive_model: {
     trained: boolean;
     validation_accuracy: number | null;
@@ -90,6 +99,13 @@ function trendLabel(trend: AssetStudy["market_study"]["trend"]) {
   return trend === "UPTREND" ? "Tendência de alta" : trend === "DOWNTREND" ? "Tendência de baixa" : "Mercado lateral";
 }
 
+function patternLabel(pattern: AssetStudy["pattern_study"]["pattern"]) {
+  if (pattern === "TREND_CONTINUATION") return "Continuação de tendência";
+  if (pattern === "COMPRESSION_BREAKOUT") return "Rompimento de compressão";
+  if (pattern === "MEAN_REVERSION") return "Reversão à média";
+  return "Somente observação";
+}
+
 function executionModeLabel(mode: ExecutionMode | null) {
   if (mode === "PAPER") return "Simulação protegida";
   if (mode === "TESTNET") return "Testnet protegido";
@@ -127,6 +143,10 @@ export default function OperarPage() {
   const [scanningMarket, setScanningMarket] = useState(false);
   const [activating, setActivating] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const opportunityScanId = opportunityScan?.id;
+  const opportunityScanStatus = opportunityScan?.status;
+  const studyJobId = studyJob?.id;
+  const studyJobStatus = studyJob?.status;
 
   useEffect(() => {
     let active = true;
@@ -162,13 +182,13 @@ export default function OperarPage() {
   }, []);
 
   useEffect(() => {
-    if (!opportunityScan || !["QUEUED", "RUNNING"].includes(opportunityScan.status)) return;
+    if (!opportunityScanId || !opportunityScanStatus || !["QUEUED", "RUNNING"].includes(opportunityScanStatus)) return;
 
     let active = true;
     const poll = async () => {
       try {
         const nextScan = await apiFetch<OpportunityScan>(
-          `/api/v1/asset-intelligence/opportunity-scans/${opportunityScan.id}`,
+          `/api/v1/asset-intelligence/opportunity-scans/${opportunityScanId}`,
         );
         if (active) setOpportunityScan(nextScan);
       } catch (err) {
@@ -184,15 +204,15 @@ export default function OperarPage() {
       active = false;
       window.clearInterval(interval);
     };
-  }, [opportunityScan?.id, opportunityScan?.status]);
+  }, [opportunityScanId, opportunityScanStatus]);
 
   useEffect(() => {
-    if (!studyJob || !["QUEUED", "RUNNING"].includes(studyJob.status)) return;
+    if (!studyJobId || !studyJobStatus || !["QUEUED", "RUNNING"].includes(studyJobStatus)) return;
 
     let active = true;
     const poll = async () => {
       try {
-        const nextJob = await apiFetch<AssetStudyJob>(`/api/v1/asset-intelligence/studies/${studyJob.id}`);
+        const nextJob = await apiFetch<AssetStudyJob>(`/api/v1/asset-intelligence/studies/${studyJobId}`);
         if (!active) return;
         setStudyJob(nextJob);
         if (nextJob.status === "COMPLETED" && nextJob.study) {
@@ -221,7 +241,7 @@ export default function OperarPage() {
       active = false;
       window.clearInterval(interval);
     };
-  }, [studyJob?.id, studyJob?.status]);
+  }, [studyJobId, studyJobStatus]);
 
   const filteredAssets = useMemo(() => {
     const normalized = search.trim().toUpperCase();
@@ -463,7 +483,7 @@ export default function OperarPage() {
       )}
 
       {study && (
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid gap-4 lg:grid-cols-4">
           <Card>
             <CardHeader>
               <CardTitle>Leitura do mercado</CardTitle>
@@ -473,6 +493,24 @@ export default function OperarPage() {
               <Metric label="Regime" value={trendLabel(study.market_study.trend)} />
               <Metric label="Volatilidade" value={`${study.market_study.volatility_pct.toFixed(2)}%`} />
               <Metric label="Liquidez 24h" value={`$${formatNumber(study.market_study.liquidity_quote_volume_24h, 0)}`} />
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Padrão e fluxo</CardTitle>
+              <Badge variant={study.pattern_study.pattern === "OBSERVATION_ONLY" ? "warning" : "success"}>
+                {patternLabel(study.pattern_study.pattern)}
+              </Badge>
+            </CardHeader>
+            <div className="space-y-3 px-0 pt-0 text-sm">
+              <Metric label="Confiança" value={`${(study.pattern_study.confidence * 100).toFixed(0)}%`} />
+              <Metric label="Volume relativo" value={`${study.pattern_study.relative_volume.toFixed(2)}×`} />
+              <Metric
+                label="Fluxo agressor"
+                value={study.pattern_study.taker_buy_imbalance === null ? "Histórico em atualização" : `${(study.pattern_study.taker_buy_imbalance * 100).toFixed(0)}% comprador`}
+              />
+              <p className="text-xs text-[var(--color-text-muted)]">{study.pattern_study.explanation}</p>
             </div>
           </Card>
 
@@ -520,7 +558,7 @@ export default function OperarPage() {
 
       <div className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-xs text-[var(--color-text-muted)]">
         <ShieldCheck className="h-4 w-4 shrink-0 text-green-400" />
-        A aprovação não envia ordem. No Testnet, a estratégia entra no motor com stop e alvo nativos; em conta real, continua bloqueada pelos controles extras de proteção.
+        A aprovação não envia ordem. No Testnet, o canário limita a 3 estratégias, 0,25% de risco por entrada, 5% por ativo e 20% de carteira, sempre com stop e alvo nativos. Em conta real, continua bloqueado.
         <ChevronRight className="ml-auto h-4 w-4 shrink-0" />
       </div>
     </div>

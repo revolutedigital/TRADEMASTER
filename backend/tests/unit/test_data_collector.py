@@ -52,21 +52,25 @@ class TestMarketDataCollector:
     def sample_klines_df(self):
         """Sample kline DataFrame as returned by Binance client."""
         dates = pd.date_range("2025-01-01", periods=10, freq="1h")
-        return pd.DataFrame({
-            "open_time": dates,
-            "open": np.random.uniform(80000, 90000, 10),
-            "high": np.random.uniform(90000, 95000, 10),
-            "low": np.random.uniform(75000, 80000, 10),
-            "close": np.random.uniform(80000, 90000, 10),
-            "volume": np.random.uniform(100, 1000, 10),
-            "close_time": dates + pd.Timedelta(hours=1) - pd.Timedelta(milliseconds=1),
-            "quote_volume": np.random.uniform(8000000, 90000000, 10),
-            "trade_count": np.random.randint(1000, 50000, 10),
-        })
+        return pd.DataFrame(
+            {
+                "open_time": dates,
+                "open": np.random.uniform(80000, 90000, 10),
+                "high": np.random.uniform(90000, 95000, 10),
+                "low": np.random.uniform(75000, 80000, 10),
+                "close": np.random.uniform(80000, 90000, 10),
+                "volume": np.random.uniform(100, 1000, 10),
+                "close_time": dates + pd.Timedelta(hours=1) - pd.Timedelta(milliseconds=1),
+                "quote_volume": np.random.uniform(8000000, 90000000, 10),
+                "trade_count": np.random.randint(1000, 50000, 10),
+            }
+        )
 
     @pytest.mark.asyncio
     @patch("app.services.market.data_collector.binance_client")
-    async def test_seed_historical_fetches_klines(self, mock_binance, collector, mock_db, sample_klines_df):
+    async def test_seed_historical_fetches_klines(
+        self, mock_binance, collector, mock_db, sample_klines_df
+    ):
         """seed_historical should fetch klines from Binance and insert into DB."""
         mock_binance.get_klines = AsyncMock(return_value=sample_klines_df)
 
@@ -148,12 +152,15 @@ class TestMarketDataCollector:
 
     @pytest.mark.asyncio
     @patch("app.services.market.data_collector.binance_client")
-    async def test_seed_historical_skips_duplicates(self, mock_binance, collector, mock_db, sample_klines_df):
+    async def test_seed_historical_skips_duplicates(
+        self, mock_binance, collector, mock_db, sample_klines_df
+    ):
         """_insert_candles should handle duplicate entries without errors."""
         mock_binance.get_klines = AsyncMock(return_value=sample_klines_df)
 
         # Simulate IntegrityError on flush (duplicate)
         from sqlalchemy.exc import IntegrityError
+
         mock_db.flush = AsyncMock(side_effect=IntegrityError("dup", {}, None))
         mock_db.rollback = AsyncMock()
 
@@ -165,7 +172,9 @@ class TestMarketDataCollector:
 
     @pytest.mark.asyncio
     @patch("app.services.market.data_collector.binance_client")
-    async def test_seed_historical_validates_symbol(self, mock_binance, collector, mock_db, sample_klines_df):
+    async def test_seed_historical_validates_symbol(
+        self, mock_binance, collector, mock_db, sample_klines_df
+    ):
         """seed_historical should pass correct symbol to Binance client."""
         mock_binance.get_klines = AsyncMock(return_value=sample_klines_df)
 

@@ -66,6 +66,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         import app.models.asset_study_job  # noqa: F401
         import app.models.strategy_deployment  # noqa: F401
         import app.models.market_opportunity_scan  # noqa: F401
+
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         logger.info("database_tables_ready")
@@ -83,13 +84,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         if interrupted_studies:
             logger.warning("asset_study_jobs_interrupted_on_startup", count=interrupted_studies)
         if interrupted_scans:
-            logger.warning("market_opportunity_scans_interrupted_on_startup", count=interrupted_scans)
+            logger.warning(
+                "market_opportunity_scans_interrupted_on_startup", count=interrupted_scans
+            )
     except Exception as e:
         logger.warning("market_opportunity_scan_recovery_failed", error=str(e))
 
     # --- Phase 0b: Rehydrate event store from PostgreSQL ---
     try:
         from app.core.event_store import event_store
+
         loaded = await event_store.load_from_db()
         logger.info("event_store_rehydrated", events_loaded=loaded)
     except Exception as e:
@@ -98,6 +102,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # --- Phase 0c: Rehydrate lineage tracker from PostgreSQL ---
     try:
         from app.services.data.lineage_tracker import lineage_tracker
+
         loaded = await lineage_tracker.load_from_db()
         logger.info("lineage_tracker_rehydrated", nodes_loaded=loaded)
     except Exception as e:
@@ -106,6 +111,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # --- Phase 0d: Rehydrate schema registry from PostgreSQL ---
     try:
         from app.core.schema_registry import schema_registry
+
         loaded = await schema_registry.load_from_db()
         logger.info("schema_registry_rehydrated", schemas_loaded=loaded)
     except Exception as e:
@@ -123,6 +129,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # --- Phase 1b: Initialize feature flags (Redis-backed) ---
     try:
         from app.core.feature_flags import feature_flags
+
         await feature_flags.init()
         logger.info("feature_flags_initialized")
     except Exception as e:
@@ -132,6 +139,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     binance_ok = False
     try:
         from app.services.exchange.binance_client import binance_client
+
         await binance_client.connect()
         binance_ok = True
         logger.info("binance_connected")
@@ -142,7 +150,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # armed. A failed read is an explicit lock, never a reason to assume safety.
     if settings.execution_mode.value == "LIVE":
         if not binance_ok:
-            live_protection_readiness.mark_error("Binance is unavailable for live OCO reconciliation")
+            live_protection_readiness.mark_error(
+                "Binance is unavailable for live OCO reconciliation"
+            )
             logger.critical("live_spot_protection_unverified", reason="binance_unavailable")
         else:
             try:
@@ -193,6 +203,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # 1. Stop trading engine first (no new signals)
     try:
         from app.services.trading_engine import trading_engine
+
         await trading_engine.stop()
         logger.info("trading_engine_stopped_for_shutdown")
     except Exception as e:
@@ -204,13 +215,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         from app.models.trade import Order, OrderStatus
         from sqlalchemy import select
 
-        pending_statuses = [OrderStatus.PENDING, OrderStatus.SUBMITTED, OrderStatus.PARTIALLY_FILLED]
+        pending_statuses = [
+            OrderStatus.PENDING,
+            OrderStatus.SUBMITTED,
+            OrderStatus.PARTIALLY_FILLED,
+        ]
         deadline = asyncio.get_event_loop().time() + 30
         while asyncio.get_event_loop().time() < deadline:
             async with async_session_factory() as db:
-                result = await db.execute(
-                    select(Order).where(Order.status.in_(pending_statuses))
-                )
+                result = await db.execute(select(Order).where(Order.status.in_(pending_statuses)))
                 pending = list(result.scalars().all())
             if not pending:
                 logger.info("all_pending_orders_resolved")
@@ -248,6 +261,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # 5. Disconnect external services
     try:
         from app.services.exchange.binance_client import binance_client
+
         await binance_client.disconnect()
     except Exception:
         pass
@@ -267,6 +281,7 @@ async def _start_background_services() -> None:
     # 1. WebSocket streams from Binance -> Redis
     from app.services.exchange.binance_client import binance_client
     from app.services.exchange.binance_ws import binance_ws_manager
+
     try:
         await binance_ws_manager.start(binance_client._client)
         # Reattach streams for strategies activated before a deployment or
@@ -289,11 +304,13 @@ async def _start_background_services() -> None:
 
     # 2. Market stream processor (Redis -> Database)
     from app.services.market.stream_processor import market_stream_processor
+
     task = asyncio.create_task(market_stream_processor.start(), name="market_stream_processor")
     _background_tasks.append(task)
 
     # 3. WebSocket broadcaster (Redis -> Dashboard clients)
     from app.services.ws_broadcaster import ws_broadcaster
+
     await ws_broadcaster.start()
 
     # The trading engine is deliberately not auto-started. The authenticated
@@ -308,6 +325,7 @@ async def _start_background_services() -> None:
     # Position check every 60 seconds
     async def check_positions():
         from app.services.trading_engine import trading_engine
+
         await trading_engine.check_positions()
 
     # Metrics update every 30 seconds
@@ -321,16 +339,18 @@ async def _start_background_services() -> None:
     # Order reconciliation every 300 seconds
     async def reconcile_orders():
         from app.core.resilience import reconciler
-        from app.models.base import async_session
+        from app.models.base import async_session_factory
         from app.repositories.position_repo import PositionRepository
+
         try:
-            async with async_session() as session:
+            async with async_session_factory() as session:
                 repo = PositionRepository()
                 open_positions = await repo.get_open(session)
                 # Gather local open order IDs
                 local_orders = [
                     {"exchange_order_id": str(p.exchange_order_id), "status": "OPEN"}
-                    for p in open_positions if hasattr(p, "exchange_order_id") and p.exchange_order_id
+                    for p in open_positions
+                    if hasattr(p, "exchange_order_id") and p.exchange_order_id
                 ]
                 exchange_orders = await bc.get_open_orders()
                 await reconciler.reconcile_orders(local_orders, exchange_orders)
@@ -339,7 +359,9 @@ async def _start_background_services() -> None:
 
     scheduler.add_task("position_check", check_positions, interval_seconds=5, run_immediately=True)
     scheduler.add_task("metrics_update", update_metrics, interval_seconds=15, run_immediately=True)
-    scheduler.add_task("order_reconciliation", reconcile_orders, interval_seconds=300, run_immediately=False)
+    scheduler.add_task(
+        "order_reconciliation", reconcile_orders, interval_seconds=300, run_immediately=False
+    )
     scheduler.start_all()
 
     logger.info("all_background_services_started")
@@ -353,6 +375,7 @@ async def _start_background_services_offline() -> None:
     #    Gives the engine 100+ candles immediately instead of waiting 7.5 hours
     try:
         from app.services.market.candle_bootstrap import bootstrap_historical_candles
+
         bootstrap_results = await bootstrap_historical_candles()
         logger.info("candle_bootstrap_done", results=bootstrap_results)
     except Exception as e:
@@ -360,23 +383,27 @@ async def _start_background_services_offline() -> None:
 
     # 1. Autonomous price fetcher (CoinGecko/CryptoCompare -> Redis)
     from app.services.market.price_fetcher import price_fetcher
+
     task = asyncio.create_task(price_fetcher.start(), name="price_fetcher")
     _background_tasks.append(task)
     logger.info("price_fetcher_started")
 
     # 2. Synthetic kline generator (Redis prices -> KLINE_UPDATE events)
     from app.services.market.synthetic_kline_generator import synthetic_kline_generator
+
     task = asyncio.create_task(synthetic_kline_generator.start(), name="synthetic_kline_generator")
     _background_tasks.append(task)
     logger.info("synthetic_kline_generator_started")
 
     # 3. Market stream processor (KLINE_UPDATE events -> Database)
     from app.services.market.stream_processor import market_stream_processor
+
     task = asyncio.create_task(market_stream_processor.start(), name="market_stream_processor")
     _background_tasks.append(task)
 
     # 4. WebSocket broadcaster (Redis -> Dashboard clients)
     from app.services.ws_broadcaster import ws_broadcaster
+
     await ws_broadcaster.start()
 
     # The engine is intentionally not started from offline services. Paper
@@ -388,6 +415,7 @@ async def _start_background_services_offline() -> None:
 
     async def check_positions():
         from app.services.trading_engine import trading_engine
+
         await trading_engine.check_positions()
 
     # Fill reconciliation every 5 minutes (offline-safe: skips exchange call if unavailable)
@@ -395,18 +423,21 @@ async def _start_background_services_offline() -> None:
         from app.core.resilience import reconciler
         from app.models.base import async_session_factory as sf
         from app.repositories.position_repo import PositionRepository
+
         try:
             async with sf() as session:
                 repo = PositionRepository()
                 open_positions = await repo.get_open(session)
                 local_orders = [
                     {"exchange_order_id": str(p.exchange_order_id), "status": "OPEN"}
-                    for p in open_positions if hasattr(p, "exchange_order_id") and p.exchange_order_id
+                    for p in open_positions
+                    if hasattr(p, "exchange_order_id") and p.exchange_order_id
                 ]
                 # In offline mode, try exchange but don't fail if unavailable
                 exchange_orders: list = []
                 try:
                     from app.services.exchange.binance_client import binance_client as bc
+
                     exchange_orders = await bc.get_open_orders()
                 except Exception:
                     pass  # Exchange unavailable in offline mode
@@ -415,7 +446,9 @@ async def _start_background_services_offline() -> None:
             logger.warning("fill_reconciliation_failed", error=str(e))
 
     scheduler.add_task("position_check", check_positions, interval_seconds=5, run_immediately=True)
-    scheduler.add_task("fill_reconciliation", reconcile_fills, interval_seconds=300, run_immediately=False)
+    scheduler.add_task(
+        "fill_reconciliation", reconcile_fills, interval_seconds=300, run_immediately=False
+    )
     scheduler.start_all()
 
     logger.info("all_background_services_started_offline")
@@ -424,34 +457,43 @@ async def _start_background_services_offline() -> None:
 async def _stop_background_services() -> None:
     """Gracefully stop all background services."""
     from app.services.asset_study_jobs import asset_study_job_service
+
     await asset_study_job_service.stop_all()
 
     from app.services.market_opportunity_scans import market_opportunity_scan_service
+
     await market_opportunity_scan_service.stop_all()
 
     from app.services.scheduler import scheduler
+
     await scheduler.stop_all()
 
     from app.services.ws_broadcaster import ws_broadcaster
+
     await ws_broadcaster.stop()
 
     from app.services.market.stream_processor import market_stream_processor
+
     await market_stream_processor.stop()
 
     from app.services.trading_engine import trading_engine
+
     await trading_engine.stop()
 
     from app.services.exchange.binance_ws import binance_ws_manager
+
     await binance_ws_manager.stop()
 
     try:
         from app.services.market.synthetic_kline_generator import synthetic_kline_generator
+
         await synthetic_kline_generator.stop()
     except Exception:
         pass
 
     try:
         from app.services.market.price_fetcher import price_fetcher
+
         await price_fetcher.stop()
     except Exception:
         pass
@@ -483,6 +525,7 @@ def create_app() -> FastAPI:
 
     # Request logging middleware
     from app.core.logging import RequestLoggingMiddleware
+
     app.add_middleware(RequestLoggingMiddleware)
 
     # RASP - Runtime Application Self-Protection (SQLi, XSS, path traversal detection)
@@ -490,10 +533,12 @@ def create_app() -> FastAPI:
 
     # CSRF validation middleware
     from app.core.security import CSRFMiddleware
+
     app.add_middleware(CSRFMiddleware)
 
     # Security headers middleware
     from app.core.security import SecurityHeadersMiddleware
+
     app.add_middleware(SecurityHeadersMiddleware)
 
     # CORS - MUST be outermost (added last) so preflight OPTIONS gets CORS headers
@@ -507,7 +552,9 @@ def create_app() -> FastAPI:
 
     # Global exception handler: maps domain exceptions to proper HTTP responses
     @app.exception_handler(TradeMasterError)
-    async def trademaster_exception_handler(_request: StarletteRequest, exc: TradeMasterError) -> JSONResponse:
+    async def trademaster_exception_handler(
+        _request: StarletteRequest, exc: TradeMasterError
+    ) -> JSONResponse:
         status_code = EXCEPTION_STATUS_MAP.get(type(exc), 500)
         return JSONResponse(
             status_code=status_code,
@@ -520,6 +567,7 @@ def create_app() -> FastAPI:
 
     # API v2 routes
     from app.api.v2.router import v2_router
+
     app.include_router(v2_router, prefix="/api/v2", tags=["v2"])
 
     # WebSocket routes

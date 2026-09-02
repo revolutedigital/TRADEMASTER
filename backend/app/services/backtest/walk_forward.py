@@ -35,6 +35,7 @@ class WalkForwardWindow:
     window_idx: int
     train_start: int
     train_end: int
+    embargo_candles: int
     test_start: int
     test_end: int
     train_trades: int
@@ -75,6 +76,7 @@ def run_walk_forward(
     risk_reward_ratio: float = 2.0,
     allow_short: bool = True,
     candles_per_day: float = 96,
+    embargo_candles: int = 0,
 ) -> WalkForwardResult:
     """Run walk-forward validation on historical data with pre-computed signals.
 
@@ -87,25 +89,36 @@ def run_walk_forward(
         initial_capital: Starting capital per window
         signal_threshold: Minimum signal strength to trade
         allow_short: Whether a negative signal may open a short position.
+        embargo_candles: Closed bars excluded between training and test data.
+            This prevents labels and rolling indicators near the training edge
+            from leaking into the first out-of-sample evaluation bars.
     """
     if candles_per_day <= 0:
         raise ValueError("candles_per_day must be positive")
+    if embargo_candles < 0:
+        raise ValueError("embargo_candles must be non-negative")
     train_candles = max(1, round(train_days * candles_per_day))
     test_candles = max(1, round(test_days * candles_per_day))
     step_candles = max(1, round(step_days * candles_per_day))
 
     total_candles = len(df)
-    if total_candles < train_candles + test_candles:
+    minimum_candles = train_candles + embargo_candles + test_candles
+    if total_candles < minimum_candles:
         logger.warning(
             "walk_forward_insufficient_data",
             total=total_candles,
-            needed=train_candles + test_candles,
+            needed=minimum_candles,
         )
         return WalkForwardResult(
-            windows=[], total_test_trades=0,
-            avg_win_rate=0, avg_return_pct=0, avg_sharpe=0,
-            avg_max_dd_pct=0, avg_profit_factor=0,
-            consistency_score=0, overfitting_score=0,
+            windows=[],
+            total_test_trades=0,
+            avg_win_rate=0,
+            avg_return_pct=0,
+            avg_sharpe=0,
+            avg_max_dd_pct=0,
+            avg_profit_factor=0,
+            consistency_score=0,
+            overfitting_score=0,
         )
 
     windows: list[WalkForwardWindow] = []
@@ -113,11 +126,11 @@ def run_walk_forward(
     start = 0
     window_idx = 0
 
-    while start + train_candles + test_candles <= total_candles:
+    while start + train_candles + embargo_candles + test_candles <= total_candles:
         train_start = start
         train_end = start + train_candles
-        test_start = train_end
-        test_end = min(train_end + test_candles, total_candles)
+        test_start = train_end + embargo_candles
+        test_end = min(test_start + test_candles, total_candles)
 
         # Run backtest on training window
         train_df = df.iloc[train_start:train_end].reset_index(drop=True)
@@ -149,6 +162,7 @@ def run_walk_forward(
             window_idx=window_idx,
             train_start=train_start,
             train_end=train_end,
+            embargo_candles=embargo_candles,
             test_start=test_start,
             test_end=test_end,
             train_trades=train_result.metrics.total_trades,
@@ -176,10 +190,15 @@ def run_walk_forward(
 
     if not windows:
         return WalkForwardResult(
-            windows=[], total_test_trades=0,
-            avg_win_rate=0, avg_return_pct=0, avg_sharpe=0,
-            avg_max_dd_pct=0, avg_profit_factor=0,
-            consistency_score=0, overfitting_score=0,
+            windows=[],
+            total_test_trades=0,
+            avg_win_rate=0,
+            avg_return_pct=0,
+            avg_sharpe=0,
+            avg_max_dd_pct=0,
+            avg_profit_factor=0,
+            consistency_score=0,
+            overfitting_score=0,
         )
 
     # Aggregate metrics across all test windows
@@ -188,10 +207,15 @@ def run_walk_forward(
 
     if not traded_windows:
         return WalkForwardResult(
-            windows=windows, total_test_trades=0,
-            avg_win_rate=0, avg_return_pct=0, avg_sharpe=0,
-            avg_max_dd_pct=0, avg_profit_factor=0,
-            consistency_score=0, overfitting_score=0,
+            windows=windows,
+            total_test_trades=0,
+            avg_win_rate=0,
+            avg_return_pct=0,
+            avg_sharpe=0,
+            avg_max_dd_pct=0,
+            avg_profit_factor=0,
+            consistency_score=0,
+            overfitting_score=0,
         )
 
     avg_win_rate = float(np.mean([w.test_win_rate for w in traded_windows]))

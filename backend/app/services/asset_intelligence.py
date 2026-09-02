@@ -18,17 +18,27 @@ from app.models.backtest import BacktestResult
 from app.schemas.trading import TechnicalStrategyConfig
 from app.services.backtest.engine import BacktestEngine, BacktestResult as EngineBacktestResult
 from app.services.backtest.technical_strategy import build_technical_strategy_signals
+from app.services.backtest.walk_forward import candles_per_day, run_walk_forward
 from app.services.market.data_collector import market_data_collector
+from app.services.market.pattern_intelligence import assess_closed_candle_pattern
 from app.services.market.spot_asset_catalog import SpotAsset, spot_asset_catalog
 from app.services.ml.features import feature_engineer
 from app.services.ml.models.xgboost_model import XGBoostTradingModel
 from app.services.ml.preprocessor import Preprocessor
 from app.services.ml.tracking import ml_tracker
-from app.services.strategy_deployments import create_strategy_deployment
+from app.services.strategy_deployments import (
+    WALK_FORWARD_EMBARGO_CANDLES,
+    WALK_FORWARD_STEP_DAYS,
+    WALK_FORWARD_TEST_DAYS,
+    WALK_FORWARD_TRAIN_DAYS,
+    create_strategy_deployment,
+    required_walk_forward_candles,
+)
 
 RESEARCH_INTERVAL = "1h"
 RESEARCH_HISTORY_DAYS = 365
 MIN_RESEARCH_CANDLES = 3_000
+MIN_SELECTION_CANDLES = 3_000
 RESEARCH_CAPITAL = 10_000.0
 MIN_PREDICTIVE_BALANCED_ACCURACY = 0.40
 
@@ -52,6 +62,7 @@ class StrategyCandidate:
 class CandidateEvaluation:
     candidate: StrategyCandidate
     result: EngineBacktestResult
+    selection_validation: object
     score: float
 
 
@@ -75,20 +86,36 @@ async def study_asset(db: AsyncSession, *, symbol: str) -> dict[str, object]:
         interval=RESEARCH_INTERVAL,
         limit=12_000,
     )
+    candles = _closed_candles_only(candles)
     if len(candles) < MIN_RESEARCH_CANDLES:
         raise AssetIntelligenceError(
             f"{asset.symbol} has only {len(candles)} usable candles; at least "
             f"{MIN_RESEARCH_CANDLES} are required for study and walk-forward validation"
         )
 
+    validation_candle_count = required_walk_forward_candles(RESEARCH_INTERVAL)
+    selection_candles = candles.iloc[:-validation_candle_count].copy()
+    validation_candles = candles.iloc[-validation_candle_count:].copy()
+    if len(selection_candles) < MIN_SELECTION_CANDLES:
+        raise AssetIntelligenceError(
+            "Asset history is insufficient after reserving the independent validation period"
+        )
+
     market_study = _market_study(candles, asset)
-    predictive_model = await _train_predictive_model(db, candles, asset.symbol)
+    pattern_study = assess_closed_candle_pattern(candles).as_dict()
+    predictive_model = await _train_predictive_model(
+        db,
+        selection_candles,
+        asset.symbol,
+        inference_candles=candles,
+    )
     predictive_blocker = _predictive_model_blocker(predictive_model)
     if predictive_blocker:
         return {
             "symbol": asset.symbol,
             "execution_mode": settings.execution_mode.value,
             "market_study": market_study,
+            "pattern_study": pattern_study,
             "predictive_model": predictive_model,
             "recommendation": {
                 "strategy_name": "Nenhuma estratégia liberada",
@@ -99,10 +126,33 @@ async def study_asset(db: AsyncSession, *, symbol: str) -> dict[str, object]:
             },
         }
 
+    if pattern_study["pattern"] == "OBSERVATION_ONLY":
+        return {
+            "symbol": asset.symbol,
+            "execution_mode": settings.execution_mode.value,
+            "market_study": market_study,
+            "pattern_study": pattern_study,
+            "predictive_model": predictive_model,
+            "recommendation": {
+                "strategy_name": "Nenhuma estratégia liberada",
+                "backtest_id": None,
+                "deployment_id": None,
+                "deployment_status": "UNAVAILABLE",
+                "reasons": [str(pattern_study["explanation"])],
+            },
+        }
+
     selected = _choose_candidate(
-        candles,
-        market_study["trend"],
+        selection_candles,
+        str(pattern_study["pattern"]),
         str(predictive_model["latest_signal"]),
+    )
+    selected = _with_pattern_research_context(
+        selected,
+        regime=str(pattern_study["regime"]),
+        pattern=str(pattern_study["pattern"]),
+        selection_candles=selection_candles,
+        validation_candles=validation_candles,
     )
     source_backtest = _persist_backtest(db, asset.symbol, selected)
     await db.flush()
@@ -111,24 +161,34 @@ async def study_asset(db: AsyncSession, *, symbol: str) -> dict[str, object]:
         db,
         source_backtest_id=source_backtest.id,
         target_execution_mode=settings.execution_mode.value,
+        validation_candles=validation_candles,
     )
     await db.flush()
 
     reasons = (
         []
         if deployment.status == "APPROVED"
-        else [part for part in (deployment.rejection_reason or "No deployment evidence available").split("; ") if part]
+        else [
+            part
+            for part in (deployment.rejection_reason or "No deployment evidence available").split(
+                "; "
+            )
+            if part
+        ]
     )
     return {
         "symbol": asset.symbol,
         "execution_mode": settings.execution_mode.value,
         "market_study": market_study,
+        "pattern_study": pattern_study,
         "predictive_model": predictive_model,
         "recommendation": {
             "strategy_name": selected.candidate.name,
             "backtest_id": source_backtest.id,
             "deployment_id": deployment.id,
-            "deployment_status": deployment.status if deployment.status in {"APPROVED", "REJECTED"} else "UNAVAILABLE",
+            "deployment_status": deployment.status
+            if deployment.status in {"APPROVED", "REJECTED"}
+            else "UNAVAILABLE",
             "reasons": reasons,
         },
     }
@@ -163,6 +223,8 @@ async def _train_predictive_model(
     db: AsyncSession,
     candles: pd.DataFrame,
     symbol: str,
+    *,
+    inference_candles: pd.DataFrame | None = None,
 ) -> dict[str, object]:
     """Train a temporal XGBoost research model and retain auditable metrics."""
     started_at = time.perf_counter()
@@ -172,7 +234,9 @@ async def _train_predictive_model(
         prepared = Preprocessor(threshold=0.007).create_target(features, horizon=5)
         split = Preprocessor(threshold=0.007).prepare_tabular(prepared, feature_columns)
         if min(len(split.X_train), len(split.X_val), len(split.X_test)) < 100:
-            raise AssetIntelligenceError("Asset history is insufficient for predictive-model validation")
+            raise AssetIntelligenceError(
+                "Asset history is insufficient for predictive-model validation"
+            )
 
         model = XGBoostTradingModel()
         training = model.train(
@@ -188,11 +252,16 @@ async def _train_predictive_model(
         test_predictions = model._model.predict(split.X_test)  # type: ignore[union-attr]
         test_accuracy = float(np.mean(test_predictions == split.y_test))
         test_balanced_accuracy = float(balanced_accuracy_score(split.y_test, test_predictions))
-        latest_features = features[feature_columns].dropna().iloc[-1:].to_numpy()
+        inference_features = feature_engineer.build_features(
+            inference_candles if inference_candles is not None else candles
+        )
+        latest_features = inference_features[feature_columns].dropna().iloc[-1:].to_numpy()
         latest_features = split.scaler.transform(latest_features)
         prediction = model.predict(latest_features[0])
         dataset_hash = hashlib.sha256(
-            pd.util.hash_pandas_object(candles[["open_time", "close"]], index=False).values.tobytes()
+            pd.util.hash_pandas_object(
+                candles[["open_time", "close"]], index=False
+            ).values.tobytes()
         ).hexdigest()
         await ml_tracker.log_training_run(
             db,
@@ -249,7 +318,10 @@ def _predictive_model_blocker(predictive_model: dict[str, object]) -> str | None
         return "O modelo preditivo não produziu evidência válida para este ativo"
 
     validation_accuracy = predictive_model.get("validation_accuracy")
-    if not isinstance(validation_accuracy, (float, int)) or validation_accuracy < MIN_PREDICTIVE_BALANCED_ACCURACY:
+    if (
+        not isinstance(validation_accuracy, (float, int))
+        or validation_accuracy < MIN_PREDICTIVE_BALANCED_ACCURACY
+    ):
         return (
             "O modelo preditivo não superou a qualidade mínima de validação "
             f"balanceada ({MIN_PREDICTIVE_BALANCED_ACCURACY:.0%})"
@@ -261,17 +333,16 @@ def _predictive_model_blocker(predictive_model: dict[str, object]) -> str | None
 
 def _choose_candidate(
     candles: pd.DataFrame,
-    trend: object,
+    pattern_or_trend: object,
     predictive_signal: str,
 ) -> CandidateEvaluation:
-    candidates = _candidates_for_trend(str(trend))
+    pattern = _normalize_pattern_name(str(pattern_or_trend))
+    candidates = _candidates_for_pattern(pattern)
     if predictive_signal == "HOLD":
-        # A neutral model does not veto the asset, but it makes the deployed
-        # technical strategy wait for a materially stronger confirmation.
-        candidates = [
-            replace(candidate, signal_threshold=max(candidate.signal_threshold, 0.45))
-            for candidate in candidates
-        ]
+        # Technical signals are discrete -1/0/1 votes. Raising a numeric
+        # threshold would therefore be cosmetic, so HOLD is represented by a
+        # stricter flow confirmation inside every automatic candidate.
+        candidates = [_require_stronger_flow(candidate) for candidate in candidates]
     evaluations = [_evaluate_candidate(candles, candidate) for candidate in candidates]
     return max(evaluations, key=lambda evaluation: evaluation.score)
 
@@ -285,20 +356,42 @@ def _evaluate_candidate(candles: pd.DataFrame, candidate: StrategyCandidate) -> 
         risk_reward_ratio=candidate.risk_reward_ratio,
         allow_short=False,
     ).run(candles, signals=signals)
+    selection_validation = run_walk_forward(
+        df=candles,
+        signals=signals,
+        train_days=WALK_FORWARD_TRAIN_DAYS,
+        test_days=WALK_FORWARD_TEST_DAYS,
+        step_days=WALK_FORWARD_STEP_DAYS,
+        initial_capital=RESEARCH_CAPITAL,
+        signal_threshold=candidate.signal_threshold,
+        atr_stop_multiplier=candidate.atr_stop_multiplier,
+        risk_reward_ratio=candidate.risk_reward_ratio,
+        allow_short=False,
+        candles_per_day=candles_per_day(RESEARCH_INTERVAL),
+        embargo_candles=WALK_FORWARD_EMBARGO_CANDLES,
+    )
     metrics = result.metrics
-    if metrics.total_trades < 20 or not math.isfinite(metrics.profit_factor):
-        score = -10_000.0 + metrics.total_trades
+    if selection_validation.total_test_trades < 50 or not math.isfinite(
+        selection_validation.avg_profit_factor
+    ):
+        score = -10_000.0 + selection_validation.total_test_trades
     else:
-        # Ranking is deliberately conservative. Walk-forward validation is a
-        # separate mandatory deployment gate; a high in-sample score alone can
-        # never make the strategy executable.
+        # Candidate selection is based on its earlier out-of-sample windows,
+        # never its whole-history backtest. The later holdout remains untouched
+        # until deployment validation.
         score = (
-            metrics.total_return_pct * 4
-            + min(metrics.profit_factor, 3.0)
-            + min(metrics.sharpe_ratio, 3.0) * 0.5
-            - metrics.max_drawdown_pct * 4
+            selection_validation.avg_return_pct * 4
+            + min(selection_validation.avg_profit_factor, 3.0)
+            + min(selection_validation.avg_sharpe, 3.0) * 0.5
+            - selection_validation.avg_max_dd_pct * 4
+            + selection_validation.consistency_score
         )
-    return CandidateEvaluation(candidate=candidate, result=result, score=score)
+    return CandidateEvaluation(
+        candidate=candidate,
+        result=result,
+        selection_validation=selection_validation,
+        score=score,
+    )
 
 
 def _persist_backtest(
@@ -341,87 +434,181 @@ def _equity_curve_json(equity_curve: list[float]) -> str:
     return json.dumps(equity_curve[-500:])
 
 
-def _candidates_for_trend(trend: str) -> list[StrategyCandidate]:
+def _closed_candles_only(candles: pd.DataFrame) -> pd.DataFrame:
+    """Discard in-progress candles before any feature, target, or pattern step."""
+    if candles.empty or "close_time" not in candles:
+        return candles.copy()
+    frame = candles.copy()
+    close_time = pd.to_datetime(frame["close_time"], utc=True, errors="coerce")
+    now = pd.Timestamp.now(tz="UTC")
+    return frame.loc[close_time.notna() & (close_time <= now)].reset_index(drop=True)
+
+
+def _with_pattern_research_context(
+    selected: CandidateEvaluation,
+    *,
+    regime: str,
+    pattern: str,
+    selection_candles: pd.DataFrame,
+    validation_candles: pd.DataFrame,
+) -> CandidateEvaluation:
+    context = {
+        "library_version": "pattern-library-v1",
+        "regime": regime,
+        "pattern": pattern,
+        "selection_end_time": _timestamp_text(selection_candles.iloc[-1]["close_time"]),
+        "validation_start_time": _timestamp_text(validation_candles.iloc[0]["open_time"]),
+        "selection_oos_windows": len(selected.selection_validation.windows),
+        "selection_oos_trades": selected.selection_validation.total_test_trades,
+        "selection_oos_return_pct": selected.selection_validation.avg_return_pct,
+        "selection_oos_profit_factor": _finite_or_zero(
+            selected.selection_validation.avg_profit_factor
+        ),
+    }
+    strategy = TechnicalStrategyConfig.model_validate(
+        selected.candidate.strategy.model_dump() | {"research_context": context}
+    )
+    return replace(
+        selected,
+        candidate=replace(selected.candidate, strategy=strategy),
+    )
+
+
+def _timestamp_text(value: object) -> str:
+    timestamp = pd.Timestamp(value)
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.tz_localize("UTC")
+    return timestamp.isoformat()
+
+
+def _finite_or_zero(value: float) -> float:
+    return float(value) if math.isfinite(value) else 0.0
+
+
+def _normalize_pattern_name(value: str) -> str:
+    legacy_mapping = {
+        "UPTREND": "TREND_CONTINUATION",
+        "DOWNTREND": "TREND_CONTINUATION",
+        "RANGE": "MEAN_REVERSION",
+    }
+    return legacy_mapping.get(value, value)
+
+
+def _require_stronger_flow(candidate: StrategyCandidate) -> StrategyCandidate:
+    parameters = dict(candidate.strategy.indicator_params)
+    flow_parameters = dict(parameters.get("volume_confirmation", {}))
+    if flow_parameters:
+        flow_parameters["min_relative_volume"] = max(
+            float(flow_parameters.get("min_relative_volume", 1.0)),
+            1.15,
+        )
+        parameters["volume_confirmation"] = flow_parameters
+    return replace(
+        candidate,
+        strategy=TechnicalStrategyConfig.model_validate(
+            candidate.strategy.model_dump() | {"indicator_params": parameters}
+        ),
+    )
+
+
+def _candidates_for_pattern(pattern: str) -> list[StrategyCandidate]:
     trend_candidates = [
         StrategyCandidate(
-            name="Tendência SMA + RSI",
+            name="Continuação EMA + MACD + fluxo",
             strategy=TechnicalStrategyConfig(
                 kind="technical_ensemble",
-                indicators=["sma", "rsi"],
-                indicator_params={
-                    "sma": {"sma_short": 10, "sma_long": 30},
-                    "rsi": {"rsi_period": 14, "rsi_overbought": 70, "rsi_oversold": 30},
-                },
-                min_confirmations=2,
-            ),
-            signal_threshold=0.3,
-            atr_stop_multiplier=2.0,
-            risk_reward_ratio=2.0,
-        ),
-        StrategyCandidate(
-            name="Tendência EMA + MACD",
-            strategy=TechnicalStrategyConfig(
-                kind="technical_ensemble",
-                indicators=["ema", "macd"],
+                indicators=["ema", "macd", "volume_confirmation"],
                 indicator_params={
                     "ema": {"ema_short": 12, "ema_long": 26},
                     "macd": {"macd_fast": 12, "macd_slow": 26, "macd_signal": 9},
+                    "volume_confirmation": {
+                        "volume_lookback": 48,
+                        "min_relative_volume": 0.9,
+                        "min_taker_imbalance": -0.1,
+                    },
                 },
                 min_confirmations=2,
             ),
-            signal_threshold=0.3,
+            signal_threshold=0.5,
             atr_stop_multiplier=2.2,
             risk_reward_ratio=2.2,
         ),
         StrategyCandidate(
-            name="Rompimento com confirmação EMA",
+            name="Continuação SMA + RSI + fluxo",
             strategy=TechnicalStrategyConfig(
                 kind="technical_ensemble",
-                indicators=["breakout", "ema"],
+                indicators=["sma", "rsi", "volume_confirmation"],
+                indicator_params={
+                    "sma": {"sma_short": 10, "sma_long": 30},
+                    "rsi": {"rsi_period": 14, "rsi_overbought": 70, "rsi_oversold": 30},
+                    "volume_confirmation": {
+                        "volume_lookback": 48,
+                        "min_relative_volume": 1.0,
+                        "min_taker_imbalance": -0.05,
+                    },
+                },
+                min_confirmations=2,
+            ),
+            signal_threshold=0.5,
+            atr_stop_multiplier=2.0,
+            risk_reward_ratio=2.0,
+        ),
+    ]
+    breakout_candidates = [
+        StrategyCandidate(
+            name="Rompimento de compressão + EMA + fluxo",
+            strategy=TechnicalStrategyConfig(
+                kind="technical_ensemble",
+                indicators=["breakout", "ema", "volume_confirmation"],
                 indicator_params={
                     "breakout": {"breakout_lookback": 20},
                     "ema": {"ema_short": 12, "ema_long": 26},
+                    "volume_confirmation": {
+                        "volume_lookback": 48,
+                        "min_relative_volume": 1.1,
+                        "min_taker_imbalance": 0.0,
+                    },
                 },
-                min_confirmations=1,
+                min_confirmations=2,
             ),
-            signal_threshold=0.3,
+            signal_threshold=0.5,
             atr_stop_multiplier=2.5,
             risk_reward_ratio=2.5,
         ),
     ]
     range_candidates = [
         StrategyCandidate(
-            name="Reversão RSI + Bollinger",
+            name="Reversão RSI + Bollinger + fluxo",
             strategy=TechnicalStrategyConfig(
                 kind="technical_ensemble",
-                indicators=["rsi", "bollinger"],
+                indicators=["rsi", "bollinger", "volume_confirmation"],
                 indicator_params={
                     "rsi": {"rsi_period": 14, "rsi_overbought": 70, "rsi_oversold": 30},
                     "bollinger": {"bb_period": 20, "bb_std": 2},
+                    "volume_confirmation": {
+                        "volume_lookback": 48,
+                        "min_relative_volume": 0.85,
+                        "min_taker_imbalance": -0.1,
+                    },
                 },
-                min_confirmations=1,
+                min_confirmations=2,
             ),
-            signal_threshold=0.3,
-            atr_stop_multiplier=1.8,
-            risk_reward_ratio=1.8,
-        ),
-        StrategyCandidate(
-            name="Reversão Engolfo + RSI",
-            strategy=TechnicalStrategyConfig(
-                kind="technical_ensemble",
-                indicators=["engulfing", "rsi"],
-                indicator_params={
-                    "rsi": {"rsi_period": 14, "rsi_overbought": 68, "rsi_oversold": 32},
-                },
-                min_confirmations=1,
-            ),
-            signal_threshold=0.3,
+            signal_threshold=0.5,
             atr_stop_multiplier=1.8,
             risk_reward_ratio=1.8,
         ),
     ]
+    if pattern == "COMPRESSION_BREAKOUT":
+        return breakout_candidates
+    if pattern == "MEAN_REVERSION":
+        return range_candidates
+    return trend_candidates
+
+
+def _candidates_for_trend(trend: str) -> list[StrategyCandidate]:
+    """Compatibility helper retained for existing research callers and tests."""
     if trend == "RANGE":
-        return range_candidates + trend_candidates[:1]
-    if trend == "DOWNTREND":
-        return [trend_candidates[2], range_candidates[0], trend_candidates[1]]
-    return trend_candidates + range_candidates[:1]
+        return _candidates_for_pattern("MEAN_REVERSION") + _candidates_for_pattern(
+            "TREND_CONTINUATION"
+        )
+    return _candidates_for_pattern(_normalize_pattern_name(trend))

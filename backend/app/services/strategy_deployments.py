@@ -7,10 +7,11 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import select, text, update
+import pandas as pd
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import TradingExecutionMode
+from app.config import TradingExecutionMode, settings
 from app.core.logging import get_logger
 from app.models.backtest import BacktestResult
 from app.models.portfolio import Position
@@ -33,11 +34,12 @@ WALK_FORWARD_HISTORY_LIMIT = 12_000
 WALK_FORWARD_TRAIN_DAYS = 60
 WALK_FORWARD_TEST_DAYS = 15
 WALK_FORWARD_STEP_DAYS = 15
+WALK_FORWARD_EMBARGO_CANDLES = 5
 MIN_WALK_FORWARD_WINDOWS = 3
-MIN_SOURCE_TRADES = 20
-MIN_OOS_TRADES = 20
-MIN_PROFIT_FACTOR = 1.05
-MIN_CONSISTENCY_SCORE = 0.60
+MIN_SOURCE_TRADES = 50
+MIN_OOS_TRADES = 50
+MIN_PROFIT_FACTOR = 1.15
+MIN_CONSISTENCY_SCORE = 0.65
 MAX_DRAWDOWN_PCT = 0.15
 MAX_OVERFITTING_SCORE = 0.50
 
@@ -64,7 +66,7 @@ def required_walk_forward_candles(interval: str) -> int:
         + WALK_FORWARD_TEST_DAYS
         + (MIN_WALK_FORWARD_WINDOWS - 1) * WALK_FORWARD_STEP_DAYS
     )
-    return math.ceil(required_days * candles_per_day(interval))
+    return math.ceil(required_days * candles_per_day(interval)) + WALK_FORWARD_EMBARGO_CANDLES
 
 
 async def create_strategy_deployment(
@@ -72,11 +74,10 @@ async def create_strategy_deployment(
     *,
     source_backtest_id: int,
     target_execution_mode: str,
+    validation_candles: pd.DataFrame | None = None,
 ) -> StrategyDeployment:
     """Persist approval or rejection evidence without enabling the engine."""
-    source = await db.scalar(
-        select(BacktestResult).where(BacktestResult.id == source_backtest_id)
-    )
+    source = await db.scalar(select(BacktestResult).where(BacktestResult.id == source_backtest_id))
     if source is None:
         raise LookupError("source backtest was not found")
 
@@ -84,11 +85,15 @@ async def create_strategy_deployment(
     reasons = _source_rejection_reasons(source)
     walk_forward = None
     required_candles = required_walk_forward_candles(source.interval)
-    candles = await market_data_collector.get_latest_candles(
-        db=db,
-        symbol=source.symbol,
-        interval=source.interval,
-        limit=WALK_FORWARD_HISTORY_LIMIT,
+    candles = (
+        validation_candles.copy()
+        if validation_candles is not None
+        else await market_data_collector.get_latest_candles(
+            db=db,
+            symbol=source.symbol,
+            interval=source.interval,
+            limit=WALK_FORWARD_HISTORY_LIMIT,
+        )
     )
 
     if len(candles) < required_candles:
@@ -119,6 +124,7 @@ async def create_strategy_deployment(
             risk_reward_ratio=float(source.risk_reward_ratio),
             allow_short=False,
             candles_per_day=candles_per_day(source.interval),
+            embargo_candles=WALK_FORWARD_EMBARGO_CANDLES,
         )
         reasons.extend(_walk_forward_rejection_reasons(walk_forward))
 
@@ -158,16 +164,12 @@ async def activate_strategy_deployment(
 ) -> StrategyDeployment:
     """Atomically replace the active strategy for its exact runtime scope."""
     deployment = await db.scalar(
-        select(StrategyDeployment)
-        .where(StrategyDeployment.id == deployment_id)
-        .with_for_update()
+        select(StrategyDeployment).where(StrategyDeployment.id == deployment_id).with_for_update()
     )
     if deployment is None:
         raise LookupError("strategy deployment was not found")
     if deployment.status not in {APPROVED, ACTIVE}:
-        raise StrategyDeploymentSourceError(
-            "only an APPROVED strategy deployment can be activated"
-        )
+        raise StrategyDeploymentSourceError("only an APPROVED strategy deployment can be activated")
     if deployment.target_execution_mode != execution_mode.value:
         raise StrategyDeploymentSourceError(
             "strategy target execution mode does not match the active runtime mode"
@@ -179,6 +181,21 @@ async def activate_strategy_deployment(
         interval=deployment.interval,
         execution_mode=deployment.target_execution_mode,
     )
+    if execution_mode == TradingExecutionMode.TESTNET:
+        await _acquire_testnet_canary_lock(db)
+        other_active_count = await db.scalar(
+            select(func.count())
+            .select_from(StrategyDeployment)
+            .where(
+                StrategyDeployment.target_execution_mode == TradingExecutionMode.TESTNET.value,
+                StrategyDeployment.status == ACTIVE,
+                StrategyDeployment.id != deployment.id,
+            )
+        )
+        if int(other_active_count or 0) >= settings.testnet_canary_max_active_strategies:
+            raise StrategyDeploymentSourceError(
+                "Testnet canary is limited to three active strategies until portfolio evidence is established"
+            )
 
     await db.execute(
         update(StrategyDeployment)
@@ -313,6 +330,21 @@ async def _acquire_strategy_activation_lock(
         ) from exc
 
 
+async def _acquire_testnet_canary_lock(db: AsyncSession) -> None:
+    """Serialize the portfolio-wide Testnet canary cap across symbols."""
+    lock_key = int.from_bytes(
+        hashlib.blake2b(b"trademaster:testnet-canary", digest_size=8).digest(),
+        byteorder="big",
+        signed=True,
+    )
+    try:
+        await db.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": lock_key})
+    except Exception as exc:
+        raise StrategyDeploymentSourceError(
+            "could not acquire the Testnet canary activation lock"
+        ) from exc
+
+
 def _parse_deployable_strategy(source: BacktestResult) -> TechnicalStrategyConfig:
     if source.execution_profile != "spot_long_only":
         raise StrategyDeploymentSourceError(
@@ -344,9 +376,7 @@ def _source_rejection_reasons(source: BacktestResult) -> list[str]:
     if not _meets_profit_factor(float(source.profit_factor)):
         reasons.append(f"Source profit factor must be finite and at least {MIN_PROFIT_FACTOR:.2f}")
     if float(source.max_drawdown_pct) > MAX_DRAWDOWN_PCT:
-        reasons.append(
-            f"Source max drawdown exceeds {MAX_DRAWDOWN_PCT:.0%}"
-        )
+        reasons.append(f"Source max drawdown exceeds {MAX_DRAWDOWN_PCT:.0%}")
     return reasons
 
 
@@ -359,15 +389,12 @@ def _walk_forward_rejection_reasons(walk_forward) -> list[str]:
             f"{MIN_WALK_FORWARD_WINDOWS} out-of-sample windows with trades"
         )
     if walk_forward.total_test_trades < MIN_OOS_TRADES:
-        reasons.append(
-            f"Walk-forward needs at least {MIN_OOS_TRADES} out-of-sample trades"
-        )
+        reasons.append(f"Walk-forward needs at least {MIN_OOS_TRADES} out-of-sample trades")
     if walk_forward.avg_return_pct <= 0:
         reasons.append("Walk-forward mean return must be positive")
     if not _meets_profit_factor(walk_forward.avg_profit_factor):
         reasons.append(
-            "Walk-forward profit factor must be finite and at least "
-            f"{MIN_PROFIT_FACTOR:.2f}"
+            f"Walk-forward profit factor must be finite and at least {MIN_PROFIT_FACTOR:.2f}"
         )
     if walk_forward.consistency_score < MIN_CONSISTENCY_SCORE:
         reasons.append(
@@ -375,14 +402,9 @@ def _walk_forward_rejection_reasons(walk_forward) -> list[str]:
             f"{MIN_CONSISTENCY_SCORE:.0%}"
         )
     if walk_forward.avg_max_dd_pct > MAX_DRAWDOWN_PCT:
-        reasons.append(
-            f"Walk-forward mean drawdown exceeds {MAX_DRAWDOWN_PCT:.0%}"
-        )
+        reasons.append(f"Walk-forward mean drawdown exceeds {MAX_DRAWDOWN_PCT:.0%}")
     if walk_forward.overfitting_score > MAX_OVERFITTING_SCORE:
-        reasons.append(
-            "Walk-forward overfitting score exceeds "
-            f"{MAX_OVERFITTING_SCORE:.2f}"
-        )
+        reasons.append(f"Walk-forward overfitting score exceeds {MAX_OVERFITTING_SCORE:.2f}")
     return reasons
 
 

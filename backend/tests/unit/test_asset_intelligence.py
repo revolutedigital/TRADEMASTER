@@ -19,7 +19,9 @@ def _candles(closes: np.ndarray) -> pd.DataFrame:
             "low": closes * 0.99,
             "close": closes,
             "volume": np.full(len(closes), 1000.0),
-            "close_time": pd.date_range("2025-01-01 00:59", periods=len(closes), freq="h", tz="UTC"),
+            "close_time": pd.date_range(
+                "2025-01-01 00:59", periods=len(closes), freq="h", tz="UTC"
+            ),
             "quote_volume": np.full(len(closes), 100_000.0),
             "trade_count": np.full(len(closes), 100, dtype=int),
         }
@@ -47,14 +49,32 @@ def test_automatic_candidates_are_bounded_to_spot_long_only_strategies() -> None
 
     assert len(candidates) == 3
     assert all(candidate.strategy.execution_profile == "spot_long_only" for candidate in candidates)
-    assert all(candidate.strategy.min_confirmations <= len(candidate.strategy.indicators) for candidate in candidates)
+    assert all(
+        candidate.strategy.min_confirmations <= len(candidate.strategy.indicators)
+        for candidate in candidates
+    )
 
 
 def test_predictive_model_rejects_unreliable_or_bearish_spot_recommendations() -> None:
     assert _predictive_model_blocker({"trained": False}) is not None
-    assert _predictive_model_blocker({"trained": True, "validation_accuracy": 0.39, "latest_signal": "BUY"}) is not None
-    assert _predictive_model_blocker({"trained": True, "validation_accuracy": 0.55, "latest_signal": "SELL"}) is not None
-    assert _predictive_model_blocker({"trained": True, "validation_accuracy": 0.55, "latest_signal": "BUY"}) is None
+    assert (
+        _predictive_model_blocker(
+            {"trained": True, "validation_accuracy": 0.39, "latest_signal": "BUY"}
+        )
+        is not None
+    )
+    assert (
+        _predictive_model_blocker(
+            {"trained": True, "validation_accuracy": 0.55, "latest_signal": "SELL"}
+        )
+        is not None
+    )
+    assert (
+        _predictive_model_blocker(
+            {"trained": True, "validation_accuracy": 0.55, "latest_signal": "BUY"}
+        )
+        is None
+    )
 
 
 def test_neutral_predictive_model_requires_stronger_technical_confirmation() -> None:

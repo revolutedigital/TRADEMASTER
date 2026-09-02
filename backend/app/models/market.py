@@ -25,6 +25,8 @@ class OHLCV(Base, TimestampMixin):
     close_time: Mapped[datetime] = mapped_column(nullable=False)
     quote_volume: Mapped[float] = mapped_column(Numeric(20, 8), default=0)
     trade_count: Mapped[int] = mapped_column(Integer, default=0)
+    taker_buy_base: Mapped[float] = mapped_column(Numeric(20, 8), default=0)
+    taker_buy_quote: Mapped[float] = mapped_column(Numeric(20, 8), default=0)
 
     __table_args__ = (
         Index("ix_ohlcv_symbol_interval_time", "symbol", "interval", "open_time", unique=True),

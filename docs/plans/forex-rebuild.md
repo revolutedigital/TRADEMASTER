@@ -29,9 +29,9 @@ O TradeMaster vira plataforma de forex long/short, mantendo o gate de evidência
 | Step | Título | Estimativa | Status |
 |---|---|---|---|
 | 1 | Alinhar spec do gate ao código | 2-3h | concluído (spec = código; teste de contrato falha se divergir) |
-| 2 | Dados 3 anos H1, 7 majors, bid/ask | 4-8h | pendente |
-| 3 | Custo em pips (spread + comissão) | 4-6h | pendente |
-| 4 | Swap/rollover e fill de gap | 4-6h | pendente |
+| 2 | Dados 3 anos H1, 7 majors, bid/ask | 4-8h | código e testes prontos; download real em andamento (servidor lento, ~5 arquivos/min); validação de qualidade sobre dado real pendente |
+| 3 | Custo em pips (spread + comissão) | 4-6h | concluído (`fx_costs.py`, 22 testes) |
+| 4 | Swap/rollover e fill de gap | 4-6h | concluído (swap em `fx_costs.py`, gap em `fx_gap.py`, 20 testes) |
 | 5 | Contas e caminho do dinheiro (humano) | 3-5h + espera | pendente |
 | 6 | Prova de API cTrader demo | 6-10h | pendente |
 | 7 | Prova de API IBKR paper | 8-14h | pendente |

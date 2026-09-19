@@ -47,6 +47,9 @@ dev = [
     "pip-audit>=2.7.0",
     "fakeredis[lua]>=2.25.0",
 ]
+research = [
+    "pyarrow>=17.0",
+]
 ml = [
     "torch>=2.5.0",
     "stable-baselines3>=2.4.0",

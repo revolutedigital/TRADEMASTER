@@ -13,9 +13,19 @@ from app.services.backtest.fx_costs import (
     SwapSchedule,
 )
 from scripts.research.fx_spike import (
+    G0_MIN_PAIRS_POSITIVE,
+    MIN_TRADES_FOR_TEST,
     STRATEGIES,
+    ConfigResult,
+    GroupStats,
+    PlaceboSummary,
     Scenario,
+    adjusted_p_value,
     cluster_bootstrap_mean,
+    evaluate_g0,
+    load_null,
+    render_report,
+    save_null,
     group_stats,
     mid_ohlc,
     profit_factor,
@@ -543,3 +553,93 @@ def test_shuffling_rejects_pairs_with_almost_no_common_bars() -> None:
 
     with pytest.raises(ValueError, match="too few"):
         shuffle_bars({"A": a, "B": b}, np.random.default_rng(1))
+
+
+def _stats(trades: int, mean_r: float, t_stat: float | None) -> GroupStats:
+    return GroupStats(trades, mean_r, 0.0, 1.0, 0.5, 1.0, 5.0, None, None, t_stat)
+
+
+def _result(name: str, *, trades: int, mean_r: float, t_stat: float | None,
+            pairs_positive: int, pairs: int = 7) -> ConfigResult:
+    return ConfigResult(
+        strategy=name, timeframe="1D", scenario="base",
+        pooled=_stats(trades, mean_r, t_stat),
+        per_pair={f"P{i}": _stats(10, 0.1, 1.0) for i in range(pairs)},
+        by_year={}, pairs_positive=pairs_positive, pairs_significant=0,
+    )
+
+
+def test_adjusted_p_value_is_the_share_of_shuffles_whose_best_config_did_as_well() -> None:
+    null = [1.0, 2.0, 3.0, 4.0]
+
+    assert adjusted_p_value(5.0, null) == pytest.approx(1 / 5)  # nothing beat it: the +1 floor
+    assert adjusted_p_value(3.0, null) == pytest.approx(3 / 5)  # 3 and 4 tie or beat it
+    assert adjusted_p_value(0.0, null) == pytest.approx(1.0)
+    with pytest.raises(ValueError):
+        adjusted_p_value(1.0, [])
+
+
+def test_the_p_value_floor_is_one_over_the_number_of_shuffles_plus_one() -> None:
+    assert adjusted_p_value(99.0, [0.0] * 199) == pytest.approx(1 / 200)
+
+
+def test_g0_requires_significance_positive_mean_breadth_and_enough_trades() -> None:
+    null = list(np.linspace(0.5, 2.5, 200))  # 95th percentile is about 2.4
+    good = _result("good", trades=200, mean_r=0.2, t_stat=3.5, pairs_positive=6)
+    weak_t = _result("weak_t", trades=200, mean_r=0.1, t_stat=1.5, pairs_positive=6)
+    narrow = _result("narrow", trades=200, mean_r=0.2, t_stat=3.5,
+                     pairs_positive=G0_MIN_PAIRS_POSITIVE - 1)
+    negative = _result("negative", trades=200, mean_r=-0.2, t_stat=3.5, pairs_positive=6)
+    thin = _result("thin", trades=MIN_TRADES_FOR_TEST - 1, mean_r=0.5, t_stat=9.0, pairs_positive=7)
+
+    rows = {row.result.strategy: row for row in evaluate_g0([good, weak_t, narrow, negative, thin], null)}
+
+    assert rows["good"].passes
+    assert not rows["weak_t"].passes
+    assert not rows["narrow"].passes
+    assert not rows["negative"].passes
+    assert not rows["thin"].passes and rows["thin"].adjusted_p is None
+
+
+def test_the_null_distribution_round_trips_and_rejects_a_too_small_sample(tmp_path) -> None:
+    summary = PlaceboSummary(
+        replications=60, any_written=10, any_multiple_testing=5, any_g0=3,
+        per_config_g0={}, null_max_t=tuple(float(i) / 10 for i in range(60)),
+    )
+    path = tmp_path / "null.json"
+
+    save_null(summary, path, seed=1)
+
+    assert load_null(path) == pytest.approx([i / 10 for i in range(60)])
+    tiny = PlaceboSummary(10, 0, 0, 0, {}, tuple(float(i) for i in range(10)))
+    save_null(tiny, path, seed=1)
+    with pytest.raises(ValueError, match="at least 50"):
+        load_null(path)
+
+
+def test_the_report_refuses_a_verdict_without_a_calibrated_null() -> None:
+    results = [_result("only", trades=100, mean_r=0.3, t_stat=4.0, pairs_positive=7)]
+
+    report = render_report(results, symbols=["A"], data_range="x", generated="now")
+
+    assert "SEM CALIBRAÇÃO" in report
+    assert "G0 PASSOU" not in report
+
+
+def test_the_report_states_when_g0_fails_and_names_the_closest_configuration() -> None:
+    results = [_result("closest", trades=100, mean_r=0.05, t_stat=1.2, pairs_positive=5)]
+
+    report = render_report(results, symbols=["A"], data_range="x", generated="now",
+                           null_max_t=list(np.linspace(1.0, 3.0, 100)))
+
+    assert "G0 NÃO PASSOU" in report
+    assert "closest/1D" in report
+
+
+def test_the_report_names_the_configuration_that_passes() -> None:
+    results = [_result("winner", trades=300, mean_r=0.3, t_stat=6.0, pairs_positive=7)]
+
+    report = render_report(results, symbols=["A"], data_range="x", generated="now",
+                           null_max_t=list(np.linspace(1.0, 3.0, 100)))
+
+    assert "G0 PASSOU" in report and "winner/1D" in report

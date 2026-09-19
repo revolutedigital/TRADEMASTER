@@ -20,6 +20,7 @@ Nothing here touches the trading engine, the database, or an exchange.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -55,6 +56,9 @@ WARMUP_BARS = 120  # the slowest indicator (SMA 100, Donchian 55, MACD) needs ~1
 BOOTSTRAP_DRAWS = 20_000  # the corrected bound sits near the 0.2% quantile
 BOOTSTRAP_SEED = 20260919
 NOMINAL_ALPHA = 0.025  # one-sided, equivalent to a 95% two-sided interval
+MIN_TRADES_FOR_TEST = 30  # fewer trades make the t statistic meaningless
+G0_SIGNIFICANCE = 0.05  # adjusted p-value against the shuffled-data maximum
+G0_MIN_PAIRS_POSITIVE = 4  # of 7: an edge must be broad, not one lucky pair
 
 
 @dataclass(frozen=True)
@@ -465,6 +469,7 @@ class GroupStats:
     mean_bars_held: float
     interval: Interval | None
     minimum_detectable_mean_r: float | None
+    t_stat: float | None = None
 
 
 def trades_frame(trades: Sequence[Trade]) -> pd.DataFrame:
@@ -529,7 +534,11 @@ def group_stats(
         interval = Interval(mean, low_n, low_a, high_n)
         z = NormalDist().inv_cdf(1 - adjusted_alpha) + NormalDist().inv_cdf(0.8)
         detectable = float(z * r.std(ddof=1) / np.sqrt(r.size)) if r.size > 1 else None
+    t_stat = None
+    if r.size > 1 and r.std(ddof=1) > 0:
+        t_stat = float(r.mean() / (r.std(ddof=1) / np.sqrt(r.size)))
     return GroupStats(
+        t_stat=t_stat,
         trades=int(r.size),
         mean_r=float(r.mean()),
         mean_net_pips=float(frame["net_pips"].mean()),
@@ -573,6 +582,50 @@ class ConfigResult:
     @property
     def passes_g0(self) -> bool:
         return self.passes_written_g0 and self.passes_multiple_testing
+
+    @property
+    def testable_t(self) -> float | None:
+        """The pooled t statistic, only when there are enough trades to trust it."""
+        if self.pooled.trades < MIN_TRADES_FOR_TEST:
+            return None
+        return self.pooled.t_stat
+
+
+def adjusted_p_value(real_t: float, null_max_t: Sequence[float]) -> float:
+    """Probability that the best of all configurations on shuffled data reaches `real_t`.
+
+    Comparing against the maximum over configurations, per shuffle, accounts for trying
+    many strategies at once and for their dependence, without distributional assumptions.
+    """
+    if not null_max_t:
+        raise ValueError("null distribution is empty")
+    exceed = sum(1 for value in null_max_t if value >= real_t)
+    return (1 + exceed) / (1 + len(null_max_t))
+
+
+@dataclass(frozen=True)
+class G0Row:
+    result: ConfigResult
+    adjusted_p: float | None
+    passes: bool
+
+
+def evaluate_g0(
+    results: Sequence[ConfigResult], null_max_t: Sequence[float]
+) -> list[G0Row]:
+    """Apply the calibrated G0 rule to the base-scenario results."""
+    rows = []
+    for result in results:
+        t_value = result.testable_t
+        p_value = adjusted_p_value(t_value, null_max_t) if t_value is not None else None
+        passes = (
+            p_value is not None
+            and p_value <= G0_SIGNIFICANCE
+            and result.pooled.mean_r > 0
+            and result.pairs_positive >= G0_MIN_PAIRS_POSITIVE
+        )
+        rows.append(G0Row(result, p_value, passes))
+    return rows
 
 
 def load_pair_bars(data_dir: Path, symbol: str, rule: str) -> pd.DataFrame:
@@ -698,6 +751,7 @@ class PlaceboSummary:
     any_multiple_testing: int
     any_g0: int
     per_config_g0: dict[str, int]
+    null_max_t: tuple[float, ...] = ()
 
     @property
     def false_pass_rate(self) -> float:
@@ -720,15 +774,19 @@ def run_placebo(
     }
     any_written = any_multiple = any_g0 = 0
     per_config: dict[str, int] = {}
+    null_max_t: list[float] = []
     for replication in range(replications):
         rng = np.random.default_rng(seed + replication)
         written = multiple = full = False
+        best_t = float("-inf")
         for timeframe in TIMEFRAMES:
             shuffled = shuffle_bars(real[timeframe], rng)
             for spec in STRATEGIES:
                 result = run_config(
                     shuffled, spec, timeframe, SCENARIOS[scenario_name], adjusted_alpha=adjusted_alpha
                 )
+                if result.testable_t is not None:
+                    best_t = max(best_t, result.testable_t)
                 written = written or result.passes_written_g0
                 multiple = multiple or result.passes_multiple_testing
                 if result.passes_g0:
@@ -738,7 +796,34 @@ def run_placebo(
         any_written += written
         any_multiple += multiple
         any_g0 += full
-    return PlaceboSummary(replications, any_written, any_multiple, any_g0, per_config)
+        null_max_t.append(best_t)
+    return PlaceboSummary(
+        replications, any_written, any_multiple, any_g0, per_config, tuple(null_max_t)
+    )
+
+
+def save_null(summary: PlaceboSummary, path: Path, *, seed: int) -> None:
+    payload = {
+        "scenario": "base",
+        "replications": summary.replications,
+        "seed": seed,
+        "old_rule_false_pass": {
+            "plan_rule_2_pairs": summary.any_written,
+            "multiple_testing_bound": summary.any_multiple_testing,
+            "both": summary.any_g0,
+        },
+        "null_max_t": list(summary.null_max_t),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def load_null(path: Path) -> list[float]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    values = [float(v) for v in payload["null_max_t"] if v is not None and np.isfinite(v)]
+    if len(values) < 50:
+        raise ValueError("the null distribution needs at least 50 shuffles to be usable")
+    return values
 
 
 # ---------------------------------------------------------------------------
@@ -751,57 +836,83 @@ def _fmt(value: float | None, digits: int = 3) -> str:
 
 
 def render_report(
-    results: Sequence[ConfigResult], *, symbols: Sequence[str], data_range: str, generated: str
+    results: Sequence[ConfigResult],
+    *,
+    symbols: Sequence[str],
+    data_range: str,
+    generated: str,
+    null_max_t: Sequence[float] | None = None,
 ) -> str:
     base = [r for r in results if r.scenario == "base"]
-    winners = [r for r in base if r.passes_g0]
-    written_only = [r for r in base if r.passes_written_g0 and not r.passes_multiple_testing]
+    calibrated = null_max_t is not None
+    rows = evaluate_g0(base, null_max_t) if calibrated else []
+    winners = [row for row in rows if row.passes]
+    threshold = float(np.quantile(null_max_t, 1 - G0_SIGNIFICANCE)) if calibrated else None
     lines = [
         "# G0: estratégias técnicas simples sobrevivem ao custo real de forex?",
         "",
         f"Gerado em {generated}. Pares: {', '.join(symbols)}. Dados: {data_range}.",
-        f"Configurações testadas: {CONFIGURATION_COUNT} (estratégias x timeframes). "
-        f"Correção de múltiplos testes: limite inferior no quantil {NOMINAL_ALPHA / CONFIGURATION_COUNT:.4f}.",
-        "Parâmetros de fábrica, sem otimização: toda a amostra é fora da amostra. "
+        f"Configurações testadas: {CONFIGURATION_COUNT} (estratégias x timeframes), parâmetros de fábrica, "
+        "sem otimização: toda a amostra é fora da amostra.",
         "Custo base = " + SCENARIOS["base"].description + ". Carry/swap real não modelado no caso base.",
+        "",
+        "## Critério de aprovação (calibrado por placebo)",
+        "",
+        "A regra do plano (IC 95% excluindo zero em 2+ pares) foi medida em dados embaralhados, sem "
+        "nenhuma vantagem, e aprovou ruído com frequência inaceitável. O critério usado aqui compara a "
+        "MELHOR configuração real com a melhor configuração em dados embaralhados: só passa quem tiver "
+        f"valor-p ajustado <= {G0_SIGNIFICANCE:.2f}, média R positiva, ao menos {G0_MIN_PAIRS_POSITIVE} "
+        f"de {len(symbols)} pares positivos e {MIN_TRADES_FOR_TEST}+ trades.",
         "",
         "## Veredito",
         "",
     ]
-    if winners:
+    if not calibrated:
+        lines.append("**SEM CALIBRAÇÃO: sem a distribuição do placebo não há veredito.** "
+                     "Rode com --placebo N --null-out arquivo e depois com --null-file arquivo.")
+    elif winners:
         lines.append(f"**G0 PASSOU** em {len(winners)} configuração(ões): "
-                     + ", ".join(f"{w.strategy}/{w.timeframe}" for w in winners) + ".")
+                     + ", ".join(f"{w.result.strategy}/{w.result.timeframe} (p={w.adjusted_p:.3f})"
+                                 for w in winners) + ".")
     else:
-        lines.append("**G0 NÃO PASSOU.** Nenhuma configuração tem expectativa positiva depois do custo "
-                     "com IC excluindo zero em pelo menos 2 pares E limite inferior corrigido acima de zero.")
-        if written_only:
+        lines.append("**G0 NÃO PASSOU.** Nenhuma configuração se separa do que a melhor de "
+                     f"{CONFIGURATION_COUNT} configurações faria em dados sem vantagem "
+                     f"(limite t de 95% no placebo: {threshold:.2f}, {len(null_max_t)} embaralhamentos).")
+        best = max((row for row in rows if row.result.testable_t is not None),
+                   key=lambda row: row.result.testable_t, default=None)
+        if best is not None:
             lines.append("")
-            lines.append("Passaram só na regra do plano (2+ pares) e não na correção de múltiplos testes: "
-                         + ", ".join(f"{w.strategy}/{w.timeframe}" for w in written_only) + ".")
+            lines.append(f"A mais próxima foi {best.result.strategy}/{best.result.timeframe}: "
+                         f"t = {best.result.testable_t:.2f}, valor-p ajustado = {best.adjusted_p:.3f}, "
+                         f"média R = {best.result.pooled.mean_r:.3f}, "
+                         f"{best.result.pairs_positive}/{len(symbols)} pares positivos.")
+
     lines += ["", "## Configurações, caso base", "",
-              "| Estratégia | TF | Trades | Média R | PF | Custo por trade (pips: spread + slippage + comissão) | IC95 nominal | Limite inf. corrigido | Pares > 0 | Pares signif. | Efeito mínimo detectável (R) |",
+              "| Estratégia | TF | Trades | Média R | t | Valor-p ajustado | PF | Custo por trade (pips: spread + slippage + comissão) | Pares > 0 | Efeito mínimo detectável (R) | Passa |",
               "|---|---|---|---|---|---|---|---|---|---|---|"]
+    by_key = {(row.result.strategy, row.result.timeframe): row for row in rows}
     for r in sorted(base, key=lambda item: item.pooled.mean_r, reverse=True):
-        p = r.pooled
-        interval = p.interval
-        nominal = f"[{_fmt(interval.lower_nominal)}, {_fmt(interval.upper_nominal)}]" if interval else "n/a"
+        pooled = r.pooled
+        row = by_key.get((r.strategy, r.timeframe))
+        p_text = _fmt(row.adjusted_p) if row else "n/a"
+        verdict = ("sim" if row.passes else "não") if row else "n/a"
         lines.append(
-            f"| {r.strategy} | {r.timeframe} | {p.trades} | {_fmt(p.mean_r)} | {_fmt(p.profit_factor, 2)} | "
-            f"{_fmt(p.mean_cost_pips, 2)} | {nominal} | {_fmt(interval.lower_adjusted if interval else None)} | "
-            f"{r.pairs_positive}/{len(r.per_pair)} | {r.pairs_significant} | {_fmt(p.minimum_detectable_mean_r)} |"
+            f"| {r.strategy} | {r.timeframe} | {pooled.trades} | {_fmt(pooled.mean_r)} | {_fmt(pooled.t_stat, 2)} | "
+            f"{p_text} | {_fmt(pooled.profit_factor, 2)} | {_fmt(pooled.mean_cost_pips, 2)} | "
+            f"{r.pairs_positive}/{len(r.per_pair)} | {_fmt(pooled.minimum_detectable_mean_r)} | {verdict} |"
         )
 
-    best = max(base, key=lambda item: item.pooled.mean_r)
-    lines += ["", f"## Melhor configuração por média R: {best.strategy} / {best.timeframe}", "",
+    top = max(base, key=lambda item: item.pooled.mean_r)
+    lines += ["", f"## Maior média R: {top.strategy} / {top.timeframe}", "",
               "| Par | Trades | Média R | Média pips líquidos | PF | Win rate |", "|---|---|---|---|---|---|"]
-    for symbol, s in best.per_pair.items():
-        lines.append(f"| {symbol} | {s.trades} | {_fmt(s.mean_r)} | {_fmt(s.mean_net_pips, 1)} | "
-                     f"{_fmt(s.profit_factor, 2)} | {_fmt(s.win_rate, 2)} |")
+    for symbol, stats in top.per_pair.items():
+        lines.append(f"| {symbol} | {stats.trades} | {_fmt(stats.mean_r)} | {_fmt(stats.mean_net_pips, 1)} | "
+                     f"{_fmt(stats.profit_factor, 2)} | {_fmt(stats.win_rate, 2)} |")
     lines += ["", "Por ano civil (estabilidade):", "", "| Ano | Trades | Média R |", "|---|---|---|"]
-    for year, s in sorted(best.by_year.items()):
-        lines.append(f"| {year} | {s.trades} | {_fmt(s.mean_r)} |")
+    for year, stats in sorted(top.by_year.items()):
+        lines.append(f"| {year} | {stats.trades} | {_fmt(stats.mean_r)} |")
 
-    lines += ["", "## Sensibilidade a custo e a carry (média R agregada)", "",
+    lines += ["", "## Sensibilidade a custo, horário de entrada e carry (média R agregada)", "",
               "| Estratégia | TF | " + " | ".join(SCENARIOS) + " |",
               "|---|---|" + "|".join("---" for _ in SCENARIOS) + "|"]
     keyed = {(r.strategy, r.timeframe, r.scenario): r for r in results}
@@ -814,14 +925,17 @@ def render_report(
             lines.append(f"| {spec.name} | {timeframe} | " + " | ".join(cells) + " |")
 
     lines += ["", "## Como ler", "",
-              "- Média R é o resultado médio por trade em múltiplos do risco (distância do stop). "
-              "Positivo depois do custo é o mínimo; o IC diz se dá para separar de zero.",
-              "- Efeito mínimo detectável é o menor R médio que esta amostra conseguiria separar de zero "
-              "(80% de poder). Se for maior que qualquer efeito plausível, o resultado é INCONCLUSIVO por "
-              "falta de amostra, não prova de ausência de vantagem.",
+              "- Média R é o resultado médio por trade em múltiplos do risco (distância do stop, 2 ATR).",
+              "- t é a média dividida pelo erro padrão. O valor-p ajustado é a chance de a MELHOR das "
+              f"{CONFIGURATION_COUNT} configurações, em dados embaralhados, atingir esse t.",
+              "- Efeito mínimo detectável é o menor R médio que esta amostra separaria de zero (80% de poder). "
+              "Se for maior que qualquer efeito plausível, o resultado é INCONCLUSIVO por falta de amostra, "
+              "não prova de ausência de vantagem.",
               "- O caso base não inclui carry: em pares como USDJPY o diferencial de juros pode somar ou "
-              "subtrair pips por dia e pode mudar o sinal de uma estratégia de tendência. Ver a coluna adverse_swap.",
-              "- Spreads vêm do feed interbancário da Dukascopy; uma conta de varejo padrão paga mais (coluna stress)."]
+              "subtrair pips por dia. Ver adverse_swap. Custo pesa pouco em estratégias lentas (poucos pips "
+              "contra uma distância de stop de 50 a 150 pips): o que decide é a vantagem, não o custo.",
+              "- Spreads vêm do feed interbancário da Dukascopy. liquid_entry mede o efeito de executar em "
+              "horário líquido; stress dobra o spread (conta de varejo padrão)."]
     return "\n".join(lines) + "\n"
 
 
@@ -834,8 +948,10 @@ def main(argv: list[str] | None = None) -> int:
         "--placebo",
         type=int,
         default=0,
-        help="instead of the real run, shuffle the bars N times and report how often G0 would pass",
+        help="instead of the real run, shuffle the bars N times and save the null distribution",
     )
+    parser.add_argument("--null-out", type=Path, default=None, help="where --placebo saves the null")
+    parser.add_argument("--null-file", type=Path, default=None, help="null distribution for the real run")
     args = parser.parse_args(argv)
 
     symbols = args.symbols or sorted(
@@ -847,6 +963,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.placebo:
         summary = run_placebo(args.data_dir, symbols, replications=args.placebo)
+        if args.null_out:
+            save_null(summary, args.null_out, seed=BOOTSTRAP_SEED)
         sys.stdout.write(
             f"placebo: {summary.replications} replications on shuffled bars\n"
             f"  any configuration passes the plan's rule (2+ pairs): {summary.any_written}\n"
@@ -854,13 +972,17 @@ def main(argv: list[str] | None = None) -> int:
             f"  any passes full G0: {summary.any_g0} "
             f"({summary.false_pass_rate:.1%}; a sound gate should stay near or below 5%)\n"
             f"  by configuration: {summary.per_config_g0}\n"
+            f"  null distribution of the best t: median {np.median(summary.null_max_t):.2f}, "
+            f"95th percentile {np.quantile(summary.null_max_t, 0.95):.2f}\n"
         )
         return 0
 
     results = run_experiment(args.data_dir, symbols, scenario_names=list(SCENARIOS))
     first = pd.read_parquet(args.data_dir / f"{symbols[0]}_H1.parquet")
+    null_max_t = load_null(args.null_file) if args.null_file else None
     report = render_report(
         results,
+        null_max_t=null_max_t,
         symbols=symbols,
         data_range=f"{first.index[0]:%Y-%m-%d} a {first.index[-1]:%Y-%m-%d}",
         generated=datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),

@@ -642,6 +642,106 @@ def run_experiment(
 
 
 # ---------------------------------------------------------------------------
+# Placebo: does the whole procedure approve data that has no edge?
+# ---------------------------------------------------------------------------
+
+BID_COLUMNS = ("bid_open", "bid_high", "bid_low", "bid_close")
+ASK_COLUMNS = ("ask_open", "ask_high", "ask_low", "ask_close")
+
+
+def shuffle_bars(
+    bars_by_pair: dict[str, pd.DataFrame], rng: np.random.Generator
+) -> dict[str, pd.DataFrame]:
+    """Shuffle whole bars, with the gap that precedes each, using one permutation for all pairs.
+
+    Every bar keeps its own shape (range, direction, spread) and its own opening gap, so
+    volatility, spreads and gap sizes are unchanged. What is destroyed is the order, so
+    trend and mean reversion between bars disappear. Using the same permutation for every
+    pair keeps the cross-pair correlation of the moves, which matters for the bootstrap.
+    """
+    common = sorted(set.intersection(*(set(bars.index) for bars in bars_by_pair.values())))
+    if len(common) < 3:
+        raise ValueError("pairs share too few bars to shuffle")
+    index = pd.DatetimeIndex(common)
+    permutation = rng.permutation(len(index))
+
+    shuffled: dict[str, pd.DataFrame] = {}
+    for symbol, bars in bars_by_pair.items():
+        aligned = bars.loc[index]
+        bid_open = aligned["bid_open"].to_numpy(dtype=float)
+        ask_open = aligned["ask_open"].to_numpy(dtype=float)
+        relative_close = aligned["bid_close"].to_numpy(dtype=float) / bid_open
+        previous_close = np.concatenate(([bid_open[0]], aligned["bid_close"].to_numpy()[:-1]))
+        gap = bid_open / previous_close
+
+        chosen_gap = gap[permutation].copy()
+        chosen_close = relative_close[permutation]
+        factors = np.ones(len(index))
+        factors[1:] = chosen_close[:-1] * chosen_gap[1:]
+        new_bid_open = bid_open[0] * np.cumprod(factors)
+        new_ask_open = new_bid_open * (ask_open[permutation] / bid_open[permutation])
+
+        frame = aligned.iloc[permutation].copy()
+        for column in BID_COLUMNS:
+            frame[column] = aligned[column].to_numpy()[permutation] / bid_open[permutation] * new_bid_open
+        for column in ASK_COLUMNS:
+            frame[column] = aligned[column].to_numpy()[permutation] / ask_open[permutation] * new_ask_open
+        frame.index = index
+        shuffled[symbol] = frame
+    return shuffled
+
+
+@dataclass(frozen=True)
+class PlaceboSummary:
+    replications: int
+    any_written: int
+    any_multiple_testing: int
+    any_g0: int
+    per_config_g0: dict[str, int]
+
+    @property
+    def false_pass_rate(self) -> float:
+        return self.any_g0 / self.replications if self.replications else float("nan")
+
+
+def run_placebo(
+    data_dir: Path,
+    symbols: Sequence[str],
+    *,
+    replications: int,
+    seed: int = BOOTSTRAP_SEED,
+    scenario_name: str = "base",
+) -> PlaceboSummary:
+    """Run the full experiment on shuffled data and count how often it would approve."""
+    adjusted_alpha = NOMINAL_ALPHA / CONFIGURATION_COUNT
+    real = {
+        timeframe: {symbol: load_pair_bars(data_dir, symbol, timeframe) for symbol in symbols}
+        for timeframe in TIMEFRAMES
+    }
+    any_written = any_multiple = any_g0 = 0
+    per_config: dict[str, int] = {}
+    for replication in range(replications):
+        rng = np.random.default_rng(seed + replication)
+        written = multiple = full = False
+        for timeframe in TIMEFRAMES:
+            shuffled = shuffle_bars(real[timeframe], rng)
+            for spec in STRATEGIES:
+                result = run_config(
+                    shuffled, spec, timeframe, SCENARIOS[scenario_name], adjusted_alpha=adjusted_alpha
+                )
+                written = written or result.passes_written_g0
+                multiple = multiple or result.passes_multiple_testing
+                if result.passes_g0:
+                    full = True
+                    key = f"{spec.name}/{timeframe}"
+                    per_config[key] = per_config.get(key, 0) + 1
+        any_written += written
+        any_multiple += multiple
+        any_g0 += full
+    return PlaceboSummary(replications, any_written, any_multiple, any_g0, per_config)
+
+
+# ---------------------------------------------------------------------------
 # Report
 # ---------------------------------------------------------------------------
 
@@ -730,6 +830,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--data-dir", type=Path, default=Path("data/raw/fx"))
     parser.add_argument("--symbols", nargs="+", default=None)
     parser.add_argument("--report", type=Path, default=None)
+    parser.add_argument(
+        "--placebo",
+        type=int,
+        default=0,
+        help="instead of the real run, shuffle the bars N times and report how often G0 would pass",
+    )
     args = parser.parse_args(argv)
 
     symbols = args.symbols or sorted(
@@ -738,6 +844,18 @@ def main(argv: list[str] | None = None) -> int:
     if not symbols:
         sys.stderr.write("no parquet datasets found; run fx_dataset first\n")
         return 2
+
+    if args.placebo:
+        summary = run_placebo(args.data_dir, symbols, replications=args.placebo)
+        sys.stdout.write(
+            f"placebo: {summary.replications} replications on shuffled bars\n"
+            f"  any configuration passes the plan's rule (2+ pairs): {summary.any_written}\n"
+            f"  any passes the multiple-testing bound: {summary.any_multiple_testing}\n"
+            f"  any passes full G0: {summary.any_g0} "
+            f"({summary.false_pass_rate:.1%}; a sound gate should stay near or below 5%)\n"
+            f"  by configuration: {summary.per_config_g0}\n"
+        )
+        return 0
 
     results = run_experiment(args.data_dir, symbols, scenario_names=list(SCENARIOS))
     first = pd.read_parquet(args.data_dir / f"{symbols[0]}_H1.parquet")

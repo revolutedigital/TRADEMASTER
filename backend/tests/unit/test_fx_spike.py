@@ -20,6 +20,7 @@ from scripts.research.fx_spike import (
     mid_ohlc,
     profit_factor,
     resample_session,
+    shuffle_bars,
     simulate,
     trades_frame,
     wilder_atr,
@@ -444,3 +445,101 @@ def test_resampling_reports_the_median_spread_outside_the_rollover_hour() -> Non
 
     assert bars["median_spread_pips"].iloc[0] == pytest.approx(np.median(np.arange(1, 24)))
     assert bars["open_spread_pips"].iloc[0] == pytest.approx(1.0)
+
+
+def _random_walk_bars(seed: int, n: int = 60, start_price: float = 1.10) -> pd.DataFrame:
+    rng = np.random.default_rng(seed)
+    closes = start_price * np.cumprod(1 + rng.normal(0, 0.004, n))
+    opens = np.concatenate(([start_price], closes[:-1])) * (1 + rng.normal(0, 0.0008, n))
+    highs = np.maximum(opens, closes) * (1 + np.abs(rng.normal(0, 0.002, n)))
+    lows = np.minimum(opens, closes) * (1 - np.abs(rng.normal(0, 0.002, n)))
+    frame = pd.DataFrame(index=pd.date_range("2024-01-08 22:00", periods=n, freq="D", tz="UTC"))
+    half = 0.00005
+    for side, sign in (("bid", -1), ("ask", 1)):
+        frame[f"{side}_open"] = opens + sign * half
+        frame[f"{side}_high"] = highs + sign * half
+        frame[f"{side}_low"] = lows + sign * half
+        frame[f"{side}_close"] = closes + sign * half
+    frame["open_spread_pips"] = 1.0
+    frame["median_spread_pips"] = 1.0
+    return frame
+
+
+def test_shuffling_keeps_each_bars_shape_and_the_gap_distribution() -> None:
+    bars = {"EURUSD": _random_walk_bars(1), "GBPUSD": _random_walk_bars(2, start_price=1.27)}
+
+    shuffled = shuffle_bars(bars, np.random.default_rng(5))
+
+    for symbol, original in bars.items():
+        new = shuffled[symbol]
+        assert list(new.index) == list(original.index)
+        original_range = ((original["bid_high"] - original["bid_low"]) / original["bid_open"])
+        new_range = ((new["bid_high"] - new["bid_low"]) / new["bid_open"])
+        assert sorted(new_range.round(10)) == pytest.approx(sorted(original_range.round(10)))
+        original_gap = original["bid_open"].to_numpy()[1:] / original["bid_close"].to_numpy()[:-1]
+        new_gap = new["bid_open"].to_numpy()[1:] / new["bid_close"].to_numpy()[:-1]
+        # every shuffled gap is one of the original gaps (the first bar's gap is fixed at 1)
+        assert set(np.round(new_gap, 9)) <= set(np.round(original_gap, 9)) | {1.0}
+
+
+def test_shuffled_bars_are_valid_quotes_and_ohlc() -> None:
+    shuffled = shuffle_bars({"EURUSD": _random_walk_bars(3)}, np.random.default_rng(9))["EURUSD"]
+
+    assert (shuffled["ask_open"] >= shuffled["bid_open"]).all()
+    assert (shuffled["bid_high"] >= shuffled[["bid_open", "bid_close"]].max(axis=1) - 1e-12).all()
+    assert (shuffled["bid_low"] <= shuffled[["bid_open", "bid_close"]].min(axis=1) + 1e-12).all()
+    assert shuffled[["bid_open", "ask_open"]].gt(0).all().all()
+
+
+def test_shuffling_uses_one_permutation_for_every_pair() -> None:
+    same = _random_walk_bars(4)
+    shuffled = shuffle_bars({"A": same, "B": same.copy()}, np.random.default_rng(11))
+
+    pd.testing.assert_frame_equal(shuffled["A"], shuffled["B"])
+
+
+def test_shuffling_is_reproducible_and_actually_changes_the_order() -> None:
+    bars = {"EURUSD": _random_walk_bars(6)}
+
+    first = shuffle_bars(bars, np.random.default_rng(7))["EURUSD"]
+    again = shuffle_bars(bars, np.random.default_rng(7))["EURUSD"]
+    other = shuffle_bars(bars, np.random.default_rng(8))["EURUSD"]
+
+    pd.testing.assert_frame_equal(first, again)
+    assert not first["bid_close"].equals(other["bid_close"])
+    assert not first["bid_close"].equals(bars["EURUSD"]["bid_close"])
+
+
+def test_shuffling_destroys_serial_dependence_that_the_original_has() -> None:
+    rng = np.random.default_rng(12)
+    trend = np.cumsum(np.full(300, 0.002) + rng.normal(0, 0.0005, 300))
+    closes = 1.10 * np.exp(trend)
+    frame = pd.DataFrame(index=pd.date_range("2024-01-08 22:00", periods=300, freq="D", tz="UTC"))
+    for side, sign in (("bid", -1), ("ask", 1)):
+        frame[f"{side}_open"] = np.concatenate(([1.10], closes[:-1])) + sign * 0.00005
+        frame[f"{side}_high"] = closes * 1.001 + sign * 0.00005
+        frame[f"{side}_low"] = np.concatenate(([1.10], closes[:-1])) * 0.999 + sign * 0.00005
+        frame[f"{side}_close"] = closes + sign * 0.00005
+    frame["open_spread_pips"] = 1.0
+    frame["median_spread_pips"] = 1.0
+
+    def autocorrelation(series: pd.Series) -> float:
+        returns = np.log(series).diff().dropna()
+        return float(returns.autocorr(lag=1))
+
+    shuffled = shuffle_bars({"EURUSD": frame}, np.random.default_rng(3))["EURUSD"]
+
+    assert abs(autocorrelation(shuffled["bid_close"])) < 0.2
+
+    total_move_original = np.log(frame["bid_close"].iloc[-1] / frame["bid_close"].iloc[0])
+    total_move_shuffled = np.log(shuffled["bid_close"].iloc[-1] / shuffled["bid_close"].iloc[0])
+    assert total_move_shuffled == pytest.approx(total_move_original, rel=0.35)
+
+
+def test_shuffling_rejects_pairs_with_almost_no_common_bars() -> None:
+    a = _random_walk_bars(1, n=10)
+    b = _random_walk_bars(2, n=10)
+    b.index = b.index + pd.Timedelta(days=400)
+
+    with pytest.raises(ValueError, match="too few"):
+        shuffle_bars({"A": a, "B": b}, np.random.default_rng(1))

@@ -24,6 +24,30 @@ O TradeMaster vira plataforma de forex long/short, mantendo o gate de evidência
 - **Portão A (após step 23):** 4 semanas de paper soak, comparando fills simulados com spread real.
 - **Step 31:** exige o parecer jurídico/contábil (Decisão 6).
 
+## Resultado do G0 (2026-09-19)
+
+Relatório completo: [docs/forex/g0-report-2026-09-19.md](../forex/g0-report-2026-09-19.md).
+
+**G0 não passou.** 6 famílias de estratégia técnica (parâmetros de fábrica, sem otimização) × 2 timeframes (H4 e diário) × 7 majors, 3 anos (2023-09 a 2026-08), custo real de bid/ask, comissão, slippage e gap.
+
+- Melhor: **sma_rsi no diário**, +0,196 R por trade (210 trades, PF 1,44, positiva nos 3 anos civis: 0,25 / 0,05 / 0,32; 5 de 7 pares positivos), mas t = 2,29 e valor-p ajustado 0,175. O limite de aprovação (5%) exige t ≥ 3,06.
+- As outras 11 configurações ficam entre −0,22 R e +0,13 R. Os rompimentos (Donchian) perdem de forma consistente (donchian_55 em H4: t = −3,24).
+- **Custo não é o problema em estratégia lenta:** ~5 pips por trade no diário contra stops de 50 a 150 pips. O resultado quase não muda entre custo base, custo ECN, spread dobrado (0,144 R) e swap adverso (0,150 R). O que falta é vantagem demonstrável.
+- Para confirmar +0,196 R com 80% de poder seriam necessários ~548 trades, ou cerca de 8 anos nesta cadência.
+- O efeito do sma_rsi concentra-se em EURUSD, GBPUSD, NZDUSD e AUDUSD (todos correlacionados com o dólar) e some em USDCAD, USDCHF e USDJPY. Três anos podem ser um único regime do dólar.
+
+### Desvios do plano (registrados)
+
+1. **Critério do G0.** A regra escrita ("IC 95% excluindo zero em 2+ pares") aprovou dados embaralhados, sem vantagem, em 30 de 210 rodadas (14%), quase 3× o aceitável. Foi substituída por um teste calibrado pelo próprio placebo: o valor-p ajustado compara a melhor configuração real com a melhor configuração em dados embaralhados (limite de 5%), com média R positiva, ao menos 4 de 7 pares positivos e 30+ trades.
+2. **Perfil de estratégia.** As estratégias atuais dependem de `volume_confirmation` como segundo voto; sem volume, `min_confirmations = 2` exigiria dois cruzamentos na mesma vela. Usei famílias pré-declaradas com `min_confirmations = 1` e parâmetros de fábrica.
+3. **Amostra.** 3 anos (como planejado), não 5: o servidor de dados limita o ritmo.
+
+### O que fazer agora (decisão do Igor)
+
+- **Recomendado, barato e sem tocar na plataforma:** confirmar em amostra que o teste nunca viu. Baixar 2016-09 a 2023-08 dos mesmos 7 pares (~3 h em segundo plano) e testar **só** sma_rsi/diário e bollinger/diário, como amostra de confirmação de 2 hipóteses (limiar bem menor que o de 12). Se confirmar, o plano segue do step 9. Se não confirmar, encerrar o forex por análise técnica.
+- **Alternativas:** rodar o mesmo teste em USDBRL para a rota WDO da B3 (dado de outra fonte); ou não reescrever a plataforma.
+- **Não recomendado:** seguir para a Fase A sem confirmação. É construir 120 a 200 horas de plataforma em cima de um resultado que o próprio placebo não separa do acaso.
+
 ## Quadro de progresso
 
 | Step | Título | Estimativa | Status |
@@ -32,35 +56,35 @@ O TradeMaster vira plataforma de forex long/short, mantendo o gate de evidência
 | 2 | Dados 3 anos H1, 7 majors, bid/ask | 4-8h | concluído (2023-09 a 2026-08, ~18.650 candles por par; densidade 0,709; 0 candle no sábado; spread mediano EURUSD 0,3 pip) |
 | 3 | Custo em pips (spread + comissão) | 4-6h | concluído (`fx_costs.py`, 22 testes) |
 | 4 | Swap/rollover e fill de gap | 4-6h | concluído (swap em `fx_costs.py`, gap em `fx_gap.py`, 20 testes) |
-| 5 | Contas e caminho do dinheiro (humano) | 3-5h + espera | pendente |
-| 6 | Prova de API cTrader demo | 6-10h | pendente |
-| 7 | Prova de API IBKR paper | 8-14h | pendente |
-| 8 | Walk-forward FX com IC (G0) | 6-10h | em execução: simulador pronto, placebo oficial rodando (210 embaralhamentos) |
-| 9 | Spec v2 do perfil FX | 4-6h | pendente |
-| 10 | Migração aditiva 019 | 4-6h | pendente |
-| 11 | Instrumentos, pip/lote e conversão | 6-8h | pendente |
-| 12 | Long/short nos schemas e sinais | 5-8h | pendente |
-| 13 | Long/short no gate e estudo de ativo | 6-10h | pendente |
-| 14 | Custo FX e gate com IC no backtest | 6-10h | pendente |
-| 15 | Calendário de sessão | 6-10h | pendente |
-| 16 | Dados FX em produção | 6-10h | pendente |
-| 17 | Estratégias sem volume | 6-10h | pendente |
-| 18 | Sizing em lotes e equity real | 6-10h | pendente |
-| 19 | Exposição líquida por moeda | 5-8h | pendente |
-| 20a | Short em paper e SL/TP atômico | 6-10h | pendente |
-| 20b | Regras de sessão no engine | 6-10h | pendente |
-| 21 | Simulador paper bid/ask | 6-8h | pendente |
-| 22 | Tela: escolher par e estudar | 4-8h | pendente |
-| 23 | Tela: gate e ativar em PAPER | 4-8h | pendente |
-| 24 | Interface ForexVenue + venue falso | 5-8h | pendente |
-| 25 | Adapter da corretora #1: dados | 8-12h | pendente |
-| 26 | Adapter: ordens, posições, conta | 8-14h | pendente |
-| 27 | Reconciliador por posição | 8-12h | pendente |
-| 28 | Verificador de release em demo | 6-10h | pendente |
-| 29 | Live guard FX | 6-10h | pendente |
-| 30 | Canário em demo | 3-5h + 2-4 semanas | pendente |
-| 31 | Primeiro dinheiro real (mínimo) | 4-6h + gate humano | pendente |
-| 32 | Aposentar o código cripto | 4-8h | pendente |
+| 5 | Contas e caminho do dinheiro (humano) | 3-5h + espera | checklist pronto em `docs/forex/step5-contas-checklist.md`; aguarda o Igor (conta, respostas por escrito, cotações) |
+| 6 | Prova de API cTrader demo | 6-10h | não iniciado: exige credenciais/conta demo do Igor e o G0 não passou |
+| 7 | Prova de API IBKR paper | 8-14h | não iniciado: exige a conta IBKR aprovada (step 5) e o G0 não passou |
+| 8 | Walk-forward FX com IC (G0) | 6-10h | concluído: **G0 NÃO PASSOU** (ver resultado abaixo) |
+| 9 | Spec v2 do perfil FX | 4-6h | bloqueado pelo G0 |
+| 10 | Migração aditiva 019 | 4-6h | bloqueado pelo G0 |
+| 11 | Instrumentos, pip/lote e conversão | 6-8h | bloqueado pelo G0 |
+| 12 | Long/short nos schemas e sinais | 5-8h | bloqueado pelo G0 |
+| 13 | Long/short no gate e estudo de ativo | 6-10h | bloqueado pelo G0 |
+| 14 | Custo FX e gate com IC no backtest | 6-10h | bloqueado pelo G0 |
+| 15 | Calendário de sessão | 6-10h | bloqueado pelo G0 |
+| 16 | Dados FX em produção | 6-10h | bloqueado pelo G0 |
+| 17 | Estratégias sem volume | 6-10h | bloqueado pelo G0 |
+| 18 | Sizing em lotes e equity real | 6-10h | bloqueado pelo G0 |
+| 19 | Exposição líquida por moeda | 5-8h | bloqueado pelo G0 |
+| 20a | Short em paper e SL/TP atômico | 6-10h | bloqueado pelo G0 |
+| 20b | Regras de sessão no engine | 6-10h | bloqueado pelo G0 |
+| 21 | Simulador paper bid/ask | 6-8h | bloqueado pelo G0 |
+| 22 | Tela: escolher par e estudar | 4-8h | bloqueado pelo G0 |
+| 23 | Tela: gate e ativar em PAPER | 4-8h | bloqueado pelo G0 |
+| 24 | Interface ForexVenue + venue falso | 5-8h | bloqueado pelo G0 |
+| 25 | Adapter da corretora #1: dados | 8-12h | bloqueado pelo G0 |
+| 26 | Adapter: ordens, posições, conta | 8-14h | bloqueado pelo G0 |
+| 27 | Reconciliador por posição | 8-12h | bloqueado pelo G0 |
+| 28 | Verificador de release em demo | 6-10h | bloqueado pelo G0 |
+| 29 | Live guard FX | 6-10h | bloqueado pelo G0 |
+| 30 | Canário em demo | 3-5h + 2-4 semanas | bloqueado pelo G0 |
+| 31 | Primeiro dinheiro real (mínimo) | 4-6h + gate humano | bloqueado pelo G0 |
+| 32 | Aposentar o código cripto | 4-8h | bloqueado pelo G0 |
 
 **Total:** Fase 0 = 37-62h, Fase A = 86-140h, Fase B = 52-85h → **175-287h** (22 a 36 dias de dev). Um agente que leu o código inteiro estimou 65 a 95 dias; a diferença é retrabalho de teste e integração que só aparece no meio. Para prazo com terceiros, usar o teto +50% e reestimar no G0.
 

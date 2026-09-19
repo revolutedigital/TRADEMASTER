@@ -850,6 +850,11 @@ def merge_nulls(paths: Sequence[Path]) -> dict[str, object]:
     }
 
 
+def load_null_details(path: Path) -> dict[str, object]:
+    """The raw null file, for reports that quote how the older rules behaved on shuffles."""
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def load_null(path: Path) -> list[float]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     values = [float(v) for v in payload["null_max_t"] if v is not None and np.isfinite(v)]
@@ -874,6 +879,7 @@ def render_report(
     data_range: str,
     generated: str,
     null_max_t: Sequence[float] | None = None,
+    null_details: dict[str, object] | None = None,
 ) -> str:
     base = [r for r in results if r.scenario == "base"]
     calibrated = null_max_t is not None
@@ -890,9 +896,8 @@ def render_report(
         "",
         "## Critério de aprovação (calibrado por placebo)",
         "",
-        "A regra do plano (IC 95% excluindo zero em 2+ pares) foi medida em dados embaralhados, sem "
-        "nenhuma vantagem, e aprovou ruído com frequência inaceitável. O critério usado aqui compara a "
-        "MELHOR configuração real com a melhor configuração em dados embaralhados: só passa quem tiver "
+        "O critério usado compara a MELHOR configuração real com a melhor configuração em dados "
+        "embaralhados (sem vantagem por construção): só passa quem tiver "
         f"valor-p ajustado <= {G0_SIGNIFICANCE:.2f}, média R positiva, ao menos {G0_MIN_PAIRS_POSITIVE} "
         f"de {len(symbols)} pares positivos e {MIN_TRADES_FOR_TEST}+ trades.",
         "",
@@ -918,6 +923,19 @@ def render_report(
                          f"t = {best.result.testable_t:.2f}, valor-p ajustado = {best.adjusted_p:.3f}, "
                          f"média R = {best.result.pooled.mean_r:.3f}, "
                          f"{best.result.pairs_positive}/{len(symbols)} pares positivos.")
+
+    if calibrated and null_details:
+        rule = null_details["old_rule_false_pass"]
+        count = int(null_details["replications"])
+        lines += [
+            "",
+            f"Calibração ({count} embaralhamentos): a regra escrita no plano (IC 95% nominal excluindo zero "
+            f"em 2+ pares) aprovou dado sem vantagem em {rule['plan_rule_2_pairs']} ({rule['plan_rule_2_pairs'] / count:.0%}) "
+            f"das rodadas, acima dos 5% aceitáveis; o limite por bootstrap com Bonferroni aprovou "
+            f"{rule['multiple_testing_bound']} ({rule['multiple_testing_bound'] / count:.1%}), conservador demais. "
+            f"Por isso o critério é a distribuição da melhor configuração: mediana t = {np.median(null_max_t):.2f}, "
+            f"p90 = {np.quantile(null_max_t, 0.90):.2f}, p95 = {threshold:.2f}, p99 = {np.quantile(null_max_t, 0.99):.2f}.",
+        ]
 
     lines += ["", "## Configurações, caso base", "",
               "| Estratégia | TF | Trades | Média R | t | Valor-p ajustado | PF | Custo por trade (pips: spread + slippage + comissão) | Pares > 0 | Efeito mínimo detectável (R) | Passa |",
@@ -1031,9 +1049,11 @@ def main(argv: list[str] | None = None) -> int:
     results = run_experiment(args.data_dir, symbols, scenario_names=list(SCENARIOS))
     first = pd.read_parquet(args.data_dir / f"{symbols[0]}_H1.parquet")
     null_max_t = load_null(args.null_file) if args.null_file else None
+    null_details = load_null_details(args.null_file) if args.null_file else None
     report = render_report(
         results,
         null_max_t=null_max_t,
+        null_details=null_details,
         symbols=symbols,
         data_range=f"{first.index[0]:%Y-%m-%d} a {first.index[-1]:%Y-%m-%d}",
         generated=datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),

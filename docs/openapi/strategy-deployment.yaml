@@ -37,12 +37,22 @@ paths:
         The server reloads candles for the original symbol and interval, runs
         walk-forward validation with the recorded strategy configuration, and
         stores both passing and rejected evidence. Approval requires at least
-        20 source trades, profit factor >= 1.05, positive source return,
+        50 source trades, profit factor >= 1.15, positive source return,
         source drawdown <= 15%, and fresh out-of-sample evidence across at
-        least 3 windows: 20 trades, positive mean return, profit factor >=
-        1.05, 60% profitable-window consistency, drawdown <= 15%, and an
-        overfitting score <= 0.50. This endpoint never starts the engine or
+        least 3 windows with trades: 50 trades, positive mean return, profit
+        factor >= 1.15, 65% profitable-window consistency, drawdown <= 15%,
+        and an overfitting score <= 0.50. The same thresholds are published
+        machine-readably in x-approval-gate and a contract test fails when
+        they drift from the service. This endpoint never starts the engine or
         places an order.
+      x-approval-gate:
+        min_source_trades: 50
+        min_oos_trades: 50
+        min_walk_forward_windows: 3
+        min_profit_factor: 1.15
+        min_consistency_score: 0.65
+        max_drawdown_pct: 0.15
+        max_overfitting_score: 0.5
       security:
         - bearerAuth: []
       requestBody:

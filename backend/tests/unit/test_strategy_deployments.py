@@ -2,17 +2,26 @@
 
 import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pandas as pd
 import pytest
+import yaml
 
 from app.config import TradingExecutionMode
 from app.services.backtest.walk_forward import WalkForwardResult, WalkForwardWindow
 from app.services.strategy_deployments import (
     ACTIVE,
     APPROVED,
+    MAX_DRAWDOWN_PCT,
+    MAX_OVERFITTING_SCORE,
+    MIN_CONSISTENCY_SCORE,
+    MIN_OOS_TRADES,
+    MIN_PROFIT_FACTOR,
+    MIN_SOURCE_TRADES,
+    MIN_WALK_FORWARD_WINDOWS,
     REJECTED,
     ActiveTechnicalStrategy,
     StrategyDeploymentSourceError,
@@ -365,3 +374,23 @@ async def test_active_runtime_strategy_fails_closed_when_legacy_rows_are_ambiguo
     )
 
     assert active is None
+
+
+STRATEGY_DEPLOYMENT_SPEC = (
+    Path(__file__).resolve().parents[3] / "docs" / "openapi" / "strategy-deployment.yaml"
+)
+
+
+def test_deployment_spec_publishes_the_thresholds_the_service_enforces() -> None:
+    spec = yaml.safe_load(STRATEGY_DEPLOYMENT_SPEC.read_text(encoding="utf-8"))
+    published = spec["paths"]["/strategy-deployments"]["post"]["x-approval-gate"]
+
+    assert published == {
+        "min_source_trades": MIN_SOURCE_TRADES,
+        "min_oos_trades": MIN_OOS_TRADES,
+        "min_walk_forward_windows": MIN_WALK_FORWARD_WINDOWS,
+        "min_profit_factor": MIN_PROFIT_FACTOR,
+        "min_consistency_score": MIN_CONSISTENCY_SCORE,
+        "max_drawdown_pct": MAX_DRAWDOWN_PCT,
+        "max_overfitting_score": MAX_OVERFITTING_SCORE,
+    }

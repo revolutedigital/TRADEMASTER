@@ -77,3 +77,6 @@ frontend/out/
 *.key
 credentials.json
 frontend/coverage/
+
+# Research datasets downloaded by backend/scripts/research (large, reproducible)
+backend/data/

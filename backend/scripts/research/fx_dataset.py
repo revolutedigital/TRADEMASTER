@@ -121,8 +121,9 @@ def fetch_month_payload(
     side: str,
     cache_dir: Path,
     *,
-    retries: int = 6,
+    retries: int = 10,
     base_delay_seconds: float = 2.0,
+    max_delay_seconds: float = 60.0,
     sleep: Callable[[float], None] = time.sleep,
 ) -> bytes:
     """Return the raw file for one month, caching it (an empty file means no data)."""
@@ -147,7 +148,7 @@ def fetch_month_payload(
             last_problem = f"HTTP {response.status_code}"
             if response.status_code not in RETRYABLE_STATUS:
                 raise FxDataDownloadError(f"{url} failed permanently: {last_problem}")
-        sleep(base_delay_seconds * 2**attempt)
+        sleep(min(base_delay_seconds * 2**attempt, max_delay_seconds))
     else:
         raise FxDataDownloadError(f"{url} failed after {retries} attempts: {last_problem}")
 

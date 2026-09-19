@@ -6,7 +6,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from app.services.backtest.fx_costs import FxCostModel, NoCommission, SwapSchedule
+from app.services.backtest.fx_costs import (
+    FxCostModel,
+    NoCommission,
+    PerLotCommission,
+    SwapSchedule,
+)
 from scripts.research.fx_spike import (
     STRATEGIES,
     Scenario,
@@ -349,3 +354,93 @@ def test_simulated_times_are_timezone_aware_utc() -> None:
 
     assert trade.entry_time.tzinfo is not None
     assert trade.exit_time.utcoffset() == datetime(2024, 1, 1, tzinfo=UTC).utcoffset()
+
+
+def test_a_spread_multiplier_widens_the_spread_once_not_twice() -> None:
+    doubled = Scenario("doubled", FxCostModel(NoCommission(), spread_multiplier=2.0))
+    unit = Scenario("unit", FxCostModel(NoCommission()))
+
+    base = _run(_flat(6), {0: 1.0, 3: -1.0}, scenario=unit)[0]
+    stressed = _run(_flat(6), {0: 1.0, 3: -1.0}, scenario=doubled)[0]
+
+    # A 1 pip quoted spread doubled is 2 pips round trip. Applying the multiplier in both
+    # the quote and the cost model would have charged 4.
+    assert base.net_pips - stressed.net_pips == pytest.approx(1.0, abs=1e-6)
+    assert base.net_pips == pytest.approx(-1.0, abs=1e-6)
+    assert stressed.net_pips == pytest.approx(-2.0, abs=1e-6)
+
+
+def test_execution_cost_counts_spread_and_slippage_on_every_kind_of_exit() -> None:
+    costly = Scenario("costly", FxCostModel(NoCommission(), slippage_pips=0.2))
+
+    market_exit = _run(_flat(6), {0: 1.0, 3: -1.0}, scenario=costly)[0]
+    target_exit = _run(_flat(2) + [(1.1000, 1.1450, 1.0950, 1.1400)], {0: 1.0}, scenario=costly)[0]
+    stop_exit = _run(_flat(2) + [(1.1000, 1.1010, 1.0790, 1.0800)], {0: 1.0}, scenario=costly)[0]
+
+    assert market_exit.execution_cost_pips == pytest.approx(0.7 + 0.7)
+    assert target_exit.execution_cost_pips == pytest.approx(0.7 + 0.5)  # limit fills do not slip
+    assert stop_exit.execution_cost_pips == pytest.approx(0.7 + 0.7)
+
+
+def test_a_stress_multiplier_also_widens_resting_target_fills() -> None:
+    doubled = Scenario("doubled", FxCostModel(NoCommission(), spread_multiplier=2.0))
+    prices = _flat(2) + [(1.1000, 1.1450, 1.0950, 1.1400)]
+
+    trade = _run(prices, {0: 1.0}, scenario=doubled)[0]
+
+    assert trade.exit_reason == "take_profit"
+    # 400 planned pips, less the extra half pip the widened spread takes at the exit.
+    assert trade.gross_pips == pytest.approx(400.0 - 0.5, abs=1e-6)
+
+
+def test_the_reported_cost_per_trade_adds_execution_and_commission_but_not_swap() -> None:
+    priced = Scenario(
+        "priced", FxCostModel(PerLotCommission(2.25), slippage_pips=0.2), SwapSchedule(-0.3, -0.3)
+    )
+
+    trades = _run(_flat(8), {0: 1.0, 5: -1.0}, scenario=priced)
+    frame = trades_frame(trades)
+    frame["month"] = "2024-03"
+    stats = group_stats(frame, adjusted_alpha=0.025, with_interval=False)
+
+    first = trades[0]
+    assert stats.mean_cost_pips == pytest.approx(
+        frame["execution_cost_pips"].mean() + frame["commission_pips"].mean()
+    )
+    assert first.commission_pips == pytest.approx(4.5 / 10.0)  # $4.50 round trip at $10 a pip
+    assert first.swap_pips < 0
+
+
+def test_the_liquid_entry_scenario_prices_spreads_from_the_bar_median() -> None:
+    bars = _bars(_flat(6), spread_pips=1.0)
+    bars["median_spread_pips"] = 0.4
+    signals = pd.Series(0.0, index=bars.index)
+    signals.iloc[0], signals.iloc[3] = 1.0, -1.0
+    atr = pd.Series(0.0100, index=bars.index)
+    first_hour = Scenario("first_hour", FxCostModel(NoCommission()))
+    liquid = Scenario("liquid", FxCostModel(NoCommission()), spread_column="median_spread_pips")
+
+    wide = simulate(bars, signals, atr, symbol="EURUSD", scenario=first_hour, warmup=0)[0]
+    tight = simulate(bars, signals, atr, symbol="EURUSD", scenario=liquid, warmup=0)[0]
+
+    assert wide.execution_cost_pips == pytest.approx(1.0)
+    assert tight.execution_cost_pips == pytest.approx(0.4)
+
+
+def test_a_scenario_that_names_a_missing_spread_column_is_refused() -> None:
+    bars = _bars(_flat(4))
+    scenario = Scenario("bad", FxCostModel(NoCommission()), spread_column="nope")
+
+    with pytest.raises(ValueError, match="nope"):
+        simulate(bars, pd.Series(0.0, index=bars.index), pd.Series(0.01, index=bars.index),
+                 symbol="EURUSD", scenario=scenario)
+
+
+def test_resampling_reports_the_median_spread_outside_the_rollover_hour() -> None:
+    h1 = _h1_week("2024-01-07 22:00", 24)
+    h1["spread_open_pips"] = np.arange(24, dtype=float)  # 0..23 pips, hour 0 is the rollover hour
+
+    bars = resample_session(h1, "1D")
+
+    assert bars["median_spread_pips"].iloc[0] == pytest.approx(np.median(np.arange(1, 24)))
+    assert bars["open_spread_pips"].iloc[0] == pytest.approx(1.0)

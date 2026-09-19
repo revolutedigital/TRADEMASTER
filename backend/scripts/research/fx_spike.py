@@ -51,7 +51,7 @@ ROLLOVER_HOUR = 17
 ATR_PERIOD = 14
 ATR_STOP_MULTIPLIER = 2.0
 RISK_REWARD_RATIO = 2.0
-WARMUP_BARS = 210
+WARMUP_BARS = 120  # the slowest indicator (SMA 100, Donchian 55, MACD) needs ~110 bars
 BOOTSTRAP_DRAWS = 20_000  # the corrected bound sits near the 0.2% quantile
 BOOTSTRAP_SEED = 20260919
 NOMINAL_ALPHA = 0.025  # one-sided, equivalent to a 95% two-sided interval
@@ -95,6 +95,7 @@ class Scenario:
     cost_model: FxCostModel
     swap: SwapSchedule | None = None
     description: str = ""
+    spread_column: str = "open_spread_pips"
 
 
 SCENARIOS: dict[str, Scenario] = {
@@ -107,6 +108,13 @@ SCENARIOS: dict[str, Scenario] = {
         "ecn_raw",
         FxCostModel(PerLotCommission(2.25), slippage_pips=0.1),
         description="interbank spread + $2.25 per lot per side + 0.1 pip slippage",
+    ),
+    "liquid_entry": Scenario(
+        "liquid_entry",
+        FxCostModel(NotionalCommission(basis_points=0.2, minimum_usd=2.0), slippage_pips=0.2),
+        description="base costs, but the spread is the bar's median outside the rollover hour, "
+        "as if orders were placed in liquid hours instead of the first hour of the session",
+        spread_column="median_spread_pips",
     ),
     "stress": Scenario(
         "stress",
@@ -160,11 +168,13 @@ def resample_session(h1: pd.DataFrame, rule: str) -> pd.DataFrame:
             "ask_low": grouped["ask_low"].min(),
             "ask_close": grouped["ask_close"].last(),
             "spread_outside_rollover": grouped["spread_outside_rollover"].first(),
+            "median_spread_pips": grouped["spread_outside_rollover"].median(),
             "spread_open_pips": grouped["spread_open_pips"].first(),
             "candles": grouped["bid_open"].size(),
         }
     )
     bars["open_spread_pips"] = bars["spread_outside_rollover"].fillna(bars["spread_open_pips"])
+    bars["median_spread_pips"] = bars["median_spread_pips"].fillna(bars["open_spread_pips"])
     bars = bars.drop(columns=["spread_outside_rollover", "spread_open_pips"])
 
     starts = pd.DatetimeIndex(bars.index) + pd.Timedelta(hours=ROLLOVER_HOUR)
@@ -221,6 +231,7 @@ class Trade:
     exit_price: float
     stop_distance_pips: float
     gross_pips: float
+    execution_cost_pips: float
     commission_pips: float
     swap_pips: float
     net_pips: float
@@ -235,6 +246,7 @@ class _OpenPosition:
     entry_index: int
     entry_time: datetime
     entry_price: float
+    entry_cost_pips: float
     stop_price: float
     take_profit_price: float
     stop_distance_price: float
@@ -257,6 +269,8 @@ def simulate(
     """
     if not (len(bars) == len(signals) == len(atr)):
         raise ValueError("bars, signals and atr must be aligned")
+    if scenario.spread_column not in bars:
+        raise ValueError(f"bars have no {scenario.spread_column!r} column")
 
     model = scenario.cost_model
     one_pip = pip_size(symbol)
@@ -265,16 +279,23 @@ def simulate(
     position: _OpenPosition | None = None
     pending = 0.0
 
-    def half_spread(index: int) -> float:
-        return float(bars["open_spread_pips"].iloc[index]) * one_pip / 2 * model.spread_multiplier
+    def quoted_half_spread_pips(index: int) -> float:
+        """Half the spread the market shows; the cost model applies any stress multiplier."""
+        return float(bars[scenario.spread_column].iloc[index]) / 2
 
     def open_quote(index: int) -> tuple[float, float]:
         mid = (float(bars["bid_open"].iloc[index]) + float(bars["ask_open"].iloc[index])) / 2
-        half = half_spread(index)
+        half = quoted_half_spread_pips(index) * one_pip
         return mid - half, mid + half
 
+    def crossing_cost_pips(index: int, *, with_slippage: bool) -> float:
+        """Pips lost to the spread and slippage on one fill, versus trading at the mid."""
+        return quoted_half_spread_pips(index) * model.spread_multiplier + (
+            model.slippage_pips if with_slippage else 0.0
+        )
+
     def close_position(
-        index: int, price: float, when: datetime, reason: str
+        index: int, price: float, when: datetime, reason: str, exit_cost_pips: float
     ) -> None:
         nonlocal position
         assert position is not None
@@ -311,6 +332,7 @@ def simulate(
                 exit_price=price,
                 stop_distance_pips=stop_pips,
                 gross_pips=gross_pips,
+                execution_cost_pips=position.entry_cost_pips + exit_cost_pips,
                 commission_pips=commission_pips,
                 swap_pips=swap_pips,
                 net_pips=net_pips,
@@ -332,7 +354,13 @@ def simulate(
                 exit_price = model.fill_price(
                     symbol=symbol, side=position.side, action="EXIT", bid=bid, ask=ask
                 )
-                close_position(index, exit_price, bar_start, "signal")
+                close_position(
+                    index,
+                    exit_price,
+                    bar_start,
+                    "signal",
+                    crossing_cost_pips(index, with_slippage=True),
+                )
             if position is None:
                 prior_atr = float(atr.iloc[index - 1])
                 if np.isfinite(prior_atr) and prior_atr > 0:
@@ -346,6 +374,7 @@ def simulate(
                         entry_index=index,
                         entry_time=bar_start,
                         entry_price=entry,
+                        entry_cost_pips=crossing_cost_pips(index, with_slippage=True),
                         stop_price=entry - sign * distance,
                         take_profit_price=entry + sign * distance * RISK_REWARD_RATIO,
                         stop_distance_price=distance,
@@ -371,16 +400,24 @@ def simulate(
             )
             outcome = resolve_protective_fill(stop, target)
             if outcome.triggered and outcome.price is not None:
-                slippage = model.slippage_pips * one_pip if outcome is stop else 0.0
-                adverse = -slippage if position.side == "LONG" else slippage
+                stopped = outcome is stop
+                # A stress multiplier widens the spread the trader crosses, and a stop
+                # also slips; a resting limit target does not slip.
+                widening = quoted_half_spread_pips(index) * (model.spread_multiplier - 1) * one_pip
+                slippage = model.slippage_pips * one_pip if stopped else 0.0
+                adverse = widening + slippage
+                filled = outcome.price - adverse if position.side == "LONG" else (
+                    outcome.price + adverse
+                )
                 reason = "stop_gap" if stop.triggered and stop.gapped else (
-                    "stop" if stop.triggered else "take_profit"
+                    "stop" if stopped else "take_profit"
                 )
                 close_position(
                     index,
-                    outcome.price + (adverse if stop.triggered else 0.0),
+                    filled,
                     bar_start + timedelta(seconds=1),
                     reason,
+                    crossing_cost_pips(index, with_slippage=stopped),
                 )
 
         # 3. Read the signal at this bar's close for the next open.
@@ -394,7 +431,13 @@ def simulate(
         exit_price = model.fill_price(
             symbol=symbol, side=position.side, action="EXIT", bid=bid, ask=ask
         )
-        close_position(last, exit_price, times[last].to_pydatetime() + timedelta(hours=1), "end")
+        close_position(
+            last,
+            exit_price,
+            times[last].to_pydatetime() + timedelta(hours=1),
+            "end",
+            crossing_cost_pips(last, with_slippage=True),
+        )
     return trades
 
 
@@ -429,7 +472,8 @@ def trades_frame(trades: Sequence[Trade]) -> pd.DataFrame:
         return pd.DataFrame(
             columns=[
                 "symbol", "side", "entry_time", "exit_time", "net_pips", "r_multiple",
-                "gross_pips", "commission_pips", "swap_pips", "bars_held", "month",
+                "gross_pips", "execution_cost_pips", "commission_pips", "swap_pips",
+                "bars_held", "month",
             ]
         )
     frame = pd.DataFrame([trade.__dict__ for trade in trades])
@@ -492,7 +536,7 @@ def group_stats(
         profit_factor=profit_factor(r),
         win_rate=float((r > 0).mean()),
         mean_cost_pips=float(
-            (frame["gross_pips"].sub(frame["net_pips"]).add(frame["swap_pips"])).mean()
+            (frame["execution_cost_pips"] + frame["commission_pips"]).mean()
         ),
         mean_bars_held=float(frame["bars_held"].mean()),
         interval=interval,
@@ -635,7 +679,7 @@ def render_report(
             lines.append("Passaram só na regra do plano (2+ pares) e não na correção de múltiplos testes: "
                          + ", ".join(f"{w.strategy}/{w.timeframe}" for w in written_only) + ".")
     lines += ["", "## Configurações, caso base", "",
-              "| Estratégia | TF | Trades | Média R | PF | Custo médio (pips) | IC95 nominal | Limite inf. corrigido | Pares > 0 | Pares signif. | Efeito mínimo detectável (R) |",
+              "| Estratégia | TF | Trades | Média R | PF | Custo por trade (pips: spread + slippage + comissão) | IC95 nominal | Limite inf. corrigido | Pares > 0 | Pares signif. | Efeito mínimo detectável (R) |",
               "|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in sorted(base, key=lambda item: item.pooled.mean_r, reverse=True):
         p = r.pooled

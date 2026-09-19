@@ -258,3 +258,26 @@ def test_every_major_has_a_pip_of_ten_price_units() -> None:
         assert isinstance(instrument, FxInstrument)
         assert instrument.pip_size * instrument.price_scale == pytest.approx(10)
     assert set(MAJORS) == {"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY"}
+
+
+def test_fetch_backoff_doubles_but_never_exceeds_the_cap(tmp_path: Path) -> None:
+    sleeps: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503)
+
+    with _client(handler) as client, pytest.raises(FxDataDownloadError):
+        fetch_month_payload(
+            client,
+            "EURUSD",
+            2024,
+            1,
+            "BID",
+            tmp_path,
+            retries=7,
+            base_delay_seconds=2.0,
+            max_delay_seconds=10.0,
+            sleep=sleeps.append,
+        )
+
+    assert sleeps == [2.0, 4.0, 8.0, 10.0, 10.0, 10.0, 10.0]

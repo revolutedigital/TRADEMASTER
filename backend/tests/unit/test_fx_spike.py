@@ -1,6 +1,7 @@
 """Tests for the G0 spike simulator, resampler, and statistics."""
 
 from datetime import UTC, datetime
+from statistics import NormalDist
 
 import numpy as np
 import pandas as pd
@@ -24,8 +25,10 @@ from scripts.research.fx_spike import (
     cluster_bootstrap_mean,
     evaluate_g0,
     load_null,
+    merge_nulls,
     render_report,
     save_null,
+    trades_needed_to_confirm,
     group_stats,
     mid_ohlc,
     profit_factor,
@@ -643,3 +646,34 @@ def test_the_report_names_the_configuration_that_passes() -> None:
                            null_max_t=list(np.linspace(1.0, 3.0, 100)))
 
     assert "G0 PASSOU" in report and "winner/1D" in report
+
+
+def test_merging_null_files_concatenates_shuffles_and_sums_the_old_rule_counts(tmp_path) -> None:
+    first = PlaceboSummary(60, 20, 10, 5, {}, tuple(float(i) for i in range(60)))
+    second = PlaceboSummary(60, 18, 8, 3, {}, tuple(float(i) + 100 for i in range(60)))
+    path_a, path_b = tmp_path / "a.json", tmp_path / "b.json"
+    save_null(first, path_a, seed=1)
+    save_null(second, path_b, seed=1)
+
+    merged = merge_nulls([path_a, path_b])
+
+    assert merged["replications"] == 120
+    assert len(merged["null_max_t"]) == 120
+    assert merged["old_rule_false_pass"] == {
+        "plan_rule_2_pairs": 38, "multiple_testing_bound": 18, "both": 8
+    }
+    with pytest.raises(ValueError):
+        merge_nulls([])
+
+
+def test_trades_needed_scales_with_the_square_of_noise_over_effect() -> None:
+    # sd = mean * sqrt(n) / t: mean 0.2, n 100, t 2 gives sd 1.0, so the noise is 5x the effect.
+    stats = _stats(100, 0.2, 2.0)
+
+    needed = trades_needed_to_confirm(stats)
+
+    assert needed is not None
+    z = NormalDist().inv_cdf(1 - 0.025 / 12) + NormalDist().inv_cdf(0.8)
+    assert needed == pytest.approx((z * 5.0) ** 2, rel=1e-9)
+    assert trades_needed_to_confirm(_stats(100, -0.2, -2.0)) is None
+    assert trades_needed_to_confirm(_stats(100, 0.2, None)) is None

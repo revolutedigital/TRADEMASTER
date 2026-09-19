@@ -511,6 +511,15 @@ def cluster_bootstrap_mean(
     )
 
 
+def trades_needed_to_confirm(stats: GroupStats) -> float | None:
+    """Sample size at which the observed mean would clear the multiple-testing bar with 80% power."""
+    if stats.t_stat is None or stats.t_stat <= 0 or stats.mean_r <= 0 or stats.trades < 2:
+        return None
+    sd = stats.mean_r * np.sqrt(stats.trades) / stats.t_stat
+    z = NormalDist().inv_cdf(1 - NOMINAL_ALPHA / CONFIGURATION_COUNT) + NormalDist().inv_cdf(0.8)
+    return float((z * sd / stats.mean_r) ** 2)
+
+
 def profit_factor(values: np.ndarray) -> float:
     gains = float(values[values > 0].sum())
     losses = float(-values[values < 0].sum())
@@ -765,6 +774,7 @@ def run_placebo(
     replications: int,
     seed: int = BOOTSTRAP_SEED,
     scenario_name: str = "base",
+    first_replication: int = 0,
 ) -> PlaceboSummary:
     """Run the full experiment on shuffled data and count how often it would approve."""
     adjusted_alpha = NOMINAL_ALPHA / CONFIGURATION_COUNT
@@ -775,7 +785,7 @@ def run_placebo(
     any_written = any_multiple = any_g0 = 0
     per_config: dict[str, int] = {}
     null_max_t: list[float] = []
-    for replication in range(replications):
+    for replication in range(first_replication, first_replication + replications):
         rng = np.random.default_rng(seed + replication)
         written = multiple = full = False
         best_t = float("-inf")
@@ -816,6 +826,28 @@ def save_null(summary: PlaceboSummary, path: Path, *, seed: int) -> None:
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def merge_nulls(paths: Sequence[Path]) -> dict[str, object]:
+    """Combine null distributions computed in separate processes (disjoint seeds)."""
+    if not paths:
+        raise ValueError("nothing to merge")
+    merged: list[float] = []
+    old_rule = {"plan_rule_2_pairs": 0, "multiple_testing_bound": 0, "both": 0}
+    replications = 0
+    for path in paths:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        merged += [float(v) for v in payload["null_max_t"]]
+        replications += int(payload["replications"])
+        for key in old_rule:
+            old_rule[key] += int(payload["old_rule_false_pass"][key])
+    return {
+        "scenario": "base",
+        "replications": replications,
+        "seed": BOOTSTRAP_SEED,
+        "old_rule_false_pass": old_rule,
+        "null_max_t": merged,
+    }
 
 
 def load_null(path: Path) -> list[float]:
@@ -911,6 +943,14 @@ def render_report(
     lines += ["", "Por ano civil (estabilidade):", "", "| Ano | Trades | Média R |", "|---|---|---|"]
     for year, stats in sorted(top.by_year.items()):
         lines.append(f"| {year} | {stats.trades} | {_fmt(stats.mean_r)} |")
+    needed = trades_needed_to_confirm(top.pooled)
+    if needed is not None and top.pooled.trades:
+        years_of_data = max(len(top.by_year), 1)
+        per_year = top.pooled.trades / years_of_data
+        lines += ["", f"Para confirmar um efeito de {_fmt(top.pooled.mean_r)} R com 80% de poder e "
+                  f"significância ajustada seriam necessários cerca de {needed:,.0f} trades, "
+                  f"contra {top.pooled.trades} nesta amostra (≈ {needed / per_year:.0f} anos nesta cadência "
+                  "com estes 7 pares)."]
 
     lines += ["", "## Sensibilidade a custo, horário de entrada e carry (média R agregada)", "",
               "| Estratégia | TF | " + " | ".join(SCENARIOS) + " |",
@@ -950,6 +990,8 @@ def main(argv: list[str] | None = None) -> int:
         default=0,
         help="instead of the real run, shuffle the bars N times and save the null distribution",
     )
+    parser.add_argument("--placebo-start", type=int, default=0, help="first shuffle index (for parallel chunks)")
+    parser.add_argument("--merge-null", type=Path, nargs="+", default=None, help="merge null files and exit")
     parser.add_argument("--null-out", type=Path, default=None, help="where --placebo saves the null")
     parser.add_argument("--null-file", type=Path, default=None, help="null distribution for the real run")
     args = parser.parse_args(argv)
@@ -961,8 +1003,17 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write("no parquet datasets found; run fx_dataset first\n")
         return 2
 
+    if args.merge_null:
+        merged = merge_nulls(args.merge_null)
+        target = args.null_out or Path("null.json")
+        target.write_text(json.dumps(merged, indent=2), encoding="utf-8")
+        sys.stdout.write(f"merged {merged['replications']} shuffles into {target}\n")
+        return 0
+
     if args.placebo:
-        summary = run_placebo(args.data_dir, symbols, replications=args.placebo)
+        summary = run_placebo(
+            args.data_dir, symbols, replications=args.placebo, first_replication=args.placebo_start
+        )
         if args.null_out:
             save_null(summary, args.null_out, seed=BOOTSTRAP_SEED)
         sys.stdout.write(

@@ -92,6 +92,39 @@ CONFIGURATION_COUNT = len(STRATEGIES) * len(TIMEFRAMES)
 
 
 @dataclass(frozen=True)
+class ExperimentDesign:
+    """Which configurations are tested; the multiple-testing burden is their count."""
+
+    name: str
+    title: str
+    strategies: tuple[StrategySpec, ...]
+    timeframes: tuple[str, ...]
+
+    @property
+    def configuration_count(self) -> int:
+        return len(self.strategies) * len(self.timeframes)
+
+
+DISCOVERY = ExperimentDesign(
+    "discovery",
+    "G0: estratégias técnicas simples sobrevivem ao custo real de forex?",
+    STRATEGIES,
+    TIMEFRAMES,
+)
+_BY_NAME = {spec.name: spec for spec in STRATEGIES}
+# Pre-registered before the confirmation data was downloaded or looked at
+# (docs/forex/g0-confirmation-preregistration.md): the two daily configurations that led
+# the discovery sample, tested unchanged on history the discovery never saw.
+CONFIRMATION = ExperimentDesign(
+    "confirmation",
+    "G0, confirmação em amostra nunca vista: sma_rsi e bollinger_reversion no diário",
+    (_BY_NAME["sma_rsi"], _BY_NAME["bollinger_reversion"]),
+    ("1D",),
+)
+DESIGNS = {design.name: design for design in (DISCOVERY, CONFIRMATION)}
+
+
+@dataclass(frozen=True)
 class Scenario:
     """A cost assumption set. Spreads always come from the downloaded quotes."""
 
@@ -511,12 +544,14 @@ def cluster_bootstrap_mean(
     )
 
 
-def trades_needed_to_confirm(stats: GroupStats) -> float | None:
+def trades_needed_to_confirm(
+    stats: GroupStats, configuration_count: int = CONFIGURATION_COUNT
+) -> float | None:
     """Sample size at which the observed mean would clear the multiple-testing bar with 80% power."""
     if stats.t_stat is None or stats.t_stat <= 0 or stats.mean_r <= 0 or stats.trades < 2:
         return None
     sd = stats.mean_r * np.sqrt(stats.trades) / stats.t_stat
-    z = NormalDist().inv_cdf(1 - NOMINAL_ALPHA / CONFIGURATION_COUNT) + NormalDist().inv_cdf(0.8)
+    z = NormalDist().inv_cdf(1 - NOMINAL_ALPHA / configuration_count) + NormalDist().inv_cdf(0.8)
     return float((z * sd / stats.mean_r) ** 2)
 
 
@@ -683,13 +718,17 @@ def run_config(
 
 
 def run_experiment(
-    data_dir: Path, symbols: Sequence[str], *, scenario_names: Sequence[str]
+    data_dir: Path,
+    symbols: Sequence[str],
+    *,
+    scenario_names: Sequence[str],
+    design: ExperimentDesign = DISCOVERY,
 ) -> list[ConfigResult]:
-    adjusted_alpha = NOMINAL_ALPHA / CONFIGURATION_COUNT
+    adjusted_alpha = NOMINAL_ALPHA / design.configuration_count
     results: list[ConfigResult] = []
-    for timeframe in TIMEFRAMES:
+    for timeframe in design.timeframes:
         bars_by_pair = {symbol: load_pair_bars(data_dir, symbol, timeframe) for symbol in symbols}
-        for spec in STRATEGIES:
+        for spec in design.strategies:
             for name in scenario_names:
                 results.append(
                     run_config(
@@ -775,12 +814,13 @@ def run_placebo(
     seed: int = BOOTSTRAP_SEED,
     scenario_name: str = "base",
     first_replication: int = 0,
+    design: ExperimentDesign = DISCOVERY,
 ) -> PlaceboSummary:
     """Run the full experiment on shuffled data and count how often it would approve."""
-    adjusted_alpha = NOMINAL_ALPHA / CONFIGURATION_COUNT
+    adjusted_alpha = NOMINAL_ALPHA / design.configuration_count
     real = {
         timeframe: {symbol: load_pair_bars(data_dir, symbol, timeframe) for symbol in symbols}
-        for timeframe in TIMEFRAMES
+        for timeframe in design.timeframes
     }
     any_written = any_multiple = any_g0 = 0
     per_config: dict[str, int] = {}
@@ -789,9 +829,9 @@ def run_placebo(
         rng = np.random.default_rng(seed + replication)
         written = multiple = full = False
         best_t = float("-inf")
-        for timeframe in TIMEFRAMES:
+        for timeframe in design.timeframes:
             shuffled = shuffle_bars(real[timeframe], rng)
-            for spec in STRATEGIES:
+            for spec in design.strategies:
                 result = run_config(
                     shuffled, spec, timeframe, SCENARIOS[scenario_name], adjusted_alpha=adjusted_alpha
                 )
@@ -880,6 +920,7 @@ def render_report(
     generated: str,
     null_max_t: Sequence[float] | None = None,
     null_details: dict[str, object] | None = None,
+    design: ExperimentDesign = DISCOVERY,
 ) -> str:
     base = [r for r in results if r.scenario == "base"]
     calibrated = null_max_t is not None
@@ -887,10 +928,10 @@ def render_report(
     winners = [row for row in rows if row.passes]
     threshold = float(np.quantile(null_max_t, 1 - G0_SIGNIFICANCE)) if calibrated else None
     lines = [
-        "# G0: estratégias técnicas simples sobrevivem ao custo real de forex?",
+        f"# {design.title}",
         "",
         f"Gerado em {generated}. Pares: {', '.join(symbols)}. Dados: {data_range}.",
-        f"Configurações testadas: {CONFIGURATION_COUNT} (estratégias x timeframes), parâmetros de fábrica, "
+        f"Configurações testadas: {design.configuration_count} (estratégias x timeframes), parâmetros de fábrica, "
         "sem otimização: toda a amostra é fora da amostra.",
         "Custo base = " + SCENARIOS["base"].description + ". Carry/swap real não modelado no caso base.",
         "",
@@ -913,7 +954,7 @@ def render_report(
                                  for w in winners) + ".")
     else:
         lines.append("**G0 NÃO PASSOU.** Nenhuma configuração se separa do que a melhor de "
-                     f"{CONFIGURATION_COUNT} configurações faria em dados sem vantagem "
+                     f"{design.configuration_count} configurações faria em dados sem vantagem "
                      f"(limite t de 95% no placebo: {threshold:.2f}, {len(null_max_t)} embaralhamentos).")
         best = max((row for row in rows if row.result.testable_t is not None),
                    key=lambda row: row.result.testable_t, default=None)
@@ -931,7 +972,7 @@ def render_report(
             "",
             f"Calibração ({count} embaralhamentos): a regra escrita no plano (IC 95% nominal excluindo zero "
             f"em 2+ pares) aprovou dado sem vantagem em {rule['plan_rule_2_pairs']} ({rule['plan_rule_2_pairs'] / count:.0%}) "
-            f"das rodadas, acima dos 5% aceitáveis; o limite por bootstrap com Bonferroni aprovou "
+            f"das rodadas; o limite por bootstrap com Bonferroni aprovou "
             f"{rule['multiple_testing_bound']} ({rule['multiple_testing_bound'] / count:.1%}), conservador demais. "
             f"Por isso o critério é a distribuição da melhor configuração: mediana t = {np.median(null_max_t):.2f}, "
             f"p90 = {np.quantile(null_max_t, 0.90):.2f}, p95 = {threshold:.2f}, p99 = {np.quantile(null_max_t, 0.99):.2f}.",
@@ -961,7 +1002,7 @@ def render_report(
     lines += ["", "Por ano civil (estabilidade):", "", "| Ano | Trades | Média R |", "|---|---|---|"]
     for year, stats in sorted(top.by_year.items()):
         lines.append(f"| {year} | {stats.trades} | {_fmt(stats.mean_r)} |")
-    needed = trades_needed_to_confirm(top.pooled)
+    needed = trades_needed_to_confirm(top.pooled, design.configuration_count)
     if needed is not None and top.pooled.trades:
         years_of_data = max(len(top.by_year), 1)
         per_year = top.pooled.trades / years_of_data
@@ -974,8 +1015,8 @@ def render_report(
               "| Estratégia | TF | " + " | ".join(SCENARIOS) + " |",
               "|---|---|" + "|".join("---" for _ in SCENARIOS) + "|"]
     keyed = {(r.strategy, r.timeframe, r.scenario): r for r in results}
-    for spec in STRATEGIES:
-        for timeframe in TIMEFRAMES:
+    for spec in design.strategies:
+        for timeframe in design.timeframes:
             cells = []
             for name in SCENARIOS:
                 item = keyed.get((spec.name, timeframe, name))
@@ -985,7 +1026,7 @@ def render_report(
     lines += ["", "## Como ler", "",
               "- Média R é o resultado médio por trade em múltiplos do risco (distância do stop, 2 ATR).",
               "- t é a média dividida pelo erro padrão. O valor-p ajustado é a chance de a MELHOR das "
-              f"{CONFIGURATION_COUNT} configurações, em dados embaralhados, atingir esse t.",
+              f"{design.configuration_count} configurações, em dados embaralhados, atingir esse t.",
               "- Efeito mínimo detectável é o menor R médio que esta amostra separaria de zero (80% de poder). "
               "Se for maior que qualquer efeito plausível, o resultado é INCONCLUSIVO por falta de amostra, "
               "não prova de ausência de vantagem.",
@@ -1002,6 +1043,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--data-dir", type=Path, default=Path("data/raw/fx"))
     parser.add_argument("--symbols", nargs="+", default=None)
     parser.add_argument("--report", type=Path, default=None)
+    parser.add_argument(
+        "--design",
+        choices=sorted(DESIGNS),
+        default="discovery",
+        help="discovery tests every configuration; confirmation tests the two pre-registered ones",
+    )
     parser.add_argument(
         "--placebo",
         type=int,
@@ -1028,9 +1075,14 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.write(f"merged {merged['replications']} shuffles into {target}\n")
         return 0
 
+    design = DESIGNS[args.design]
     if args.placebo:
         summary = run_placebo(
-            args.data_dir, symbols, replications=args.placebo, first_replication=args.placebo_start
+            args.data_dir,
+            symbols,
+            replications=args.placebo,
+            first_replication=args.placebo_start,
+            design=design,
         )
         if args.null_out:
             save_null(summary, args.null_out, seed=BOOTSTRAP_SEED)
@@ -1046,7 +1098,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
-    results = run_experiment(args.data_dir, symbols, scenario_names=list(SCENARIOS))
+    results = run_experiment(args.data_dir, symbols, scenario_names=list(SCENARIOS), design=design)
     first = pd.read_parquet(args.data_dir / f"{symbols[0]}_H1.parquet")
     null_max_t = load_null(args.null_file) if args.null_file else None
     null_details = load_null_details(args.null_file) if args.null_file else None
@@ -1054,6 +1106,7 @@ def main(argv: list[str] | None = None) -> int:
         results,
         null_max_t=null_max_t,
         null_details=null_details,
+        design=design,
         symbols=symbols,
         data_range=f"{first.index[0]:%Y-%m-%d} a {first.index[-1]:%Y-%m-%d}",
         generated=datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),

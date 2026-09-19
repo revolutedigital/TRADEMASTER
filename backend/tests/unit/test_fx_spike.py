@@ -14,6 +14,9 @@ from app.services.backtest.fx_costs import (
     SwapSchedule,
 )
 from scripts.research.fx_spike import (
+    CONFIRMATION,
+    DESIGNS,
+    DISCOVERY,
     G0_MIN_PAIRS_POSITIVE,
     MIN_TRADES_FOR_TEST,
     STRATEGIES,
@@ -677,3 +680,34 @@ def test_trades_needed_scales_with_the_square_of_noise_over_effect() -> None:
     assert needed == pytest.approx((z * 5.0) ** 2, rel=1e-9)
     assert trades_needed_to_confirm(_stats(100, -0.2, -2.0)) is None
     assert trades_needed_to_confirm(_stats(100, 0.2, None)) is None
+
+
+def test_the_confirmation_design_tests_exactly_the_two_preregistered_configurations() -> None:
+    assert [spec.name for spec in CONFIRMATION.strategies] == ["sma_rsi", "bollinger_reversion"]
+    assert CONFIRMATION.timeframes == ("1D",)
+    assert CONFIRMATION.configuration_count == 2
+    assert DISCOVERY.configuration_count == 12
+    assert set(DESIGNS) == {"discovery", "confirmation"}
+
+
+def test_confirmation_uses_the_unchanged_strategy_definitions_from_discovery() -> None:
+    by_name = {spec.name: spec for spec in DISCOVERY.strategies}
+
+    for spec in CONFIRMATION.strategies:
+        assert spec is by_name[spec.name]
+
+
+def test_fewer_hypotheses_lower_the_sample_needed_to_confirm_an_effect() -> None:
+    stats = _stats(210, 0.196, 2.29)
+
+    assert trades_needed_to_confirm(stats, 2) < trades_needed_to_confirm(stats, 12)
+
+
+def test_the_confirmation_report_carries_its_own_title_and_hypothesis_count() -> None:
+    results = [_result("sma_rsi", trades=300, mean_r=0.1, t_stat=1.0, pairs_positive=5)]
+
+    report = render_report(results, symbols=["A"], data_range="x", generated="now",
+                           null_max_t=list(np.linspace(1.0, 2.5, 100)), design=CONFIRMATION)
+
+    assert "confirmação em amostra nunca vista" in report
+    assert "Configurações testadas: 2" in report

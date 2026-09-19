@@ -35,7 +35,7 @@ O TradeMaster vira plataforma de forex long/short, mantendo o gate de evidência
 | 5 | Contas e caminho do dinheiro (humano) | 3-5h + espera | pendente |
 | 6 | Prova de API cTrader demo | 6-10h | pendente |
 | 7 | Prova de API IBKR paper | 8-14h | pendente |
-| 8 | Walk-forward FX com IC (G0) | 6-10h | pendente |
+| 8 | Walk-forward FX com IC (G0) | 6-10h | simulador e estatística prontos (27 testes); rodada oficial aguarda o download dos dados |
 | 9 | Spec v2 do perfil FX | 4-6h | pendente |
 | 10 | Migração aditiva 019 | 4-6h | pendente |
 | 11 | Instrumentos, pip/lote e conversão | 6-8h | pendente |

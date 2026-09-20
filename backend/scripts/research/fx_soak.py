@@ -30,13 +30,26 @@ WRAPPER = Path(__file__).resolve().parents[2] / "scripts" / "ctrader_demo.sh"
 LOG = Path("data/soak/demo_soak.jsonl")
 STOP_FILE = Path.home() / ".config" / "trademaster" / "STOP"
 SYMBOL, UNITS, PIP = "EURUSD", 1000, 0.0001
-STOP_PIPS, TARGET_PIPS, HOLD_SECONDS = 15, 30, 300
-CYCLE_SECONDS = 900
-MAX_TRADES_PER_DAY = 40
-DAILY_LOSS_LIMIT_USD = 10.0
 MAX_CONSECUTIVE_ERRORS = 5
 
 Cli = Callable[..., str]
+
+
+@dataclass(frozen=True)
+class Settings:
+    """How one soak behaves: protective distances, how long to wait, pacing and the daily limits."""
+
+    stop_pips: float
+    target_pips: float
+    hold_seconds: float
+    poll_seconds: float
+    cycle_seconds: float
+    max_trades_per_day: int
+    daily_loss_limit_usd: float
+
+
+PLUMBING = Settings(15, 30, 300, 300, 900, 40, 10.0)
+SCALP = Settings(3, 1.5, 120, 10, 0, 400, 30.0)
 
 
 class SoakError(Exception):
@@ -75,31 +88,43 @@ def last_json(text: str) -> dict:
     return json.loads(blocks[-1])
 
 
-def one_cycle(cli: Cli, side: str, now: Callable[[], float] = time.time, sleep: Callable[[float], None] = time.sleep) -> dict:
-    """One measured round trip; returns the record to log."""
+def one_cycle(cli: Cli, side: str, settings: Settings = PLUMBING, now: Callable[[], float] = time.time,
+              sleep: Callable[[float], None] = time.sleep) -> dict:
+    """One measured round trip; returns the record to log. The stop and target live on the server."""
     quote = last_json(cli(f"price {SYMBOL}"))
     ask, bid = quote["ask"], quote["bid"]
     sign = 1 if side == "buy" else -1
     reference = ask if side == "buy" else bid
-    stop = round(reference - sign * STOP_PIPS * PIP, 5)
-    target = round(reference + sign * TARGET_PIPS * PIP, 5)
+    stop = round(reference - sign * settings.stop_pips * PIP, 5)
+    target = round(reference + sign * settings.target_pips * PIP, 5)
     sent_at = now()
     last_json(cli(f"order place-market {SYMBOL} {side} {UNITS} {stop:.5f} {target:.5f} yes"))
     position = last_json(cli("positions"))["positions"][0]
     confirmed_at = now()
-    sleep(HOLD_SECONDS)
-    still_open = last_json(cli("positions"))["positions"]
-    protected = bool(still_open) and still_open[0].get("stopLoss") is not None
-    cli("position close all yes")
-    deal = last_json(cli("deals"))["deals"][-1]
-    entry = position["entryPrice"]
+    waited, protected = 0.0, position.get("stopLoss") is not None
+    while waited < settings.hold_seconds:
+        sleep(settings.poll_seconds)
+        waited += settings.poll_seconds
+        still_open = last_json(cli("positions"))["positions"]
+        if not still_open:
+            break
+    else:
+        cli("position close all yes")
+    deals = [d for d in last_json(cli("deals"))["deals"] if d.get("positionId") in (None, position.get("id"))]
+    deal = deals[-1]
+    entry, exit_price = position["entryPrice"], deal["executionPrice"]
+    moved = sign * (exit_price - entry) / PIP
+    if waited < settings.hold_seconds:
+        outcome = "target" if moved > 0 else "stop"
+    else:
+        outcome = "timeout"
     return {
-        "at": datetime.fromtimestamp(sent_at, UTC).isoformat(), "side": side, "units": UNITS,
+        "at": datetime.fromtimestamp(sent_at, UTC).isoformat(), "side": side, "units": UNITS, "outcome": outcome,
         "quote_bid": bid, "quote_ask": ask, "spread_pips": round((ask - bid) / PIP, 2),
         "entry_price": entry, "entry_slippage_pips": round(sign * (entry - reference) / PIP, 2),
         "stop_on_server": protected, "stop_pips": position.get("stopLossPips"),
         "target_pips": position.get("takeProfitPips"), "latency_seconds": round(confirmed_at - sent_at, 1),
-        "exit_price": deal["executionPrice"], "gross_usd": deal["grossProfit"],
+        "exit_price": exit_price, "moved_pips": round(moved, 2), "gross_usd": deal["grossProfit"],
         "commission_usd": deal["commission"], "net_usd": deal["netProfit"],  # the deal carries the whole round trip
     }
 
@@ -119,27 +144,28 @@ def today_net(log: Path, day: str) -> tuple[int, float]:
     return trades, net
 
 
-def should_run(now: datetime, log: Path, window: Window, stop_file: Path = STOP_FILE) -> str | None:
+def should_run(now: datetime, log: Path, window: Window, settings: Settings = PLUMBING,
+               stop_file: Path = STOP_FILE) -> str | None:
     """Why the soak must not trade right now, or None when it may."""
     if stop_file.exists():
         return "stop file present"
     if not window.is_open(now):
         return "outside the trading window"
     trades, net = today_net(log, now.astimezone(UTC).strftime("%Y-%m-%d"))
-    if trades >= MAX_TRADES_PER_DAY:
+    if trades >= settings.max_trades_per_day:
         return "daily trade limit reached"
-    if net <= -DAILY_LOSS_LIMIT_USD:
+    if net <= -settings.daily_loss_limit_usd:
         return "daily loss limit reached"
     return None
 
 
-def soak(cli: Cli = run_cli, log: Path = LOG, cycles: int | None = None, clock: Callable[[], float] = time.time,
-         sleep: Callable[[float], None] = time.sleep) -> int:
+def soak(cli: Cli = run_cli, log: Path = LOG, cycles: int | None = None, settings: Settings = PLUMBING,
+         clock: Callable[[], float] = time.time, sleep: Callable[[float], None] = time.sleep) -> int:
     log.parent.mkdir(parents=True, exist_ok=True)
     flatten(cli)
     errors, done, side = 0, 0, "buy"
     while cycles is None or done < cycles:
-        reason = should_run(datetime.fromtimestamp(clock(), UTC), log, Window())
+        reason = should_run(datetime.fromtimestamp(clock(), UTC), log, Window(), settings)
         if reason in ("stop file present",):
             sys.stdout.write(f"stopping: {reason}\n")
             return 0
@@ -148,7 +174,7 @@ def soak(cli: Cli = run_cli, log: Path = LOG, cycles: int | None = None, clock: 
             continue
         started = clock()
         try:
-            record = one_cycle(cli, side, clock, sleep)
+            record = one_cycle(cli, side, settings, clock, sleep)
             errors, done, side = 0, done + 1, "sell" if side == "buy" else "buy"
         except (SoakError, subprocess.SubprocessError, OSError, KeyError, IndexError, json.JSONDecodeError) as error:
             errors += 1
@@ -161,7 +187,7 @@ def soak(cli: Cli = run_cli, log: Path = LOG, cycles: int | None = None, clock: 
                 return 1
         with log.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record) + "\n")
-        sleep(max(0.0, CYCLE_SECONDS - (clock() - started)))
+        sleep(max(0.0, settings.cycle_seconds - (clock() - started)))
     return 0
 
 
@@ -175,7 +201,9 @@ def flatten_safely(cli: Cli) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--cycles", type=int, default=None, help="stop after this many trades (default: run until stopped)")
-    return soak(cycles=parser.parse_args().cycles)
+    parser.add_argument("--scalp", action="store_true", help="short protective distances, back to back, instead of the 15-minute meter")
+    arguments = parser.parse_args()
+    return soak(cycles=arguments.cycles, settings=SCALP if arguments.scalp else PLUMBING)
 
 
 if __name__ == "__main__":

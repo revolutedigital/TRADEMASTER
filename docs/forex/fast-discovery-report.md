@@ -1,0 +1,17 @@
+# Descoberta (2019-01 a 2024-08)
+
+
+
+```
+config  trades   mean_r  mean_r_stress      t  p_bootstrap  p_placebo  pairs_positive      mde  stop_fits_min_lot  approved  inconclusive                                                                                                                                                                           failed
+   F1a    6358 -0.04463       -0.09412 -2.952            1      0.794             0.2  0.05141           0.006763     False         False                        key A p-value above 0.05; key B p-value above 0.05; mean R not positive at base costs; fewer than 60% of pairs positive; mean R not positive under stress
+   F1b    8030 -0.07895        -0.1266 -6.921            1          1               0  0.03878           0.004732     False         False                        key A p-value above 0.05; key B p-value above 0.05; mean R not positive at base costs; fewer than 60% of pairs positive; mean R not positive under stress
+   F2a    9196   -0.106        -0.2033 -6.475            1          1               0  0.05566             0.2574     False         False                        key A p-value above 0.05; key B p-value above 0.05; mean R not positive at base costs; fewer than 60% of pairs positive; mean R not positive under stress
+   F2b    9200  -0.1133        -0.1986 -10.57            1          1               0  0.03642             0.2032     False         False                        key A p-value above 0.05; key B p-value above 0.05; mean R not positive at base costs; fewer than 60% of pairs positive; mean R not positive under stress
+   F3a   22957  -0.2253        -0.3638 -34.47            1          1               0  0.02222             0.7736     False         False                        key A p-value above 0.05; key B p-value above 0.05; mean R not positive at base costs; fewer than 60% of pairs positive; mean R not positive under stress
+   F3b    5638  -0.1594        -0.2723 -11.99            1          1               0  0.04521             0.5305     False         False                        key A p-value above 0.05; key B p-value above 0.05; mean R not positive at base costs; fewer than 60% of pairs positive; mean R not positive under stress
+   F5a     317   -0.282        -0.4332 -2.173            1     0.5748               0   0.4412             0.3722     False          True                        key A p-value above 0.05; key B p-value above 0.05; mean R not positive at base costs; fewer than 60% of pairs positive; mean R not positive under stress
+   F5b     263  -0.4418        -0.7124 -4.038            1     0.9734               0    0.372             0.2243     False          True key A p-value above 0.05; key B p-value above 0.05; mean R not positive at base costs; fewer than 60% of pairs positive; fewer than 300 trades; mean R not positive under stress
+    C1 1104558  -0.4788        -0.7085 -227.4            1          1               0 0.007159                  1     False         False                        key A p-value above 0.05; key B p-value above 0.05; mean R not positive at base costs; fewer than 60% of pairs positive; mean R not positive under stress
+    C2  126823  -0.6359        -0.8198 -165.3            1          1               0  0.01308                  1     False         False                        key A p-value above 0.05; key B p-value above 0.05; mean R not positive at base costs; fewer than 60% of pairs positive; mean R not positive under stress
+```

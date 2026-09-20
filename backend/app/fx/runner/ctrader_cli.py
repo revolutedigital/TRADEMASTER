@@ -28,6 +28,7 @@ from app.fx.runner.venue import Account, OrderRejected, Position, Quote, VenueUn
 
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 PROMPT = re.compile(r">\s*$")
+PASSWORD_PROMPT = re.compile(r"Password:\s*$")
 
 
 class Transport(Protocol):
@@ -35,10 +36,14 @@ class Transport(Protocol):
 
 
 class PtySession:
-    """Runs `argv` (the CLI, already pointed at one account) in a pty and answers commands one at a time."""
+    """Runs `argv` (the CLI, already pointed at one account) in a pty and answers commands one at a time.
 
-    def __init__(self, argv: Sequence[str], login_timeout: float = 90.0) -> None:
-        self._argv, self._login_timeout = list(argv), login_timeout
+    The password is typed into the CLI's own prompt, never given as an argument: an argument shows in
+    every process listing of the host, for as long as the session lives.
+    """
+
+    def __init__(self, argv: Sequence[str], login_timeout: float = 90.0, password: str | None = None) -> None:
+        self._argv, self._login_timeout, self._password = list(argv), login_timeout, password
         self._lock = threading.Lock()
         self._pid = 0
         self._fd = -1
@@ -48,9 +53,12 @@ class PtySession:
         if pid == 0:  # child: become the CLI
             os.execvp(self._argv[0], self._argv)  # noqa: S606
         self._pid, self._fd = pid, fd
+        if self._password is not None:
+            self._read_until_prompt(self._login_timeout, PASSWORD_PROMPT)
+            os.write(self._fd, (self._password + "\r").encode())
         self._read_until_prompt(self._login_timeout)
 
-    def _read_until_prompt(self, timeout: float) -> str:
+    def _read_until_prompt(self, timeout: float, prompt: re.Pattern[str] = PROMPT) -> str:
         buffer, deadline = b"", time.monotonic() + timeout
         while time.monotonic() < deadline:
             ready, _, _ = select.select([self._fd], [], [], 0.05)
@@ -64,7 +72,7 @@ class PtySession:
                 raise VenueUnavailable("the CLI session ended")
             buffer += chunk
             text = ANSI.sub("", buffer.decode(errors="replace"))
-            if PROMPT.search(text.rstrip("\r\n ")) or text.rstrip().endswith(">"):
+            if prompt.search(text):
                 return text
         raise VenueUnavailable(f"the CLI did not answer within {timeout:.0f}s")
 

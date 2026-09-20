@@ -8,6 +8,7 @@ import pytest
 from app.fx import strategy as fx
 from app.fx.instruments import ConversionRates
 from app.fx.runner.fake import FakeVenue
+from app.fx.runner.venue import VenueUnavailable
 from scripts.research import fx_demo_runner as runner
 
 RATES = ConversionRates({"EURUSD": 1.1})
@@ -56,6 +57,37 @@ def test_the_strategy_is_built_from_the_pre_registered_configuration(tmp_path) -
 
     assert (c1.builder.seconds, c2.builder.seconds) == (60, 300)
     assert runner.LIMITS.risk_fraction * 1000 > 0.3  # enough budget for the smallest lot at a 3 pip stop
+
+
+def test_the_cli_command_line_carries_no_password_and_pins_the_demo_account() -> None:
+    argv = runner.cli_argv("C1")
+
+    assert f"--account={runner.ACCOUNT}" in argv
+    assert not any(word in part.lower() for part in argv for word in ("password", "pwd"))
+
+
+async def test_repeated_failed_logins_stop_the_runner_instead_of_hammering_the_broker(monkeypatch, tmp_path) -> None:
+    class FailingSession:
+        starts = 0
+
+        def __init__(self, argv, password=None) -> None:
+            pass
+
+        def start(self) -> None:
+            FailingSession.starts += 1
+            raise VenueUnavailable("the CLI session ended")
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(runner, "PtySession", FailingSession)
+    monkeypatch.setattr(runner, "password", lambda: "irrelevant")
+    monkeypatch.setattr(runner, "remove_container", lambda strategy: None)
+    monkeypatch.setattr(runner, "DATA", tmp_path)
+    monkeypatch.setattr(runner.asyncio, "sleep", lambda seconds: _noop())
+
+    assert await runner.run("C1") == 1
+    assert FailingSession.starts == runner.MAX_FAILED_LOGINS
 
 
 async def test_the_loop_stops_on_the_stop_file_and_flattens(tmp_path) -> None:

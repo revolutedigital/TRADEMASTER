@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
+import subprocess
 import sys
 import time
 from collections.abc import Callable
@@ -44,13 +44,29 @@ STOP_FILE = Path.home() / ".config" / "trademaster" / "STOP"
 DATA = Path("data/soak")
 LIMITS = RiskLimits(risk_fraction=0.00035, max_daily_loss_fraction=0.01, max_open_positions=1, max_spread_pips=1.5)
 POLL_SECONDS = 0.25
+MAX_FAILED_LOGINS = 3
 PERIODS = {60: "m1", 300: "m5", 900: "m15", 3600: "h1"}
 
 
-def cli_argv() -> list[str]:
-    return ["docker", "run", "-it", "--rm", "-v", f"{PASSWORD_FILE}:/run/ctid.pwd:ro", "-e", f"CTID={CTID}",
-            "-e", f"ACCOUNT={ACCOUNT}", "--entrypoint", "sh", IMAGE, "-c",
-            'exec /usr/local/bin/ctrader-cli-entrypoint --ctid="$CTID" --password="$(cat /run/ctid.pwd)" --account="$ACCOUNT"']
+def container_name(strategy: str) -> str:
+    return f"ctrader-demo-{strategy}"
+
+
+def cli_argv(strategy: str) -> list[str]:
+    """The CLI in a container, pinned to the demo account. No password here: `PtySession` types it at the prompt."""
+    return ["docker", "run", "-it", "--rm", "--name", container_name(strategy), "--log-opt", "max-size=8m",
+            "--log-opt", "max-file=2", IMAGE, f"--ctid={CTID}", f"--account={ACCOUNT}"]
+
+
+def password() -> str:
+    return PASSWORD_FILE.read_text().rstrip("\r\n")
+
+
+def remove_container(strategy: str) -> None:
+    """A docker client killed in tty mode leaves its container running: remove it by name (no error if none)."""
+    subprocess.run(  # noqa: S603
+        ["docker", "rm", "-f", container_name(strategy)], capture_output=True, timeout=30, check=False  # noqa: S607
+    )
 
 
 def warm_up(bot: Bot, transport: Transport, now: float) -> int:
@@ -111,10 +127,20 @@ async def loop(bot: Bot, venue: CliVenue, guard: RiskGuard, executor: Executor, 
 
 async def run(strategy: str) -> int:
     DATA.mkdir(parents=True, exist_ok=True)
+    failed_logins = 0
     while True:
-        session = PtySession(cli_argv())
+        remove_container(strategy)
+        session = PtySession(cli_argv(strategy), password=password())
         try:
-            await asyncio.to_thread(session.start)
+            try:
+                await asyncio.to_thread(session.start)
+            except VenueUnavailable:
+                failed_logins += 1
+                if failed_logins >= MAX_FAILED_LOGINS:  # a wrong password would otherwise be retried for ever
+                    sys.stdout.write(f"{failed_logins} logins failed in a row, giving up\n")
+                    return 1
+                raise
+            failed_logins = 0
             bot, venue, guard, journal, executor = build(strategy, session)
             await asyncio.to_thread(warm_up, bot, session, time.time())
             report = await reconcile(venue, journal)
@@ -127,6 +153,7 @@ async def run(strategy: str) -> int:
             await asyncio.sleep(10)
         finally:
             session.close()
+            remove_container(strategy)
 
 
 def report(strategy: str) -> None:
@@ -150,9 +177,10 @@ def main() -> int:
     if arguments.report:
         report(arguments.strategy)
         return 0
-    if not os.environ.get("CTRADER_DEMO_CONFIRMED") and not PASSWORD_FILE.exists():
+    if not PASSWORD_FILE.exists():
         sys.stdout.write("password file missing\n")
         return 2
+    sys.stdout.reconfigure(line_buffering=True)  # the log is how a long run is followed
     return asyncio.run(run(arguments.strategy))
 
 

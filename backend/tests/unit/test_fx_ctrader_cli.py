@@ -29,6 +29,20 @@ for line in sys.stdin:
 """
 
 
+FAKE_LOGIN_CLI = r"""
+import os, sys
+sys.stdout.write("cTrader CLI\r\nPassword: "); sys.stdout.flush()
+if sys.stdin.readline().strip() != os.environ["EXPECTED_PASSWORD"]:
+    print("Authentication failed"); sys.exit(1)
+sys.stdout.write("> "); sys.stdout.flush()
+for line in sys.stdin:
+    if line.strip() == "quit":
+        break
+    print('{"echo": "%s"}' % line.strip())
+    sys.stdout.write("\n> "); sys.stdout.flush()
+"""
+
+
 @pytest.fixture
 def session():
     started = PtySession([sys.executable, "-c", FAKE_CLI], login_timeout=10)
@@ -50,6 +64,28 @@ def test_a_command_that_never_answers_raises_and_a_dead_session_raises(session) 
     session.close()
     with pytest.raises(VenueUnavailable):
         session.send("price EURUSD", timeout=1)
+
+
+def test_the_password_is_typed_at_the_prompt_and_never_given_in_the_arguments(monkeypatch) -> None:
+    monkeypatch.setenv("EXPECTED_PASSWORD", "s3cret#")
+    argv = [sys.executable, "-c", FAKE_LOGIN_CLI]
+    logged_in = PtySession(argv, login_timeout=10, password="s3cret#")
+    logged_in.start()
+    try:
+        assert json_of(logged_in.send("hello", timeout=5)) == {"echo": "hello"}
+    finally:
+        logged_in.close()
+    assert not any("s3cret#" in part for part in argv)
+
+
+def test_a_rejected_password_fails_the_start_instead_of_hanging(monkeypatch) -> None:
+    monkeypatch.setenv("EXPECTED_PASSWORD", "s3cret#")
+    rejected = PtySession([sys.executable, "-c", FAKE_LOGIN_CLI], login_timeout=10, password="wrong")
+    try:
+        with pytest.raises(VenueUnavailable):
+            rejected.start()
+    finally:
+        rejected.close()
 
 
 def test_an_answer_without_json_is_a_rejection_carrying_the_cli_words() -> None:

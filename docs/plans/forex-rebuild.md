@@ -1,6 +1,8 @@
 # Plano: refazer o TradeMaster em forex
 
 Aprovado por Igor em 2026-09-19 ("siga até o final, em todas as decisões faça o que recomendou").
+
+**Status: encerrado no portão G0.** O G0 não passou na amostra de descoberta e a confirmação pré-registrada em 7 anos de dados nunca vistos também não confirmou. A Fase A (reescrita da plataforma) não foi iniciada e não deve ser, para análise técnica em forex.
 Branch de trabalho: `feat/forex-rebuild` (commits locais, sem push).
 Pesquisa que sustenta o plano: [docs/forex/venue-research-2026-09-19.md](../forex/venue-research-2026-09-19.md).
 
@@ -42,11 +44,30 @@ Relatório completo: [docs/forex/g0-report-2026-09-19.md](../forex/g0-report-202
 2. **Perfil de estratégia.** As estratégias atuais dependem de `volume_confirmation` como segundo voto; sem volume, `min_confirmations = 2` exigiria dois cruzamentos na mesma vela. Usei famílias pré-declaradas com `min_confirmations = 1` e parâmetros de fábrica.
 3. **Amostra.** 3 anos (como planejado), não 5: o servidor de dados limita o ritmo.
 
-### O que fazer agora (decisão do Igor)
+### O que fazer agora (decisão do Igor; a opção recomendada foi executada, ver a seção seguinte)
 
 - **Recomendado, barato e sem tocar na plataforma:** confirmar em amostra que o teste nunca viu. Baixar 2016-09 a 2023-08 dos mesmos 7 pares (~3 h em segundo plano) e testar **só** sma_rsi/diário e bollinger/diário, como amostra de confirmação de 2 hipóteses (limiar bem menor que o de 12). Se confirmar, o plano segue do step 9. Se não confirmar, encerrar o forex por análise técnica.
 - **Alternativas:** rodar o mesmo teste em USDBRL para a rota WDO da B3 (dado de outra fonte); ou não reescrever a plataforma.
 - **Não recomendado:** seguir para a Fase A sem confirmação. É construir 120 a 200 horas de plataforma em cima de um resultado que o próprio placebo não separa do acaso.
+
+## Resultado da confirmação em amostra nunca vista (2026-09-19)
+
+Pré-registro (commitado antes de existir qualquer análise): [g0-confirmation-preregistration.md](../forex/g0-confirmation-preregistration.md). Relatório: [g0-confirmation-report-2026-09-19.md](../forex/g0-confirmation-report-2026-09-19.md).
+
+Amostra: 2016-09 a 2023-08 (7 anos, sem sobreposição com a de descoberta), 7 majors, ~43.670 candles por par, qualidade validada. Duas hipóteses, mesmo simulador, mesmo custo, nenhum parâmetro alterado. Limite do placebo (300 embaralhamentos): t ≥ 1,94.
+
+| Configuração (diário) | Descoberta (3 anos) | Confirmação (7 anos) | t na confirmação | Valor-p ajustado | Pares positivos |
+|---|---|---|---|---|---|
+| sma_rsi | +0,196 R (210 trades) | **+0,019 R** (628 trades) | 0,41 | 0,402 | 3 de 7 |
+| bollinger_reversion | +0,129 R (227 trades) | **+0,021 R** (540 trades) | 0,39 | 0,402 | 4 de 7 |
+
+**Veredito: as duas hipóteses falharam.** Pelo pré-registro, o G0 fica reprovado e a rota de análise técnica em forex é encerrada.
+
+Leitura:
+- O efeito de descoberta era a "maldição do vencedor": a melhor de 12 configurações, escolhida depois de ver o dado. Com 628 trades o erro padrão é ~0,05 R, então +0,196 R está a cerca de 3,7 erros padrão do que se mediu; o efeito verdadeiro é pequeno (o intervalo aproximado de 95% é −0,08 a +0,11 R). Média dos 10 anos juntos (só informativo, fora do critério): ~+0,06 R, sem significância.
+- A estabilidade que parecia boa na descoberta (positivo nos 3 anos) não se repetiu: na confirmação há anos positivos e negativos (−0,11 em 2018, +0,15 em 2020, −0,08 em 2021).
+- A confirmação tem poder para o efeito que importa: efeito mínimo detectável de 0,14 R (sma_rsi), abaixo dos 0,196 R observados antes. Não é um resultado inconclusivo por falta de amostra.
+- Sob swap adverso ou spread dobrado, o resultado vai a zero ou fica ligeiramente negativo.
 
 ## Quadro de progresso
 

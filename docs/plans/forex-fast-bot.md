@@ -6,7 +6,7 @@ Versão de 2026-09-20, com as respostas do Igor às decisões e o escopo ampliad
 
 - **Step 2 concluído (2026-09-20), com correção no mesmo dia:** o dado do laboratório é o tick bid/ask do HistData convertido em M1 (idêntico à Dukascopy em maio/2024, 1 a 4 horas de download em vez de ~54); a Dukascopy fica como oráculo. A primeira conclusão ("HistData só para desenvolvimento") estava errada: as diferenças eram o fuso, que segue as datas europeias de horário de verão. Ver `docs/forex/data-m1-spike.md`.
 - **Step 3 concluído (2026-09-20):** núcleo próprio compilado em numba, 246 milhões de barras/s por núcleo, igual à referência trade a trade; NautilusTrader descartado para a cTrader. Ver `docs/adr/0001-motor-do-bot.md`.
-- **Step 6 redefinido:** baixar ticks bid/ask do HistData (5 anos, 10 pares), resolver o fuso, gerar M1 bid/ask, validar contra a Dukascopy e tapar buracos. O download lento da Dukascopy foi interrompido de propósito.
+- **Step 6 em andamento:** ticks bid/ask do HistData (5 anos, 10 pares) convertidos em M1 bid/ask e validados contra a Dukascopy. EURUSD pronto (59 de 60 meses passam); os outros 9 pares processam em segundo plano. Os buracos de 2023-02 a 2023-07 (as mesmas horas nos 7 pares) se tapam com ~1.750 a 2.500 arquivos diários de M1 da Dukascopy (~2,5 a 4 horas), e o espelho do HistData vale desde 2018-12-16, então a amostra pode se estender até lá. Um segundo cético independente reproduziu o resultado (relógio europeu: 99,84% das horas idênticas; M1 dos ticks igual ao da Dukascopy em 100% de 60.922 minutos).
 - **Aguardando o Igor:** step 1 (conta demo cTrader e credenciais da Open API).
 
 ## Visão geral
@@ -64,7 +64,7 @@ O `main` só recebe merge quando o Igor pedir; todo o trabalho fica na branch `f
   - Teste: o P&L bate com o cálculo independente (< 0,01 pip por trade), o throughput é medido contra a meta de 1 milhão de barras por segundo e a decisão fica registrada. Pior caso: numba ou motor aberto sem suporte ao Python 3.13. **A estimativa dos steps 8-11 e 21-24 é refeita depois dele.**
 
 **Step 4: Spike da API cTrader na demo** (~6-10h)
-  - O que: conectar, receber cotações em streaming, abrir e fechar ordem com SL/TP, derrubar o cliente e conferir que o SL continua no servidor, reconectar · Arquivos: `backend/scripts/research/ctrader_probe.py` (novo)
+  - O que: avaliar **dois caminhos** e ficar com o que funcionar: (a) cliente próprio em asyncio sobre o `.proto` oficial da Open API (o SDK Python oficial está parado desde 2024 e fixa versões antigas), e (b) o **cTrader Console oficial** (imagem Docker `ghcr.io/spotware/ctrader-console`, headless em Linux, comandos de ordem, posição e preço, **sem aplicativo da Open API**, o que evita a aprovação manual da Spotware). Para cada um: conectar, receber cotações, abrir e fechar ordem com SL/TP, derrubar o cliente e conferir que o SL continua no servidor, reconectar · Arquivos: `backend/scripts/research/ctrader_probe.py` (novo)
   - Depende de: 1 · Paralelo com: 2, 3, 5, 6, 7
   - Teste: log mostrando posição e SL vivos depois de matar o processo. Integração externa: pior caso dobra (aprovação do aplicativo no portal)
 

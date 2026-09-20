@@ -80,3 +80,7 @@ frontend/coverage/
 
 # Research datasets downloaded by backend/scripts/research (large, reproducible)
 backend/data/
+
+# Claude Code local state
+.claude/settings.local.json
+.claude/worktrees/

@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from app.fx.runner.journal import Journal
-from app.fx.runner.venue import Venue
+from app.fx.runner.venue import OrderRejected, Venue
 
 
 @dataclass
@@ -42,7 +42,10 @@ async def reconcile(venue: Venue, journal: Journal) -> ReconcileReport:
                 report.adopted.append(position_id)
         elif position.stop_price is None:
             stop, target = recorded_stops.get(position_id, (None, None))
-            restored = await venue.amend_protection(position_id, stop_price=stop, target_price=target) if stop else position
+            try:
+                restored = await venue.amend_protection(position_id, stop_price=stop, target_price=target) if stop else position
+            except OrderRejected:
+                restored = position
             if restored.stop_price is None:
                 await venue.close(position_id)
                 journal.append("orphan_closed", position_id=position_id, reason="stop lost and could not be restored")

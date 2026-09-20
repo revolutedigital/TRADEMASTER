@@ -265,3 +265,32 @@ async def test_a_trade_still_open_or_closed_without_a_known_result_is_not_a_clos
     await reconcile(bench.venue, bench.journal)  # the server stop fired while the bot was away: no result known
 
     assert closed_trades(bench.journal.events()) == []
+
+
+class RefusesAmend(FakeVenue):
+    async def amend_protection(self, position_id, *, stop_price, target_price):
+        from app.fx.runner.venue import OrderRejected
+
+        raise OrderRejected("INVALID_STOP")
+
+
+async def test_a_refused_stop_amendment_leaves_the_position_closed_and_the_bot_stopped(tmp_path) -> None:
+    venue = RefusesAmend(500.0, RATES)
+    venue.ignores_protection = True
+    bench = Bench(tmp_path, venue=venue)
+
+    with pytest.raises(ProtectionError):
+        await bench.buy()
+
+    assert await venue.positions() == [] and bench.guard.killed
+
+
+async def test_reconcile_closes_an_unprotected_position_whose_stop_the_broker_refuses_to_restore(tmp_path) -> None:
+    venue = RefusesAmend(500.0, RATES)
+    bench = Bench(tmp_path, venue=venue)
+    position = await bench.buy()
+    venue._positions[position.id] = type(position)(**{**position.__dict__, "stop_price": None})
+
+    report = await reconcile(venue, bench.journal)
+
+    assert report.closed_orphans == [position.id] and await venue.positions() == []

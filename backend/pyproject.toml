@@ -51,6 +51,7 @@ research = [
     "pyarrow>=17.0",
     "numba>=0.61",
     "histdata>=1.0",
+    "protobuf>=7.36.1",
 ]
 ml = [
     "torch>=2.5.0",

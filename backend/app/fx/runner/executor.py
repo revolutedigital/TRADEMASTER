@@ -83,8 +83,11 @@ class Executor:
         except OrderRejected as error:
             return self._refuse(client_order_id, f"broker rejected: {error}")
         if position.stop_price is None:
-            position = await self._retry(lambda: self.venue.amend_protection(
-                position.id, stop_price=stop, target_price=target))
+            try:
+                position = await self._retry(lambda: self.venue.amend_protection(
+                    position.id, stop_price=stop, target_price=target))
+            except OrderRejected:
+                pass  # still unprotected: handled just below, where the position is closed
         if position.stop_price is None:
             await self._retry(lambda: self.venue.close(position.id))
             self.journal.append("closed", position_id=position.id, reason="no server-side stop")

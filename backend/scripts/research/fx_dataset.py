@@ -65,6 +65,15 @@ MAJORS: dict[str, FxInstrument] = {
 }
 
 
+# Liquid crosses that the wider research scope adds to the seven majors.
+CROSSES: dict[str, FxInstrument] = {
+    "EURJPY": FxInstrument("EURJPY", 1_000, 0.01, (80.0, 220.0)),
+    "GBPJPY": FxInstrument("GBPJPY", 1_000, 0.01, (100.0, 260.0)),
+    "EURGBP": FxInstrument("EURGBP", 100_000, 0.0001, (0.6, 1.0)),
+}
+ALL_PAIRS: dict[str, FxInstrument] = MAJORS | CROSSES
+
+
 class FxDataDownloadError(RuntimeError):
     """Raised when the provider keeps failing after every retry."""
 
@@ -113,25 +122,20 @@ def decode_hourly_candles(
     return frame.loc[~is_placeholder]
 
 
-def fetch_month_payload(
+def fetch_cached(
     client: httpx.Client,
-    symbol: str,
-    year: int,
-    month: int,
-    side: str,
-    cache_dir: Path,
+    url: str,
+    cache_path: Path,
     *,
     retries: int = 10,
     base_delay_seconds: float = 2.0,
     max_delay_seconds: float = 60.0,
     sleep: Callable[[float], None] = time.sleep,
 ) -> bytes:
-    """Return the raw file for one month, caching it (an empty file means no data)."""
-    cache_path = cache_dir / symbol / f"{year}-{month:02d}-{side}.bi5"
+    """Return a file from the provider, caching it on disk (an empty file means no data)."""
     if cache_path.exists():
         return cache_path.read_bytes()
 
-    url = month_url(symbol, year, month, side)
     last_problem = "no attempt made"
     for attempt in range(retries):
         try:
@@ -155,6 +159,31 @@ def fetch_month_payload(
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_bytes(payload)
     return payload
+
+
+def fetch_month_payload(
+    client: httpx.Client,
+    symbol: str,
+    year: int,
+    month: int,
+    side: str,
+    cache_dir: Path,
+    *,
+    retries: int = 10,
+    base_delay_seconds: float = 2.0,
+    max_delay_seconds: float = 60.0,
+    sleep: Callable[[float], None] = time.sleep,
+) -> bytes:
+    """Return the raw hourly-candle file for one month, caching it."""
+    return fetch_cached(
+        client,
+        month_url(symbol, year, month, side),
+        cache_dir / symbol / f"{year}-{month:02d}-{side}.bi5",
+        retries=retries,
+        base_delay_seconds=base_delay_seconds,
+        max_delay_seconds=max_delay_seconds,
+        sleep=sleep,
+    )
 
 
 def build_pair_dataset(

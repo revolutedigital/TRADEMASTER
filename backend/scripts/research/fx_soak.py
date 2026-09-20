@@ -28,6 +28,7 @@ from zoneinfo import ZoneInfo
 NEW_YORK = ZoneInfo("America/New_York")
 WRAPPER = Path(__file__).resolve().parents[2] / "scripts" / "ctrader_demo.sh"
 LOG = Path("data/soak/demo_soak.jsonl")
+SCALP_LOG = Path("data/soak/demo_scalp.jsonl")
 STOP_FILE = Path.home() / ".config" / "trademaster" / "STOP"
 SYMBOL, UNITS, PIP = "EURUSD", 1000, 0.0001
 MAX_CONSECUTIVE_ERRORS = 5
@@ -203,7 +204,9 @@ def main() -> int:
     parser.add_argument("--cycles", type=int, default=None, help="stop after this many trades (default: run until stopped)")
     parser.add_argument("--scalp", action="store_true", help="short protective distances, back to back, instead of the 15-minute meter")
     arguments = parser.parse_args()
-    return soak(cycles=arguments.cycles, settings=SCALP if arguments.scalp else PLUMBING)
+    if arguments.scalp:
+        return soak(log=SCALP_LOG, cycles=arguments.cycles, settings=SCALP)
+    return soak(cycles=arguments.cycles, settings=PLUMBING)
 
 
 if __name__ == "__main__":

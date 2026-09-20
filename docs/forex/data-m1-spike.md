@@ -4,15 +4,15 @@ Medido em 2026-09-20. Código: `backend/scripts/research/fx_dataset_m1.py` (Duka
 
 ## Resultado
 
-**Decisão:** o dado canônico do laboratório é o M1 da **Dukascopy com bid e ask reais**. O download é lento por limite do servidor (~78 horas para 10 pares × 5 anos), mas roda em segundo plano e não custa esforço. O **HistData** é 1.000× mais rápido e serve para desenvolver e medir desempenho, **não para decidir**: ele só traz bid e difere da Dukascopy justamente nos movimentos bruscos.
+**Decisão:** o dado canônico do laboratório é o M1 da **Dukascopy com bid e ask reais**. O download é lento por limite do servidor (~54 horas para 10 pares × 5 anos com 8 conexões), mas roda em segundo plano e não custa esforço. O **HistData** é 1.000× mais rápido e serve para desenvolver e medir desempenho, **não para decidir**: ele só traz bid e difere da Dukascopy justamente nos movimentos bruscos.
 
 ## Dukascopy M1 (bid e ask reais)
 
 - Um arquivo por dia e lado (`.../SYMBOL/YYYY/MM/DD/BID_candles_min_1.bi5`), ~10 KB cada. O mês na URL começa em zero e o dia em um. Cada arquivo tem 1.440 registros (um por minuto); minutos com o mercado fechado vêm como candles planos de volume zero, que o carregador descarta.
 - **Qualidade (EURUSD, maio/2024, 32.658 minutos ativos):** nenhuma cotação cruzada (ask abaixo do bid), nenhum minuto no sábado, nenhuma pausa maior que 30 minutos dentro da semana, spread mediano **0,2 pip** (p95 = 0,4; p99 = 2,1), só 0,41% dos minutos com spread acima de 3 pips.
-- **Ritmo medido: 6,7 arquivos por minuto**, tanto com 4 quanto com 8 conexões. Mais conexões não aceleram: o limite é do servidor (na primeira rodada, com 7 processos, ele devolveu 503 em rajada).
-- **Projeção:** 10 pares × 5 anos = 31.286 arquivos = **78 horas**. Os 3 pares prioritários (EURUSD, GBPUSD, USDJPY) levam ~23 horas.
-- **Andamento:** o download dos 10 pares (2021-09-01 a 2026-08-31) foi iniciado em 2026-09-20 às 10:20, em sequência, com retomada automática pelo cache em disco. Exige a máquina ligada.
+- **Ritmo medido: 6,7 arquivos por minuto com 4 conexões e 9,7 com 8** (+45%). O servidor limita o ritmo (na rodada de H1, com 7 processos simultâneos, devolveu 503 em rajada), então mais conexões ajudam pouco e o resultado é uma rampa suave, não linear.
+- **Projeção:** 10 pares × 5 anos = 31.286 arquivos = **54 horas** com 8 conexões (78 horas com 4). Os 3 pares prioritários (EURUSD, GBPUSD, USDJPY) levam ~16 horas.
+- **Andamento:** o download dos 10 pares (2021-09-01 a 2026-08-31) foi iniciado em 2026-09-20 às 10:20 (reiniciado com 8 conexões às 10:30), em sequência, com retomada automática pelo cache em disco. Exige a máquina ligada.
 
 ## HistData M1 (só bid)
 
@@ -25,7 +25,7 @@ Medido em 2026-09-20. Código: `backend/scripts/research/fx_dataset_m1.py` (Duka
 ## Limitações e riscos
 
 - O limite do servidor da Dukascopy é o gargalo de calendário; não há como acelerar sem outra fonte com bid e ask.
-- A máquina precisa ficar ligada por ~3 dias para o conjunto completo.
+- A máquina precisa ficar ligada por ~2 dias para o conjunto completo.
 - Os termos de uso da Dukascopy e do HistData valem para pesquisa pessoal; conferir antes de qualquer outro uso.
 - O feed agregado da Dukascopy não é o preço executável de cada corretora; o soak em demo (step 25) mede essa diferença.
 

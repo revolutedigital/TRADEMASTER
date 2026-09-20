@@ -45,3 +45,11 @@ Medido em 2026-09-20. Código: `backend/scripts/research/fx_dataset_m1.py` (Duka
 ## Verificação independente (2026-09-20)
 
 Um segundo cético reproduziu os resultados por conta própria: contra o H1 da Dukascopy, o relógio do HistData dá 99,84% das horas idênticas com a regra europeia (regra dos EUA: 92%; EST fixo: 42%), e o M1 derivado dos ticks é igual ao da Dukascopy em 100% de 60.922 minutos comparados, em bid e ask. Correções que ele trouxe: o espelho vale desde 2018-12-16 (antes é outra fonte) e cobre também os 3 cruzados; os buracos de 2023-02 a 2023-07 são as mesmas horas nos 7 pares (~815 horas por par, ~125 dias úteis), então tapá-los com M1 diário da Dukascopy exige só ~1.750 a 2.500 arquivos (~2,5 a 4 horas), e o pós 2026-06-28 (sem milissegundos) não precisa de remendo em M1. A Dukascopy também oferece um bucket S3 oficial "requester pays" (custo estimado abaixo de US$ 1, exige conta AWS), que não usamos por ora.
+
+## Resultado final do step 6: 10 pares (2021-09 a 2026-08)
+
+- **18,08 milhões de minutos** de M1 bid/ask, 60 meses por par, 412 MB em Parquet (os zips de ticks ocupam 8 GB e ficam fora do git).
+- **Majors:** 58 a 59 dos 60 meses passam por par. Concordância média das horas com a Dukascopy de **99,87% a 99,89%** (bid e ask), zero cotação cruzada. Os meses que ficam abaixo de 99% são 2023-09 (98,4% a 98,6% nos 7 pares, ~8 horas de 501 com 1 a 4 pips de diferença, espalhadas) e 2023-12 (99,0% a 99,2% em USDCHF e USDJPY).
+- **Buracos:** os mesmos 5 meses, **2023-03 a 2023-07**, em todos os 10 pares. Ficam fora das análises (ou são tapados com M1 diário da Dukascopy, ~2.500 arquivos).
+- **Cruzados** (sem oráculo próprio), triangulados com os majors no M1: EURJPY contra EURUSD × USDJPY, erro mediano **0,13 pip** (p95 = 1,55); GBPJPY contra GBPUSD × USDJPY, **0,11 pip** (p95 = 1,08); EURGBP contra EURUSD ÷ GBPUSD, **0,08 pip** (p95 = 0,40). Nenhum mês com mediana acima de 1 pip, o que descarta erro de fuso.
+

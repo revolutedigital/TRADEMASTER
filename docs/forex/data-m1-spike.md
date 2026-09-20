@@ -4,7 +4,7 @@ Medido em 2026-09-20. Código: `backend/scripts/research/fx_dataset_m1.py` (Duka
 
 ## Resultado
 
-**Decisão:** o dado canônico do laboratório é o M1 da **Dukascopy com bid e ask reais**. O download é lento por limite do servidor (~54 horas para 10 pares × 5 anos com 8 conexões), mas roda em segundo plano e não custa esforço. O **HistData** é 1.000× mais rápido e serve para desenvolver e medir desempenho, **não para decidir**: ele só traz bid e difere da Dukascopy justamente nos movimentos bruscos.
+**Decisão (revista no mesmo dia):** o dado do laboratório é o **tick bid/ask do HistData convertido em M1**, validado contra a Dukascopy. A primeira versão deste relatório dizia o contrário ("HistData só para desenvolvimento, difere nos movimentos bruscos"); isso estava errado e foi corrigido depois de uma pesquisa independente apontar a causa: as diferenças eram um deslocamento de 1 hora do fuso, ver a seção do HistData. A Dukascopy fica como oráculo de validação e para tapar buracos, porque o servidor limita o ritmo (~54 horas para 10 pares × 5 anos em M1) e os termos dela proíbem bot.
 
 ## Dukascopy M1 (bid e ask reais)
 
@@ -12,20 +12,20 @@ Medido em 2026-09-20. Código: `backend/scripts/research/fx_dataset_m1.py` (Duka
 - **Qualidade (EURUSD, maio/2024, 32.658 minutos ativos):** nenhuma cotação cruzada (ask abaixo do bid), nenhum minuto no sábado, nenhuma pausa maior que 30 minutos dentro da semana, spread mediano **0,2 pip** (p95 = 0,4; p99 = 2,1), só 0,41% dos minutos com spread acima de 3 pips.
 - **Ritmo medido: 6,7 arquivos por minuto com 4 conexões e 9,7 com 8** (+45%). O servidor limita o ritmo (na rodada de H1, com 7 processos simultâneos, devolveu 503 em rajada), então mais conexões ajudam pouco e o resultado é uma rampa suave, não linear.
 - **Projeção:** 10 pares × 5 anos = 31.286 arquivos = **54 horas** com 8 conexões (78 horas com 4). Os 3 pares prioritários (EURUSD, GBPUSD, USDJPY) levam ~16 horas.
-- **Andamento:** o download dos 10 pares (2021-09-01 a 2026-08-31) foi iniciado em 2026-09-20 às 10:20 (reiniciado com 8 conexões às 10:30), em sequência, com retomada automática pelo cache em disco. Exige a máquina ligada.
+- **Andamento:** o download dos 10 pares (2021-09-01 a 2026-08-31) foi iniciado em 2026-09-20 às 10:20 (reiniciado com 8 conexões às 10:22), em sequência, com retomada automática pelo cache em disco. Exige a máquina ligada.
 
-## HistData M1 (só bid)
+## HistData (M1 só bid, e ticks com bid e ask)
 
-- **Velocidade:** um ano de M1 de um par em ~6 segundos; 10 anos do EURUSD (3,67 milhões de minutos) em 69 segundos.
-- **Fuso:** o site diz "EST fixo" (UTC−5), mas os dados seguem o **horário de Nova York com horário de verão**. Lidos como EST fixo, o erro mediano no verão é de 4,3 pips; lidos como Nova York, é 0,000.
-- **Comparação com a Dukascopy (EURUSD, 2016-2025, 57.256 horas):** o fechamento de cada hora é idêntico na maioria (mediana 0,000 pip; em maio/2024, todos os 32.658 minutos batem), mas **22,7% das horas diferem mais de 0,05 pip, 3,9% mais de 2 pips, 1,3% mais de 10 pips**, com diferenças de até ~90 pips nos dias mais voláteis (março/2020). As horas que diferem passam de ~20 por ano (2016-2018) para ~300 por ano (2019-2025). Não achei a causa.
-- **Por que isso impede o uso para decisão:** as estratégias que vamos testar (rompimento de sessão, reversão de pico, deriva pós-notícia) operam justamente nos minutos bruscos, onde as duas fontes mais divergem. E o HistData não tem o ask, então o spread real teria de ser inferido.
-- **Uso permitido:** desenvolvimento do simulador, testes de desempenho e regressão, sempre rotulado como HistData.
+- **Velocidade:** um ano de M1 de um par em ~6 segundos (10 anos do EURUSD, 3,67 milhões de minutos, em 69 segundos); **um mês de ticks bid/ask em ~10 segundos** (~1,2 milhão de ticks por mês de EURUSD).
+- **Fuso, a causa das diferenças:** o relógio do HistData é o horário de Nova York (UTC−5 no inverno, UTC−4 no verão), **mas a troca de horário segue as datas europeias** (último domingo de março e de outubro) em 2019-2025, e não as americanas. Nas ~5 semanas por ano em que os dois calendários divergem, ler o horário com a regra americana desloca tudo 1 hora. Medido com o fechamento horário do EURUSD contra a Dukascopy: regra americana, 5,6% a 7,7% das horas diferem mais de 0,05 pip em 2019-2025; **regra europeia, 0,0% a 0,3%**. Em 2016-2018 nenhuma das duas regras funciona (66% a 81% de diferença); esses anos ficam de fora, e não precisamos deles (usamos 2021 em diante).
+- **Validação em ticks (EURUSD, maio/2024):** o M1 bid/ask derivado dos ticks do HistData é **idêntico** ao M1 real da Dukascopy: 0,000% dos minutos diferem mais de 0,05 pip em abertura, máxima, mínima e fechamento, dos dois lados; spread mediano igual (0,20 pip), correlação 1,000. Os 238 minutos que só a Dukascopy tem são as 4 primeiras horas do dia 1, que no fuso de Nova York pertencem ao arquivo do mês anterior.
+- **Armadilhas registradas por uma pesquisa independente** (a confirmar durante o download): buracos entre 2023-02 e 2023-07 (até ~30% das horas), a partir de 2026-06-28 os ticks vêm sem milissegundos, e 2017 vem de outra fonte. Os buracos se tapam com a Dukascopy.
+- **O que o HistData não resolve:** são cotações top-of-book de uma casa, sem latência, slippage nem last look; o soak em demo (step 25) mede a diferença para a corretora real.
 
 ## Limitações e riscos
 
-- O limite do servidor da Dukascopy é o gargalo de calendário; não há como acelerar sem outra fonte com bid e ask.
-- A máquina precisa ficar ligada por ~2 dias para o conjunto completo.
+- Termos de uso: os da Dukascopy proíbem bot e mineração de dados (por isso paramos o download em massa depois de validar a alternativa); confirmar os do HistData antes de qualquer uso além de pesquisa pessoal.
+- Buracos conhecidos no HistData (2023-02 a 2023-07) e a perda de milissegundos desde 2026-06-28: tratados no step 6.
 - Os termos de uso da Dukascopy e do HistData valem para pesquisa pessoal; conferir antes de qualquer outro uso.
 - O feed agregado da Dukascopy não é o preço executável de cada corretora; o soak em demo (step 25) mede essa diferença.
 

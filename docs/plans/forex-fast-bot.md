@@ -4,9 +4,9 @@ Versão de 2026-09-20, com as respostas do Igor às decisões e o escopo ampliad
 
 ## Progresso
 
-- **Step 2 concluído (2026-09-20):** dado canônico = M1 da Dukascopy com bid e ask reais (~54 h para 10 pares × 5 anos, download em segundo plano); HistData só para desenvolvimento. Ver `docs/forex/data-m1-spike.md`.
+- **Step 2 concluído (2026-09-20), com correção no mesmo dia:** o dado do laboratório é o tick bid/ask do HistData convertido em M1 (idêntico à Dukascopy em maio/2024, 1 a 4 horas de download em vez de ~54); a Dukascopy fica como oráculo. A primeira conclusão ("HistData só para desenvolvimento") estava errada: as diferenças eram o fuso, que segue as datas europeias de horário de verão. Ver `docs/forex/data-m1-spike.md`.
 - **Step 3 concluído (2026-09-20):** núcleo próprio compilado em numba, 246 milhões de barras/s por núcleo, igual à referência trade a trade; NautilusTrader descartado para a cTrader. Ver `docs/adr/0001-motor-do-bot.md`.
-- **Step 6 em andamento:** o download dos 10 pares roda em segundo plano desde 2026-09-20.
+- **Step 6 redefinido:** baixar ticks bid/ask do HistData (5 anos, 10 pares), resolver o fuso, gerar M1 bid/ask, validar contra a Dukascopy e tapar buracos. O download lento da Dukascopy foi interrompido de propósito.
 - **Aguardando o Igor:** step 1 (conta demo cTrader e credenciais da Open API).
 
 ## Visão geral
@@ -30,6 +30,7 @@ Um bot operando com dinheiro real hoje não é possível: não existe bot (nada 
 - Estratégia de **segundos** não tem evidência de lucro para varejo: o custo é de 1 a 2,4 pips por trade e um movimento de 1 minuto no EURUSD tem ~1,7 pip. Arbitragem triangular, de latência e market making são inviáveis. A vantagem do bot é cobertura 24/5 e disciplina, não velocidade.
 - O que vale testar é movimento de **10 a 30 pips em minutos a horas**, onde o custo é 5 a 15% do alvo. Reversão em M1/M5 e momentum de segundos entram só como controle negativo.
 - Os dados atuais (velas de 1 hora) não testam isso: precisamos de M1 (ou tick) com bid e ask.
+- **Pesquisas de corretora e método (2026-09-20):** minutos a horas é viável e segundos não (no feed medido, o EURUSD anda ≥ 1 pip em só 2,3% das janelas de 10 s, contra 0,5-1,0 pip de custo); todas as corretoras de CFD são contraparte e as cláusulas de "scalping/algoritmo" (Fusion, Pepperstone, Capital.com) dão poder de anular ordens, e só a Dukascopy diz por escrito que robôs e notícia são permitidos; o cliente Python oficial da cTrader (OpenApiPy) está parado desde 2024 e fixa versões antigas, então o cliente será nosso, em asyncio, sobre o `.proto` oficial; a aprovação do aplicativo no portal da Spotware é manual e sem prazo, então o step 1 é urgente; o risco central do laboratório é mineração de dados (com 1.000 variantes e 3 anos, o melhor Sharpe de estratégias sem vantagem nenhuma é ~1,9), então cada variante testada entra num registro append-only e o critério inclui Sharpe deflacionado e teste de superioridade; vale incluir M15 e H1, onde o custo é 15% a 45% do desvio-padrão do movimento (em M1 é 65% a 200%).
 - Só ~14% do código atual serve (laboratório FX, login e TOTP, esqueleto das telas com gráfico TradingView, banco e deploy, a disciplina do gate). O motor atual reage só a vela fechada e faz ~15 consultas ao banco por decisão; o núcleo do bot é novo.
 
 ## Decisões técnicas já tomadas
@@ -74,10 +75,10 @@ O `main` só recebe merge quando o Igor pedir; todo o trabalho fica na branch `f
 
 ### Fase 1: laboratório (descobrir se existe estratégia que paga)
 
-**Step 6: Baixar M1 de 5 anos de 10 pares** (~3-5h de esforço, dezenas de horas de calendário em segundo plano)
-  - O que: rodar o downloader do step 2 com supervisor, retomada e concorrência limitada · Arquivos: `backend/scripts/research/fx_dataset_m1.py`
+**Step 6: Ticks do HistData para M1 bid/ask, 5 anos de 10 pares** (~6-10h de esforço, 1 a 4 horas de download)
+  - O que: baixar os ticks mensais, resolver o fuso por arquivo (regra europeia de verão, testada contra o H1 da Dukascopy que já temos), gerar M1 bid/ask, marcar buracos e tapá-los com a Dukascopy, validar cada par-mês contra o oráculo · Arquivos: `backend/scripts/research/fx_histdata_ticks.py` (novo) + teste
   - Depende de: 2 · Paralelo com: 3, 4, 5, 7
-  - Teste: os 10 parquets passam o controle de qualidade; relatório por par
+  - Teste: cada par-mês tem ≥ 99% das horas não planas idênticas ao H1 da Dukascopy e nenhuma cotação cruzada; relatório de buracos por par. Pior caso: fuso diferente em algum ano, buracos grandes em 2023 e ticks sem milissegundos em 2026 (dobrado por ser terceiro)
 
 **Step 7: Modelo de instrumento e conversão de moeda** (~5-8h)
   - O que: pip, lote, tamanho de contrato e conversão do P&L para a moeda da conta, inclusive cruzados (EURJPY, GBPJPY, EURGBP) · Arquivos: `backend/app/fx/instruments.py` (novo) + teste

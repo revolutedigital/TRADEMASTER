@@ -2,6 +2,13 @@
 
 Versão de 2026-09-20, com as respostas do Igor às decisões e o escopo ampliado ("algo mais completo"). Substitui o rascunho do mesmo dia e o plano `forex-rebuild.md` (encerrado no G0: estratégia lenta). As pesquisas de dados M1/tick, corretora/infraestrutura e método de backtest ainda estavam rodando quando este plano foi escrito; os steps 2, 3 e 5 são os que elas podem mudar, e a estimativa é refeita depois do step 3.
 
+## Progresso
+
+- **Step 2 concluído (2026-09-20):** dado canônico = M1 da Dukascopy com bid e ask reais (~54 h para 10 pares × 5 anos, download em segundo plano); HistData só para desenvolvimento. Ver `docs/forex/data-m1-spike.md`.
+- **Step 3 concluído (2026-09-20):** núcleo próprio compilado em numba, 246 milhões de barras/s por núcleo, igual à referência trade a trade; NautilusTrader descartado para a cTrader. Ver `docs/adr/0001-motor-do-bot.md`.
+- **Step 6 em andamento:** o download dos 10 pares roda em segundo plano desde 2026-09-20.
+- **Aguardando o Igor:** step 1 (conta demo cTrader e credenciais da Open API).
+
 ## Visão geral
 
 Construir, no mesmo repositório, um núcleo novo para bots de forex de minutos a horas (24 horas nos dias de mercado): um laboratório rápido que testa famílias de estratégia no passado sem se enganar, um runner que opera numa corretora com API, e uma plataforma com lista de bots, detalhe por bot, gráficos ao vivo, tela do laboratório e botões de ligar, parar e kill-switch. O primeiro dinheiro real é um canário de encanamento de risco mínimo; quais estratégias entram vem do laboratório, não do desejo de operar.

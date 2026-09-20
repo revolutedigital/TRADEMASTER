@@ -72,14 +72,17 @@ def test_a_sell_places_the_stop_above_and_measures_slippage_against_the_bid() ->
     assert " sell 1000 1.15000 1.14550 yes" in cli.orders  # stop 15 pips above the bid, target 30 below
 
 
-def test_the_trading_window_is_new_york_business_hours_without_the_rollover() -> None:
+def test_the_trading_window_is_the_fx_week_without_the_rollover_hour() -> None:
     window = soak.Window()
     utc = lambda text: datetime.fromisoformat(text).replace(tzinfo=UTC)  # noqa: E731
 
-    assert window.is_open(utc("2024-05-14 14:00"))  # 10:00 in New York, a Tuesday
-    assert not window.is_open(utc("2024-05-14 20:45"))  # 16:45 in New York: too close to the rollover
+    assert window.is_open(utc("2024-05-14 14:00"))  # Tuesday 10:00 in New York
+    assert not window.is_open(utc("2024-05-14 20:45"))  # Tuesday 16:45: the rollover hour
+    assert window.is_open(utc("2024-05-14 21:45"))  # Tuesday 17:45: reopened
+    assert window.is_open(utc("2024-05-12 22:00"))  # Sunday 18:00 in New York: the week is open
+    assert not window.is_open(utc("2024-05-12 19:00"))  # Sunday 15:00: still closed
+    assert not window.is_open(utc("2024-05-17 20:45"))  # Friday 16:45: closed for the week
     assert not window.is_open(utc("2024-05-18 14:00"))  # Saturday
-    assert not window.is_open(utc("2024-05-14 03:00"))  # 23:00 the evening before in New York
 
 
 def test_it_refuses_to_trade_with_a_stop_file_a_full_day_or_a_daily_loss(tmp_path) -> None:
@@ -98,7 +101,7 @@ def test_it_refuses_to_trade_with_a_stop_file_a_full_day_or_a_daily_loss(tmp_pat
 
 
 def test_the_loop_logs_each_cycle_alternates_sides_and_starts_flat(tmp_path, monkeypatch) -> None:
-    all_day = soak.Window(0, 24 * 60)
+    all_day = soak.Window(0, 0)
     monkeypatch.setattr(soak, "Window", lambda: all_day)
     monkeypatch.setattr(soak, "STOP_FILE", tmp_path / "STOP")
     monkeypatch.setattr(soak, "should_run", lambda *a, **k: None)

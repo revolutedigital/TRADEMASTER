@@ -8,7 +8,7 @@ account, so it cannot touch the live account.
 
 Safety: it stops when the file `~/.config/trademaster/STOP` exists, when the day's net result on the
 demo falls below the loss limit, after a maximum number of trades per day, and after repeated errors
-(closing anything left open first). It never trades during the New York rollover or on weekends.
+(closing anything left open first). It trades only while the FX market is open, and never around the New York rollover.
 """
 
 from __future__ import annotations
@@ -45,14 +45,22 @@ class SoakError(Exception):
 
 @dataclass(frozen=True)
 class Window:
-    """Trading window in New York time: Monday to Friday, 01:00 to 16:30 (the rollover is at 17:00)."""
+    """The FX week in New York time, without the hour around the 17:00 rollover.
 
-    start_minute: int = 60
-    end_minute: int = 16 * 60 + 30
+    Open from Sunday 17:30 to Friday 16:30, closed every day from 16:30 to 17:30 (spreads are unreliable there).
+    """
+
+    rollover_start: int = 16 * 60 + 30
+    rollover_end: int = 17 * 60 + 30
 
     def is_open(self, when: datetime) -> bool:
         local = when.astimezone(NEW_YORK)
-        return local.weekday() < 5 and self.start_minute <= local.hour * 60 + local.minute < self.end_minute
+        minute = local.hour * 60 + local.minute
+        if local.weekday() == 5 or (local.weekday() == 6 and minute < self.rollover_end):
+            return False  # Saturday, and Sunday before the market reopens
+        if local.weekday() == 4 and minute >= self.rollover_start:
+            return False  # Friday after the close
+        return not self.rollover_start <= minute < self.rollover_end
 
 
 def run_cli(*commands: str) -> str:

@@ -21,7 +21,7 @@ def run(matrix, *, fast=8, slow=21, atr=14, stop_atr=1.5, rr=2.0, warmup=60, sli
     params = fx.ema_cross_params(
         fast_span=fast, slow_span=slow, atr_period=atr, stop_atr=stop_atr, reward_risk=rr, warmup=warmup
     )
-    return core.simulate(
+    return core.run_simulation(
         fx.ema_cross_step, fx.ema_cross_init, params, fx.EMA_CROSS_STATE_SIZE, matrix, slippage
     )
 
@@ -111,7 +111,7 @@ def flat_bars(n: int, price: float = 1.1000, spread_pips: float = 1.0) -> np.nda
 
 def scripted(matrix, *, act, intent, stop=0.01, target=0.02, second=-1, second_intent=0, slippage=0.0):
     params = np.array([act, intent, stop, target, second, second_intent], dtype=np.float64)
-    return core.simulate(scripted_step, scripted_init, params, 1, matrix, slippage)
+    return core.run_simulation(scripted_step, scripted_init, params, 1, matrix, slippage)
 
 
 def test_a_long_entry_pays_the_ask_at_the_next_open_and_a_target_exit_earns_the_planned_distance() -> None:
@@ -204,3 +204,21 @@ def test_a_series_with_no_signal_never_trades() -> None:
     result = scripted(flat_bars(20), act=99, intent=fx.ENTER_LONG)
 
     assert len(result[2]) == 0
+
+
+def test_slippage_can_change_from_bar_to_bar() -> None:
+    matrix = flat_bars(8)
+    params = np.array([1, fx.ENTER_LONG, 0.01, 0.02, 4, fx.ENTER_SHORT], dtype=np.float64)
+    slippage = np.zeros(8)
+    slippage[2] = 1.0 * PIP  # only the entry bar is slippery
+    slippage[5] = 3.0 * PIP  # and the bar where the position is reversed
+
+    result = core.run_simulation(scripted_step, scripted_init, params, 1, matrix, slippage)
+
+    assert result[3][0] == pytest.approx(1.1000 + 0.5 * PIP + 1.0 * PIP)  # entry on bar 2
+    assert result[4][0] == pytest.approx(1.1000 - 0.5 * PIP - 3.0 * PIP)  # signal exit on bar 5
+
+
+def test_a_negative_slippage_is_refused() -> None:
+    with pytest.raises(ValueError, match="negative"):
+        core.run_simulation(scripted_step, scripted_init, np.zeros(6), 1, flat_bars(4), -1e-5)

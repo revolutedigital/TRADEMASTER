@@ -10,7 +10,8 @@ Versão de 2026-09-20, com as respostas do Igor às decisões e o escopo ampliad
 - **Step 7 concluído (2026-09-20):** modelo de instrumentos (pip, lote, conversão de moeda, tamanho por risco, margem). Com conta de US$ 500 e risco de 0,25%, o menor lote (0,01) limita o stop do EURUSD a **12,5 pips** (18,75 no USDJPY); um stop de 20 pips exigiria risco de 0,4% ou não opera. Decisão futura do Igor: subir o risco por trade para 0,5% ou aceitar só estratégias com stop curto.
 - **Step 8 concluído (2026-09-20):** contrato de estratégia compartilhado entre laboratório e bot ao vivo (`app/fx/strategy.py`); mesmas decisões barra a barra e em lote, nenhuma decisão muda quando o futuro muda.
 - **Step 9 concluído (2026-09-20):** núcleo do simulador dirigido por estratégia (`app/fx/sim/core.py`), reproduz o núcleo validado trade a trade e roda a 65 milhões de barras/s por núcleo.
-- **Aguardando o Igor:** step 1 (conta demo cTrader e credenciais da Open API).
+- **Step 10 concluído (2026-09-20):** camada de custos do simulador (`app/fx/sim/costs.py`): estresse de spread, slippage por barra que cresce com a volatilidade sem olhar adiante, comissão convertida em pips por par, e swap do rollover das 17h de Nova York (triplo na quarta, zero no fim de semana) calculado de forma vetorizada e igual à implementação de referência em 150 casos aleatórios.
+- **Aguardando o Igor:** step 1 (conta demo cTrader Zero e credenciais da Open API). O Igor está abrindo a demo (conta tipo **Zero**, cTrader, USD, US$ 500).
 
 ## Visão geral
 

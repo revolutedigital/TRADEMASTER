@@ -46,8 +46,8 @@ EXIT_END = 5
 def simulate(step, init, params, state_size, bars, slippage):  # noqa: PLR0912, PLR0915
     """Replay `bars` through a strategy and return the trades it made.
 
-    `bars` is the (n, 9) matrix of `app.fx.strategy`; `slippage` is in price units, per fill.
-    Returns entry index, exit index, side, entry price, exit price, stop distance and the reason
+    `bars` is the (n, 9) matrix of `app.fx.strategy`; `slippage` is a length-n array in price
+    units, the slippage charged on any fill that happens during bar t. Returns entry index, exit index, side, entry price, exit price, stop distance and the reason
     each trade ended, as parallel arrays.
     """
     n = bars.shape[0]
@@ -76,6 +76,7 @@ def simulate(step, init, params, state_size, bars, slippage):  # noqa: PLR0912, 
 
     for t in range(n):
         bar = bars[t]
+        slip = slippage[t]
 
         # 1. Act on the decision taken at the previous close, at this bar's open.
         if pending != HOLD and t > 0:
@@ -87,9 +88,9 @@ def simulate(step, init, params, state_size, bars, slippage):  # noqa: PLR0912, 
                 wants_side = SHORT
             if position != 0 and (wants_exit or (wants_side != 0 and wants_side != position)):
                 if position == LONG:
-                    fill = bar[BID_OPEN] - slippage
+                    fill = bar[BID_OPEN] - slip
                 else:
-                    fill = bar[ASK_OPEN] + slippage
+                    fill = bar[ASK_OPEN] + slip
                 entry_index[trades] = open_index
                 exit_index[trades] = t
                 side[trades] = position
@@ -101,11 +102,11 @@ def simulate(step, init, params, state_size, bars, slippage):  # noqa: PLR0912, 
                 position = 0
             if position == 0 and wants_side != 0 and pending_stop > 0.0:
                 if wants_side == LONG:
-                    fill = bar[ASK_OPEN] + slippage
+                    fill = bar[ASK_OPEN] + slip
                     stop_price = fill - pending_stop
                     target_price = fill + pending_target
                 else:
-                    fill = bar[BID_OPEN] - slippage
+                    fill = bar[BID_OPEN] - slip
                     stop_price = fill + pending_stop
                     target_price = fill - pending_target
                 position = wants_side
@@ -122,10 +123,10 @@ def simulate(step, init, params, state_size, bars, slippage):  # noqa: PLR0912, 
             if bar[BID_OPEN] <= stop_price:
                 hit_stop = True
                 gapped = True
-                fill = bar[BID_OPEN] - slippage
+                fill = bar[BID_OPEN] - slip
             elif bar[BID_LOW] <= stop_price:
                 hit_stop = True
-                fill = stop_price - slippage
+                fill = stop_price - slip
             if hit_stop or bar[BID_HIGH] >= target_price:
                 if not hit_stop:
                     fill = target_price
@@ -148,10 +149,10 @@ def simulate(step, init, params, state_size, bars, slippage):  # noqa: PLR0912, 
             if bar[ASK_OPEN] >= stop_price:
                 hit_stop = True
                 gapped = True
-                fill = bar[ASK_OPEN] + slippage
+                fill = bar[ASK_OPEN] + slip
             elif bar[ASK_HIGH] >= stop_price:
                 hit_stop = True
-                fill = stop_price + slippage
+                fill = stop_price + slip
             if hit_stop or bar[ASK_LOW] <= target_price:
                 if not hit_stop:
                     fill = target_price
@@ -178,9 +179,9 @@ def simulate(step, init, params, state_size, bars, slippage):  # noqa: PLR0912, 
     if position != 0:
         last = n - 1
         if position == LONG:
-            fill = bars[last, BID_CLOSE] - slippage
+            fill = bars[last, BID_CLOSE] - slippage[last]
         else:
-            fill = bars[last, ASK_CLOSE] + slippage
+            fill = bars[last, ASK_CLOSE] + slippage[last]
         entry_index[trades] = open_index
         exit_index[trades] = last
         side[trades] = position
@@ -204,3 +205,12 @@ def net_pips(side, entry_price, exit_price, commission_price, pip_size):
     for i in range(count):
         result[i] = ((exit_price[i] - entry_price[i]) * side[i] - commission_price) / pip_size
     return result
+
+
+def run_simulation(step, init, params, state_size, bars, slippage):
+    """Run the compiled simulator, accepting a scalar or a per-bar slippage array."""
+    count = bars.shape[0]
+    slip = np.ascontiguousarray(np.broadcast_to(np.asarray(slippage, dtype=np.float64), (count,)))
+    if np.any(slip < 0):
+        raise ValueError("slippage cannot be negative")
+    return simulate(step, init, params, state_size, bars, slip)

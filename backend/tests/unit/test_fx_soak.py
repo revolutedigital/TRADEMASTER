@@ -53,7 +53,7 @@ def test_one_cycle_measures_spread_slippage_costs_and_that_the_stop_is_on_the_se
 
     assert record["spread_pips"] == 0.6 and record["entry_slippage_pips"] == pytest.approx(0.2)
     assert record["stop_on_server"] is True and record["net_usd"] == -0.14
-    assert record["commission_usd"] == pytest.approx(-0.06)
+    assert record["commission_usd"] == pytest.approx(-0.03)  # the deal total, not summed with the entry side
     assert soak.PIP * soak.STOP_PIPS == pytest.approx(0.0015)
 
 

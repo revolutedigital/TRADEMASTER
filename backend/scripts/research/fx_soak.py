@@ -92,7 +92,7 @@ def one_cycle(cli: Cli, side: str, now: Callable[[], float] = time.time, sleep: 
         "stop_on_server": protected, "stop_pips": position.get("stopLossPips"),
         "target_pips": position.get("takeProfitPips"), "latency_seconds": round(confirmed_at - sent_at, 1),
         "exit_price": deal["executionPrice"], "gross_usd": deal["grossProfit"],
-        "commission_usd": position.get("commission", 0.0) + deal["commission"], "net_usd": deal["netProfit"],
+        "commission_usd": deal["commission"], "net_usd": deal["netProfit"],  # the deal carries the whole round trip
     }
 
 

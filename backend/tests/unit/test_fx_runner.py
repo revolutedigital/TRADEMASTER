@@ -238,3 +238,30 @@ async def test_levels_anchor_to_the_reference_price_and_a_crossed_market_is_refu
     crossed = await bench.executor.enter(symbol="EURUSD", side=fx.LONG, stop_distance=0.0005, target_distance=0.0015,
                                          client_order_id="late", reference_price=1.1000)
     assert crossed is None and "crossed" in bench.journal.events()[-1]["reason"]
+
+
+async def test_the_journal_becomes_closed_trades_with_r_from_the_risk_taken(tmp_path) -> None:
+    bench = Bench(tmp_path)
+    position = await bench.buy()
+    bench.venue.set_quote("EURUSD", 1.10100, 1.10108)
+    result = await bench.executor.close(position.id, "strategy exit")
+
+    from app.fx.runner.journal import closed_trades
+
+    (trade,) = closed_trades(bench.journal.events())
+
+    assert trade.symbol == "EURUSD" and trade.side == fx.LONG and trade.pnl == pytest.approx(result)
+    assert trade.r_multiple == pytest.approx(result / 1.0)  # 1000 units, 10 pips: $1.00 at the stop
+    assert trade.exit_time >= trade.entry_time and trade.exit_reason == "strategy exit"
+
+
+async def test_a_trade_still_open_or_closed_without_a_known_result_is_not_a_closed_trade(tmp_path) -> None:
+    from app.fx.runner.journal import closed_trades
+
+    bench = Bench(tmp_path)
+    await bench.buy()
+    assert closed_trades(bench.journal.events()) == []
+    bench.venue.set_quote("EURUSD", 1.09850, 1.09858)
+    await reconcile(bench.venue, bench.journal)  # the server stop fired while the bot was away: no result known
+
+    assert closed_trades(bench.journal.events()) == []

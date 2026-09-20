@@ -92,7 +92,8 @@ class Executor:
             raise ProtectionError(f"{symbol}: no protective stop on the broker, position closed")
         self.journal.append("order_filled", position_id=position.id, client_order_id=client_order_id,
                             symbol=symbol, side=side, units=position.units, entry_price=position.entry_price,
-                            stop_price=position.stop_price, target_price=position.target_price)
+                            stop_price=position.stop_price, target_price=position.target_price,
+                            risk_at_stop=sizing.risk_at_stop)
         return position
 
     def _refuse(self, client_order_id: str, reason: str) -> None:

@@ -290,3 +290,20 @@ Registrar data, canal, quem respondeu e a resposta. Sem resposta em 7 dias conta
 - Limite rígido de conexões da Open API além da recomendação de duas.
 - Qual termo (EULA ou ctrader.com/terms-of-use) governa a imagem Docker no Linux.
 - A CVM: não achei ato declaratório específico da Fusion na busca; isso não é prova de ausência.
+
+---
+
+## 9. Resultado do teste na demo Fusion pelo CLI (2026-09-20, feito no mesmo dia da pesquisa)
+
+Conta demo Fusion Markets **10139135** (cTrader, hedge, 1.000 USD, 1:500), cTID com login por senha (o cadastro por Google foi convertido pelo Igor), imagem `ghcr.io/spotware/ctrader-console@sha256:285484fa…4ba` (5.10.1), um container por comando, senha lida de arquivo dentro do container. Script: `backend/scripts/ctrader_demo.sh`.
+
+| Item | Resultado |
+|---|---|
+| Login pelo CLI | Passou, **sem bloqueio de 2FA**. O cTID listou a demo da Spotware (5918970, EUR) e a da Fusion (10139135). |
+| Regras do EURUSD | Lote mínimo 1.000 unidades (0,01 lote), passo 1.000, lote 100.000, 5 casas, pip 0,0001. Spread de 0,6 pip logo depois da abertura de domingo. |
+| Ordem a mercado com SL e TP | 1.000 unidades, compra. O CLI avisa que **SL e TP de ordem a mercado saem como pips relativos ao preço executado** (limitação da Open API): confirma o desenho do adaptador (proteção relativa no ato, emenda para o nível exato depois). |
+| **Stop no servidor sem cliente conectado** | **Sim.** Num login novo, com o processo que abriu a ordem já encerrado, a posição mostrava `stopLoss 1.14701` e `takeProfit 1.15151` gravados. É a evidência de que o stop é do servidor, não do cliente. |
+| Custo real de 1 ciclo de 0,01 lote | Entrada 1.14856 (ask), saída 1.1485 (bid): −0,6 pip de spread, comissão −0,03 USD por lado (−0,06 no ciclo), líquido −0,12 USD. A comissão bate com "2,25 na moeda base": EUR 0,0225 × 1,1485 ≈ US$ 0,026 por lado, e US$ 2,25 fixo daria 0,0225 (arredondaria para 0,02). É consistente, mas o arredondamento a 2 casas não distingue com folga. |
+| Fechar tudo | `position close all yes` funcionou e a conta ficou sem posição. |
+
+**Não coberto:** o cliente morrer com a posição aberta e o preço tocar o stop (só provei que o stop fica no servidor); `MARKET_RANGE`; refresh de token; o meu adaptador contra o servidor real (depende da aprovação do app da Open API); o sinal da comissão em `closePositionDetail`; slippage medido em volume (uma ordem só).

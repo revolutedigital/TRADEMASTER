@@ -6,8 +6,7 @@
 #   bash backend/scripts/ctrader_demo.sh --dry-run run "price EURUSD"     (prints the plan, runs nothing)
 #
 # The account (10139135, demo) and the cTID are fixed here. The password is read from a private
-# file and reaches the CLI through stdin, never through the command line, and it is masked in the
-# output. Only the commands in ALLOWED_VERBS are accepted (no `account` switching, no cBots).
+# file inside the container (never typed on this command line) and is masked in the output. Only the commands in ALLOWED_VERBS are accepted (no `account` switching, no cBots).
 set -euo pipefail
 
 CTID="igorrevolute"
@@ -57,14 +56,22 @@ for line in "$@"; do
 done
 
 if [ $dry_run -eq 1 ]; then
-  echo "docker run -i --rm $IMAGE   (stdin: $CTID, <password from $PASSWORD_FILE>, $ACCOUNT, then:)"
-  printf '  %s\n' "$@" quit
+  echo "one container per command, session pinned to $CTID / account $ACCOUNT, password read from $PASSWORD_FILE inside the container:"
+  printf '  %s\n' "$@"
   exit 0
 fi
 
 password="$(cat "$PASSWORD_FILE")"
-{
-  echo "$CTID"; echo "$password"; echo "$ACCOUNT"
-  printf '%s\n' "$@"; echo quit
-} | timeout "$TIMEOUT_SECONDS" docker run -i --rm "$IMAGE" 2>&1 \
-  | awk -v p="$password" 'length(p) && { while ((i = index($0, p)) > 0) $0 = substr($0, 1, i - 1) "***" substr($0, i + length(p)) } { print }'
+mask() {
+  awk -v p="$password" '{ if (length(p)) while ((i = index($0, p)) > 0) $0 = substr($0, 1, i - 1) "***" substr($0, i + length(p)); print }'
+}
+# The CLI refuses piped credentials, so each command is its own login (`-q` exits after it). The
+# password is read from the mounted file inside the container, so it is not in this command line.
+for line in "$@"; do
+  read -r -a words <<<"$line"
+  echo "> $line"
+  timeout "$TIMEOUT_SECONDS" docker run --rm -v "$PASSWORD_FILE:/run/ctid.pwd:ro" -e "CTID=$CTID" -e "ACCOUNT=$ACCOUNT" \
+    --entrypoint sh "$IMAGE" \
+    -c 'exec /usr/local/bin/ctrader-cli-entrypoint "$@" --ctid="$CTID" --password="$(cat /run/ctid.pwd)" --account="$ACCOUNT" -q' \
+    sh "${words[@]}" 2>&1 | mask
+done

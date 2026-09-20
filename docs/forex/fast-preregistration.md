@@ -14,14 +14,14 @@ O teste com estratégias lentas mostrou o que acontece sem esta disciplina: a me
 - **Descoberta:** 2019-01 a 2024-08. **Confirmação, congelada:** 2024-09 a 2026-08 (24 meses). Nenhuma estratégia rápida roda nela antes de o relatório de descoberta estar commitado.
 - **O que esta amostra já viu (divulgação):** as estratégias lentas do G0 (indicadores clássicos em velas de H4 e diárias, 7 majors) rodaram em 2023-09 a 2026-08 (descoberta) e em 2016-09 a 2023-08 (confirmação), ou seja, em toda esta janela. São hipóteses e resolução diferentes, mas não existe período que nenhum teste do projeto tenha visto. Também rodou sobre M1 real o cruzamento de médias de teste do simulador (regressão e velocidade, no EURUSD), sem análise de resultado financeiro. Além disso, quem escreveu estas hipóteses conhece o comportamento geral do mercado nesses anos, o que pode influenciar sem querer a escolha delas. O que vale: nenhuma das hipóteses abaixo rodou em nenhum dado.
 - **Horários** são locais de Londres (Europe/London) e de Nova York (America/New_York), cada um com o seu horário de verão. O dia FX vai de 17:00 a 17:00 de Nova York.
-- **Barra ausente:** se a barra exata de uma entrada não existe (minuto sem ticks), o trade daquele dia não acontece; se a de uma saída por horário não existe, a saída é na primeira barra existente depois dela.
+- **Barra ausente:** a decisão é tomada no fechamento de uma barra e a ordem é executada na abertura da barra seguinte que existe. Uma entrada é **cancelada** se a barra em que ela executaria abre mais de um período depois da barra que deu o sinal (buraco de dados, fim de semana): nenhum trade entra em horário diferente do que a regra nomeia. Sem a barra de decisão (a anterior à de entrada) não há sinal e o trade daquele dia não acontece. Uma saída por horário sai na primeira barra existente depois da barra de decisão.
 
 ## Custos (fixos)
 
-- **Base** (`FUSION_ZERO` em `backend/app/fx/sim/costs.py`): bid e ask reais de cada barra (compra no ask, venda no bid); comissão de US$ 2,25 por lote por lado (conta Zero da Fusion), convertida em pips de cada par com o preço mediano do período; slippage de 0,1 pip mais 0,05 × o range médio das 20 barras anteriores do mesmo timeframe da estratégia (só barras já fechadas); swap zero.
+- **Base** (`FUSION_ZERO` em `backend/app/fx/sim/costs.py`): bid e ask reais de cada barra (compra no ask, venda no bid); comissão da conta Zero da Fusion na cTrader: 2,25 **na moeda base do par** por lote de 100.000 por lado (EURUSD 1 lote = EUR 2,25; AUDUSD = AUD 2,25; fonte: página da Fusion para a cTrader), convertida em dólares com o preço mediano do período e em pips de cada par; no AUDNZD sintético, AUD 2,25 na perna do AUDUSD e NZD 2,25 × preço na do NZDUSD; slippage de 0,1 pip mais 0,05 × o range médio das 20 barras anteriores do mesmo timeframe da estratégia (só barras já fechadas; dobrado no AUDNZD sintético, que tem duas pernas); swap zero.
 - **Estresse** (`STRESS`): spread ×2, slippage de 0,3 pip mais 0,10 × o range médio das 20 barras anteriores, mesma comissão.
 - **Sensibilidade** (`ADVERSE_SWAP`, só informativa, não entra em nenhum critério): swap adverso de 0,3 pip por dia.
-- Toda entrada acontece na abertura da barra seguinte à do sinal.
+- Toda entrada acontece na abertura da barra seguinte à do sinal. Stop e alvo ficam nos **níveis** que a regra define, medidos a partir do fechamento do mid da barra do sinal (extremo da faixa, extremo do pico, média da janela); uma ordem cujo stop ou alvo já ficou para trás do preço de execução é recusada, como uma corretora faria; o R usa a distância real do preço de execução ao stop.
 
 ## Hipóteses (fixas: as únicas)
 
@@ -48,6 +48,19 @@ Cada configuração usa os parâmetros abaixo, **sem varredura e sem ajuste**. C
 **C1. Controle negativo, reversão em M1.** Bandas de Bollinger (20, 2) sobre o fechamento do mid em M1; entrada contra o fechamento fora da banda; stop de 3 pips, alvo de 3 pips, saída por tempo após 30 barras; sem entrada entre 16:55 e 17:15 (Nova York); uma posição por par. Pares: os 10.
 
 **C2. Controle negativo, momentum em M5.** Retorno do mid de uma barra M5 (fechamento a fechamento, em pips) com valor absoluto ≥ 2,5 desvios-padrão dos retornos das 48 barras anteriores: entra na direção do movimento; stop de 3 pips, alvo de 3 pips, saída por tempo após 12 barras; mesma exclusão do rollover; uma posição por par. Pares: os 10.
+
+### Leituras fixadas na implementação
+
+Pontos que o texto acima deixa em aberto e que o código resolveu, registrados aqui antes de qualquer resultado real (conferidos por uma auditoria independente do código contra este documento):
+
+- **F5:** não há trade se o z já está em |z| ≥ 3,5 no sinal (o stop ficaria para trás); desvio-padrão populacional (ddof = 0), como no C1; as 480 barras são as 480 existentes, e atravessam fins de semana e buracos.
+- **Blackout de F3, C1 e C2 (16:55 a 17:15, Nova York):** vale o instante da entrada (o fechamento da barra do sinal) no intervalo [16:55, 17:15).
+- **Máxima e mínima do mid** em M5, M15 e H1: metade da soma da máxima do bid com a máxima do ask (e o mesmo para a mínima), o que deixa a faixa um pouco mais larga.
+- **Filtro de largura da F1:** fechado nas duas pontas (0,3× e 1,2×).
+- **AUDNZD sintético (F5b):** a máxima e a mínima do sintético em cada minuto vêm da razão na abertura e no fechamento do minuto.
+- **Alvo:** executa por toque no preço exato, sem slippage; o stop executa com slippage e, se o mercado abre além dele, no preço da abertura.
+- **C2:** o retorno de fechamento a fechamento inclui o de reabertura depois de um fim de semana ou buraco.
+- **Trechos contínuos:** cada trecho contínuo de dados é simulado com estado novo, e posição aberta no fim do trecho fecha na última barra.
 
 **Número de testes: K = 10** (F1a, F1b, F2a, F2b, F3a, F3b, F5a, F5b, C1, C2), ou 11 com F4. Os controles esperam falhar: se algum for aprovado, o resultado é tratado como suspeita de defeito de dado ou de custo, e não como achado. Eles ficam na família do critério de propósito (deixam o critério um pouco mais conservador).
 

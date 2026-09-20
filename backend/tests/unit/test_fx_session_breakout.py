@@ -239,3 +239,79 @@ def test_the_params_reject_nonsense() -> None:
     ):
         with pytest.raises(ValueError):
             sb.session_breakout_params(**{**good, **override})
+
+
+def test_the_stop_level_is_the_opposite_edge_of_the_range_when_anchored_to_the_signal() -> None:
+    frame = frame_for_tests(11)
+    matrix = fx.bars_to_matrix(frame)
+    mid = mid_frame(frame)
+    london = mid.index.tz_convert("Europe/London")
+
+    trades = simulate(
+        sb.session_breakout_step, sb.session_breakout_init, sb.london_open_breakout_params(), STATE, matrix,
+        anchor_signal=True, max_entry_gap=900.0,
+    )
+
+    assert len(trades) >= 8
+    for _, trade in trades.iterrows():
+        day = london[int(trade["entry_index"])].date()
+        window = mid[(london.date == day) & (london.hour < 8)]
+        edge = window["low"].min() if trade["side"] == fx.LONG else window["high"].max()
+        stop_level = trade["entry_price"] - trade["side"] * trade["stop_distance"]
+        assert stop_level == pytest.approx(edge, abs=1e-9)
+
+
+@pytest.mark.parametrize(
+    ("params", "case"),
+    [(sb.london_open_breakout_params(), LONDON_CASE), (sb.new_york_open_breakout_params(), NEW_YORK_CASE)],
+    ids=["F1a-london", "F1b-new-york"],
+)
+def test_the_signals_equal_the_pandas_rule_with_gaps_between_bars_and_variable_spreads(params, case) -> None:
+    frame = synthetic_frame(start="2024-02-26", weeks=8, bar_seconds=900, seed=21, gap_sigma_pips=4.0, spread_jitter=True)
+    matrix = fx.bars_to_matrix(frame)
+
+    intents, stops, _ = decisions(sb.session_breakout_step, sb.session_breakout_init, params, STATE, matrix)
+    expected = expected_breakouts(frame, **case)
+
+    fired = np.flatnonzero(intents != fx.HOLD)
+    assert len(expected) >= 6
+    assert fired.tolist() == [index for index, _, _ in expected]
+    assert np.allclose(stops[fired], [distance for _, _, distance in expected], rtol=0, atol=1e-12)
+
+
+@pytest.mark.parametrize(("zone", "params", "range_bars"), [
+    ("Europe/London", sb.london_open_breakout_params(), 24), ("America/New_York", sb.new_york_open_breakout_params(), 15),
+], ids=["F1a", "F1b"])
+def test_the_range_needs_exactly_the_minimum_number_of_bars(zone, params, range_bars) -> None:
+    frame = frame_for_tests(4)
+    matrix = fx.bars_to_matrix(frame)
+    fired = np.flatnonzero(decisions(sb.session_breakout_step, sb.session_breakout_init, params, STATE, matrix)[0] != fx.HOLD)
+    victim = frame.index[fired[len(fired) // 2]].tz_convert(zone).date()
+    local = frame.index.tz_convert(zone)
+    first_hour = 0 if zone == "Europe/London" else 3
+    in_range = np.flatnonzero((local.date == victim) & (local.hour >= first_hour) & (local.hour < 8))
+    window = len(in_range)
+    mid = mid_frame(frame).iloc[in_range]
+    # never drop the bars that set the range edges, so the range itself does not change
+    edges = {int(np.argmax(mid["high"].to_numpy())), int(np.argmin(mid["low"].to_numpy()))}
+    droppable = [position for i, position in enumerate(in_range) if i not in edges]
+
+    def fires_on_victim(kept: int) -> bool:
+        gapped = frame.drop(frame.index[droppable[: window - kept]])
+        after = decisions(sb.session_breakout_step, sb.session_breakout_init, params, STATE, fx.bars_to_matrix(gapped))[0]
+        return victim in {gapped.index[i].tz_convert(zone).date() for i in np.flatnonzero(after != fx.HOLD)}
+
+    assert fires_on_victim(range_bars) is True
+    assert fires_on_victim(range_bars - 1) is False
+
+
+def test_the_new_york_variant_leaves_at_sixteen_hundred_new_york_time() -> None:
+    frame = frame_for_tests(12)
+    trades = simulate(
+        sb.session_breakout_step, sb.session_breakout_init, sb.new_york_open_breakout_params(), STATE,
+        fx.bars_to_matrix(frame),
+    )
+
+    timed = trades[trades["reason"] == core.EXIT_SIGNAL]
+    closed = frame.index[timed["exit_index"]].tz_convert("America/New_York")
+    assert len(timed) > 0 and np.all(closed.hour * 60 + closed.minute == 16 * 60)

@@ -8,8 +8,8 @@ profit target.
 
 `pair_side` is the direction taken in the pair, not in the dollar: buying dollars is buying a pair
 that has the dollar as its base (USDJPY) and selling a pair that has it as its quote (EURUSD).
-If the bar of the intended entry is missing from the data the entry happens at the next bar
-that exists; the lab drops those trades (`entry_is_on_schedule`).
+If the bar of the intended entry is missing from the data, the simulator cancels the entry
+(`max_entry_gap`): a clock strategy never trades at a later time than the one it names.
 
 The exact rules are in docs/forex/fast-preregistration.md (F2a and F2b).
 """
@@ -101,15 +101,6 @@ def post_fixing_params(pair: str) -> np.ndarray:
     return fixing_flow_params(
         pair_side=pair_side_for_dollar(pair, buy_dollar=False), entry_time="16:05", exit_time="17:00"
     )
-
-
-def entry_is_on_schedule(bars: np.ndarray, entry_index: np.ndarray, params: np.ndarray) -> np.ndarray:
-    """True for the trades that opened on the bar the rule names, and not on a later one."""
-    zone = int(params[_ZONE])
-    scheduled = np.array(
-        [local_time_of_day(bars[index, BAR_TIME], zone) for index in entry_index], dtype=np.float64
-    )
-    return scheduled == params[_ENTRY_TIME]
 
 
 @njit(cache=True)

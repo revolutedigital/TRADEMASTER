@@ -58,4 +58,5 @@ class Bot:
             symbol=self.symbol, side=side, stop_distance=stop,
             target_distance=None if target >= FAR_TARGET else target,
             client_order_id=f"{self.key}-{self.symbol}-{int(bar[fx.BAR_TIME])}-{side}",
+            reference_price=0.5 * (bar[fx.BID_CLOSE] + bar[fx.ASK_CLOSE]),
         )

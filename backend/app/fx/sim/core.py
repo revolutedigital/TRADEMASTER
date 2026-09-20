@@ -23,6 +23,7 @@ from app.fx.strategy import (
     ASK_HIGH,
     ASK_LOW,
     ASK_OPEN,
+    BAR_TIME,
     BID_CLOSE,
     BID_HIGH,
     BID_LOW,
@@ -42,13 +43,20 @@ EXIT_TARGET = 4
 EXIT_END = 5
 
 
-@njit(cache=True)
-def simulate(step, init, params, state_size, bars, slippage):  # noqa: PLR0912, PLR0915
+@njit  # not cached: a cached specialisation over function arguments can fail to reload
+def simulate(step, init, params, state_size, bars, slippage, anchor_signal=False, max_entry_gap=0.0):  # noqa: PLR0912, PLR0915
     """Replay `bars` through a strategy and return the trades it made.
 
     `bars` is the (n, 9) matrix of `app.fx.strategy`; `slippage` is a length-n array in price
     units, the slippage charged on any fill that happens during bar t. Returns entry index, exit index, side, entry price, exit price, stop distance and the reason
     each trade ended, as parallel arrays.
+
+    By default the stop and target sit at the fill plus or minus the strategy's distances, which is how the
+    validated reference behaves. With `anchor_signal` they sit at the signal bar's mid close plus or minus
+    those distances (the levels a strategy computes from prices), an order whose stop or target would
+    already be behind the fill is refused as a broker would, and the recorded stop distance is the real
+    one, from the fill to the stop. With `max_entry_gap` above zero an entry is cancelled when the bar
+    it would fill on opens more than that many seconds after the bar that signalled it.
     """
     n = bars.shape[0]
     capacity = 2 * n + 2  # a bar can hold a signal exit and the stop of the trade that replaced it
@@ -73,6 +81,7 @@ def simulate(step, init, params, state_size, bars, slippage):  # noqa: PLR0912, 
     pending = HOLD
     pending_stop = 0.0
     pending_target = 0.0
+    pending_reference = 0.0
 
     for t in range(n):
         bar = bars[t]
@@ -100,19 +109,29 @@ def simulate(step, init, params, state_size, bars, slippage):  # noqa: PLR0912, 
                 reason[trades] = EXIT_SIGNAL
                 trades += 1
                 position = 0
-            if position == 0 and wants_side != 0 and pending_stop > 0.0:
+            contiguous = max_entry_gap <= 0.0 or bar[BAR_TIME] - bars[t - 1, BAR_TIME] <= max_entry_gap
+            if position == 0 and wants_side != 0 and pending_stop > 0.0 and contiguous:
                 if wants_side == LONG:
                     fill = bar[ASK_OPEN] + slip
-                    stop_price = fill - pending_stop
-                    target_price = fill + pending_target
                 else:
                     fill = bar[BID_OPEN] - slip
-                    stop_price = fill + pending_stop
-                    target_price = fill - pending_target
-                position = wants_side
-                open_index = t
-                open_price = fill
-                open_distance = pending_stop
+                if anchor_signal:
+                    new_stop = pending_reference - wants_side * pending_stop
+                    new_target = pending_reference + wants_side * pending_target
+                    accepted = (new_stop - fill) * wants_side < 0.0 and (new_target - fill) * wants_side > 0.0
+                    distance = abs(fill - new_stop)
+                else:
+                    new_stop = fill - wants_side * pending_stop
+                    new_target = fill + wants_side * pending_target
+                    accepted = True
+                    distance = pending_stop
+                if accepted:
+                    stop_price = new_stop
+                    target_price = new_target
+                    position = wants_side
+                    open_index = t
+                    open_price = fill
+                    open_distance = distance
         pending = HOLD
 
         # 2. Protective orders inside this bar; the stop wins when both are touched.
@@ -175,6 +194,7 @@ def simulate(step, init, params, state_size, bars, slippage):  # noqa: PLR0912, 
             pending = intent
             pending_stop = stop_d
             pending_target = target_d
+            pending_reference = 0.5 * (bar[BID_CLOSE] + bar[ASK_CLOSE])
 
     if position != 0:
         last = n - 1
@@ -207,10 +227,10 @@ def net_pips(side, entry_price, exit_price, commission_price, pip_size):
     return result
 
 
-def run_simulation(step, init, params, state_size, bars, slippage):
+def run_simulation(step, init, params, state_size, bars, slippage, *, anchor_signal=False, max_entry_gap=0.0):
     """Run the compiled simulator, accepting a scalar or a per-bar slippage array."""
     count = bars.shape[0]
     slip = np.ascontiguousarray(np.broadcast_to(np.asarray(slippage, dtype=np.float64), (count,)))
     if np.any(slip < 0):
         raise ValueError("slippage cannot be negative")
-    return simulate(step, init, params, state_size, bars, slip)
+    return simulate(step, init, params, state_size, bars, slip, anchor_signal, float(max_entry_gap))

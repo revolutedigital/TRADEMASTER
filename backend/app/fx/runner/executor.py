@@ -41,8 +41,13 @@ class Executor:
                 await asyncio.sleep(RETRY_PAUSE_SECONDS)
 
     async def enter(self, *, symbol: str, side: int, stop_distance: float, target_distance: float | None,
-                    client_order_id: str) -> Position | None:
-        """Open a protected position, or return None (with the reason journaled) if any limit refuses."""
+                    client_order_id: str, reference_price: float | None = None) -> Position | None:
+        """Open a protected position, or return None (with the reason journaled) if any limit refuses.
+
+        The stop and target are placed at `reference_price` (the signal bar's mid close, which is what the
+        strategy measured its distances from, and what the simulator anchors to) plus or minus the
+        distances; without it they are measured from the entry price.
+        """
         if self.journal.has_order(client_order_id):
             return None
         instrument = Instrument.from_symbol(symbol)
@@ -55,17 +60,20 @@ class Executor:
         )
         if not decision.allowed:
             return self._refuse(client_order_id, decision.reason)
+        entry = quote.ask if side == fx.LONG else quote.bid
+        anchor = entry if reference_price is None else reference_price
+        stop = anchor - side * stop_distance
+        target = None if target_distance is None else anchor + side * target_distance
+        if (stop - entry) * side >= 0 or (target is not None and (target - entry) * side <= 0):
+            return self._refuse(client_order_id, "the market already crossed the stop or the target")
         sizing = size_for_risk(
             instrument, equity=account.equity, risk_fraction=self.guard.limits.risk_fraction,
-            stop_distance_pips=stop_distance / instrument.pip_size, rates=self.rates,
+            stop_distance_pips=abs(entry - stop) / instrument.pip_size, rates=self.rates,
         )
         if not sizing.tradable:
             return self._refuse(client_order_id, sizing.reason)
         if sizing.risk_at_stop > self.guard.remaining_loss_budget(account.equity):
             return self._refuse(client_order_id, "the stop risk would exceed what is left of today's loss cap")
-        entry = quote.ask if side == fx.LONG else quote.bid
-        stop = entry - side * stop_distance
-        target = None if target_distance is None else entry + side * target_distance
         self.journal.append("order_intent", client_order_id=client_order_id, symbol=symbol, side=side,
                             units=sizing.units, stop_price=stop, target_price=target)
         try:

@@ -222,3 +222,86 @@ def test_slippage_can_change_from_bar_to_bar() -> None:
 def test_a_negative_slippage_is_refused() -> None:
     with pytest.raises(ValueError, match="negative"):
         core.run_simulation(scripted_step, scripted_init, np.zeros(6), 1, flat_bars(4), -1e-5)
+
+
+# --- levels anchored to the signal, and no fill across a gap in the data ---------------------------
+
+
+def anchored(matrix, **kwargs):
+    params = np.array(
+        [kwargs.get("act", 1), kwargs["intent"], kwargs.get("stop", 0.01), kwargs.get("target", 0.02), -1, 0],
+        dtype=np.float64,
+    )
+    return core.run_simulation(
+        scripted_step, scripted_init, params, 1, matrix, kwargs.get("slippage", 0.0),
+        anchor_signal=True, max_entry_gap=kwargs.get("max_gap", 0.0),
+    )
+
+
+def test_anchored_levels_sit_at_the_signal_close_plus_the_distance_not_at_the_fill() -> None:
+    matrix = flat_bars(6, spread_pips=1.0)
+    signal_mid = 1.1000  # the mid close of the signal bar
+
+    _, _, _, entry_price, _, distance, _ = anchored(matrix, intent=fx.ENTER_LONG, slippage=0.5 * PIP)
+
+    fill = 1.1000 + 0.5 * PIP + 0.5 * PIP  # ask plus slippage
+    assert entry_price[0] == pytest.approx(fill)
+    stop_level = signal_mid - 0.01
+    assert distance[0] == pytest.approx(fill - stop_level)  # the R denominator is fill to stop
+    assert distance[0] > 0.01  # wider than the planned distance by the half spread and slippage
+
+
+def test_an_anchored_target_is_touched_at_its_level_not_at_a_fill_relative_one() -> None:
+    matrix = flat_bars(6)
+    matrix[3, fx.BID_HIGH] = 1.1150  # exactly the level 1.1000 + 0.0150 of the target below
+
+    _, exit_index, _, _, exit_price, _, reason = anchored(matrix, intent=fx.ENTER_LONG, target=0.0150)
+
+    assert reason[0] == core.EXIT_TARGET and exit_price[0] == pytest.approx(1.1150)
+    matrix[3, fx.BID_HIGH] = 1.1149
+    assert len(anchored(matrix, intent=fx.ENTER_LONG, target=0.0150)[0]) == 1
+    assert anchored(matrix, intent=fx.ENTER_LONG, target=0.0150)[6][0] == core.EXIT_END
+
+
+def test_an_order_whose_stop_is_already_behind_the_fill_is_refused_like_a_broker_would() -> None:
+    normal = flat_bars(6)
+    gap_up = flat_bars(6)
+    gap_up[2, fx.BID_OPEN] = gap_up[2, fx.ASK_OPEN] = 1.1100  # opens past the short's stop at 1.1040
+    gap_down = flat_bars(6)
+    gap_down[2, fx.BID_OPEN] = gap_down[2, fx.ASK_OPEN] = 1.0900  # opens past the long's stop at 1.0960
+
+    assert len(anchored(normal, intent=fx.ENTER_SHORT, stop=0.0040, target=0.0100)[0]) == 1
+    assert len(anchored(gap_up, intent=fx.ENTER_SHORT, stop=0.0040, target=0.0100)[0]) == 0
+    assert len(anchored(normal, intent=fx.ENTER_LONG, stop=0.0040, target=0.0100)[0]) == 1
+    assert len(anchored(gap_down, intent=fx.ENTER_LONG, stop=0.0040, target=0.0100)[0]) == 0
+
+
+def test_an_entry_is_cancelled_when_the_next_bar_is_not_the_next_period() -> None:
+    contiguous = flat_bars(6)
+    gapped = flat_bars(6)
+    gapped[2:, fx.BAR_TIME] += 3600.0  # the bar after the signal opens an hour late
+
+    assert len(anchored(contiguous, intent=fx.ENTER_LONG, max_gap=60.0)[0]) == 1
+    assert len(anchored(gapped, intent=fx.ENTER_LONG, max_gap=60.0)[0]) == 0
+    assert len(anchored(gapped, intent=fx.ENTER_LONG, max_gap=0.0)[0]) == 1  # the limit is optional
+
+
+def test_an_exit_still_happens_on_the_next_bar_that_exists_after_a_gap() -> None:
+    matrix = flat_bars(8)
+    matrix[5:, fx.BAR_TIME] += 3600.0
+    params = np.array([1, fx.ENTER_LONG, 0.01, 0.02, 3, fx.EXIT], dtype=np.float64)
+    matrix[4, fx.BAR_TIME] = 4 * 60.0
+
+    entry_index, exit_index, _, _, _, _, reason = core.run_simulation(
+        scripted_step, scripted_init, params, 1, matrix, 0.0, anchor_signal=True, max_entry_gap=60.0
+    )
+
+    assert entry_index[0] == 2 and reason[0] == core.EXIT_SIGNAL
+
+
+def test_the_default_still_anchors_at_the_fill_like_the_validated_reference() -> None:
+    matrix = flat_bars(6)
+
+    _, _, _, entry_price, _, distance, _ = scripted(matrix, act=1, intent=fx.ENTER_LONG, slippage=0.5 * PIP)
+
+    assert distance[0] == pytest.approx(0.01)

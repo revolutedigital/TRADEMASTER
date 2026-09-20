@@ -24,7 +24,7 @@ def summarize(side, entry_price, exit_price, stop_distance, commission_price, pi
     return count, total_pips, total_r, wins
 
 
-@njit(parallel=True, cache=True)
+@njit(parallel=True)  # not cached: specialisations over function arguments can fail to reload
 def sweep(step, init, params_matrix, state_size, bars, slippage, commission_price, pip_size):
     """Run every row of `params_matrix` as one configuration, spread across all cores."""
     configs = params_matrix.shape[0]

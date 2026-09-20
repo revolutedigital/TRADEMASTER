@@ -134,7 +134,7 @@ def ema_cross_step(params, state, bar, position):
 # ---------------------------------------------------------------------------
 
 
-@njit(cache=True)
+@njit  # not cached: a cached specialisation over function arguments can fail to reload
 def run_batch(step, init, params, state_size, bars, positions):
     """Replay every bar through a strategy in one compiled loop; used by the lab and by tests."""
     count = bars.shape[0]

@@ -27,6 +27,8 @@ def synthetic_frame(
     base: float = 1.10,
     mean_reversion: float = 0.0,
     pip: float = PIP,
+    gap_sigma_pips: float = 0.0,
+    spread_jitter: bool = False,
 ) -> pd.DataFrame:
     """Monday-to-Friday bid/ask bars of a random walk (or a mean-reverting one), UTC-indexed.
 
@@ -44,12 +46,12 @@ def synthetic_frame(
     for i in range(count):
         level += noise[i] - mean_reversion * (level - base)
         close[i] = level
-    open_ = np.concatenate(([base], close[:-1]))
+    open_ = np.concatenate(([base], close[:-1])) + rng.normal(0.0, gap_sigma_pips * pip, count)
     high = np.maximum(open_, close) + np.abs(rng.normal(0.0, 0.5 * sigma_pips * pip, count))
     low = np.minimum(open_, close) - np.abs(rng.normal(0.0, 0.5 * sigma_pips * pip, count))
     frame = pd.DataFrame(index=stamps)
+    half = half_spread_pips * pip * (0.5 + 2.5 * rng.random(count) if spread_jitter else 1.0)
     for side, sign in (("bid", -1), ("ask", 1)):
-        half = half_spread_pips * pip
         frame[f"{side}_open"] = open_ + sign * half
         frame[f"{side}_high"] = high + sign * half
         frame[f"{side}_low"] = low + sign * half
@@ -97,10 +99,10 @@ def assert_the_future_never_changes_the_past(step, init, params, state_size, mat
             assert np.array_equal(whole[: cut + 1], part[: cut + 1]), cut
 
 
-def simulate(step, init, params, state_size, matrix):
+def simulate(step, init, params, state_size, matrix, **options):
     """Run the simulator with no slippage and return its trades as a frame of bar indices and prices."""
     entry, exit_, side, entry_price, exit_price, stop_distance, reason = core.run_simulation(
-        step, init, params, state_size, matrix, 0.0
+        step, init, params, state_size, matrix, 0.0, **options
     )
     return pd.DataFrame(
         {

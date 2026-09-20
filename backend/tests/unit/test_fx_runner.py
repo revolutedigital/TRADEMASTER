@@ -223,3 +223,18 @@ async def test_reconcile_is_idempotent(tmp_path) -> None:
     second = await reconcile(bench.venue, bench.journal)
 
     assert first.adopted == first.closed_orphans == second.adopted == second.closed_while_down == []
+
+
+async def test_levels_anchor_to_the_reference_price_and_a_crossed_market_is_refused(tmp_path) -> None:
+    bench = Bench(tmp_path)
+
+    position = await bench.executor.enter(symbol="EURUSD", side=fx.LONG, stop_distance=0.0010, target_distance=0.0015,
+                                          client_order_id="ref", reference_price=1.10004)
+    assert position.stop_price == pytest.approx(1.10004 - 0.0010)
+    assert position.target_price == pytest.approx(1.10004 + 0.0015)
+
+    await bench.executor.flatten_all("test")
+    bench.venue.set_quote("EURUSD", 1.0990, 1.09908)  # the market fell below the long's stop level
+    crossed = await bench.executor.enter(symbol="EURUSD", side=fx.LONG, stop_distance=0.0005, target_distance=0.0015,
+                                         client_order_id="late", reference_price=1.1000)
+    assert crossed is None and "crossed" in bench.journal.events()[-1]["reason"]

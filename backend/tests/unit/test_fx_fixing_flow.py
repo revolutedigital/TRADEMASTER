@@ -109,22 +109,27 @@ def test_trades_enter_at_fifteen_and_leave_at_fifty_five_past_with_a_wide_stop()
     assert np.all(trades["stop_distance"] > 0)
 
 
-def test_a_missing_entry_bar_is_flagged_as_off_schedule() -> None:
+def test_a_missing_entry_bar_cancels_the_trade_instead_of_entering_late() -> None:
     frame = frame_for_tests(4)
     params = ff.pre_fixing_params("USDJPY")
     london = frame.index.tz_convert("Europe/London")
     day = london[np.flatnonzero((london.hour == 15) & (london.minute == 0))[5]].date()
     missing = frame.index[(london.date == day) & (london.hour == 15) & (london.minute == 0)]
     gapped = frame.drop(missing)
-    matrix = fx.bars_to_matrix(gapped)
 
-    trades = simulate(ff.fixing_flow_step, ff.fixing_flow_init, params, STATE, matrix)
-    on_schedule = ff.entry_is_on_schedule(matrix, trades["entry_index"].to_numpy(), params)
+    complete = simulate(
+        ff.fixing_flow_step, ff.fixing_flow_init, params, STATE, fx.bars_to_matrix(frame),
+        anchor_signal=True, max_entry_gap=300.0,
+    )
+    trades = simulate(
+        ff.fixing_flow_step, ff.fixing_flow_init, params, STATE, fx.bars_to_matrix(gapped),
+        anchor_signal=True, max_entry_gap=300.0,
+    )
 
     assert len(missing) == 1
-    assert (~on_schedule).sum() == 1
-    late = gapped.index[trades["entry_index"][~on_schedule]].tz_convert("Europe/London")
-    assert late.date[0] == day and late.hour[0] * 60 + late.minute[0] == 15 * 60 + 5
+    assert len(trades) == len(complete) - 1
+    opened = gapped.index[trades["entry_index"]].tz_convert("Europe/London")
+    assert np.all(opened.hour * 60 + opened.minute == 15 * 60)
 
 
 @pytest.mark.parametrize("builder", [ff.pre_fixing_params, ff.post_fixing_params], ids=["F2a", "F2b"])
@@ -148,3 +153,26 @@ def test_the_params_reject_nonsense() -> None:
     ):
         with pytest.raises(ValueError):
             ff.fixing_flow_params(**{**good, **override})
+
+
+def test_the_atr_counts_gaps_between_bars_and_ignores_the_spread() -> None:
+    frame = synthetic_frame(start="2024-03-04", weeks=8, bar_seconds=300, seed=31, gap_sigma_pips=4.0, spread_jitter=True)
+    matrix = fx.bars_to_matrix(frame)
+
+    intents, stops, _ = decisions(ff.fixing_flow_step, ff.fixing_flow_init, ff.pre_fixing_params("USDJPY"), STATE, matrix)
+    expected_index, expected_stop = expected_entries(frame, "15:00")
+
+    fired = np.flatnonzero(intents != fx.HOLD)
+    assert fired.tolist() == expected_index.tolist()
+    assert np.allclose(stops[fired], expected_stop, rtol=0, atol=1e-12)
+
+
+def test_the_post_fixing_leg_enters_at_16_05_and_leaves_at_17_00_london_time() -> None:
+    frame = frame_for_tests(6)
+    trades = simulate(ff.fixing_flow_step, ff.fixing_flow_init, ff.post_fixing_params("USDJPY"), STATE, fx.bars_to_matrix(frame))
+
+    opened = frame.index[trades["entry_index"]].tz_convert("Europe/London")
+    closed = frame.index[trades["exit_index"]].tz_convert("Europe/London")
+    timed = trades["reason"] == core.EXIT_SIGNAL
+    assert len(trades) >= 30 and np.all(opened.hour * 60 + opened.minute == 16 * 60 + 5)
+    assert np.all((closed.hour * 60 + closed.minute)[timed] == 17 * 60)

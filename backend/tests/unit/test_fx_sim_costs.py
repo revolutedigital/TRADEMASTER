@@ -179,7 +179,7 @@ def run_trades(scenario: costs.CostScenario):
     params = fx.ema_cross_params(fast_span=8, slow_span=21, atr_period=14, stop_atr=1.5, reward_risk=2.0, warmup=60)
     result = core.run_simulation(fx.ema_cross_step, fx.ema_cross_init, params, fx.EMA_CROSS_STATE_SIZE, prepared, slippage)
     commission = costs.commission_round_trip_pips(
-        EURUSD, 1.10, RATES, usd_per_lot_per_side=scenario.commission_usd_per_lot_per_side
+        EURUSD, 1.10, RATES, base_currency_per_lot_per_side=scenario.commission_base_per_lot_per_side
     )
     return costs.finalize_trades(result, prepared, EURUSD, scenario, commission_pips=commission, calendar=CALENDAR)
 
@@ -199,3 +199,20 @@ def test_a_stricter_scenario_never_improves_the_total_result() -> None:
     stress = run_trades(costs.STRESS)["net_pips"].sum()
 
     assert stress <= base
+
+
+def test_a_base_currency_commission_costs_more_when_the_base_currency_is_worth_more_than_a_dollar() -> None:
+    dollar_base = costs.commission_round_trip_pips(USDJPY, 150.0, RATES, base_currency_per_lot_per_side=2.25)
+    fixed_usd = costs.commission_round_trip_pips(USDJPY, 150.0, RATES, usd_per_lot_per_side=2.25)
+    euro_base = costs.commission_round_trip_pips(EURUSD, 1.10, RATES, base_currency_per_lot_per_side=2.25)
+    euro_as_dollars = costs.commission_round_trip_pips(EURUSD, 1.10, RATES, usd_per_lot_per_side=2.25)
+
+    assert dollar_base == pytest.approx(fixed_usd)  # USD 2.25 either way when the base is the dollar
+    assert euro_base == pytest.approx(euro_as_dollars * RATES.usd_per("EUR"))
+    assert euro_base > euro_as_dollars
+
+
+def test_the_fusion_scenarios_charge_the_commission_in_the_base_currency() -> None:
+    for scenario in (costs.FUSION_ZERO, costs.STRESS, costs.ADVERSE_SWAP):
+        assert scenario.commission_base_per_lot_per_side == 2.25
+        assert scenario.commission_usd_per_lot_per_side == 0.0

@@ -84,13 +84,16 @@ def commission_round_trip_pips(
     rates: ConversionRates,
     *,
     usd_per_lot_per_side: float = 0.0,
+    base_currency_per_lot_per_side: float = 0.0,
     notional_basis_points: float = 0.0,
     minimum_usd_per_order: float = 0.0,
     units: float = STANDARD_LOT_UNITS,
     account_currency: str = "USD",
 ) -> float:
     """Round-trip commission, expressed in pips of this pair at the given size and price."""
-    per_lot = usd_per_lot_per_side * units / STANDARD_LOT_UNITS
+    lots = units / STANDARD_LOT_UNITS
+    # Some brokers (Fusion on cTrader) charge per 100,000 of notional in the pair's BASE currency.
+    per_lot = lots * (usd_per_lot_per_side + base_currency_per_lot_per_side * rates.usd_per(instrument.base))
     notional_usd = units * price * rates.usd_per(instrument.quote) / rates.usd_per("USD")
     percentage = notional_usd * notional_basis_points / 10_000
     per_side_usd = max(per_lot, percentage, minimum_usd_per_order)
@@ -145,6 +148,7 @@ class CostScenario:
     slippage_pips: float = 0.1
     slippage_range_fraction: float = 0.0
     commission_usd_per_lot_per_side: float = 0.0
+    commission_base_per_lot_per_side: float = 0.0
     swap_long_pips_per_day: float = 0.0
     swap_short_pips_per_day: float = 0.0
     description: str = field(default="", compare=False)
@@ -154,7 +158,7 @@ FUSION_ZERO = CostScenario(
     "fusion_zero",
     slippage_pips=0.1,
     slippage_range_fraction=0.05,
-    commission_usd_per_lot_per_side=2.25,
+    commission_base_per_lot_per_side=2.25,
     description="raw spread from the data + $2.25 per lot per side + slippage that grows with volatility",
 )
 STRESS = CostScenario(
@@ -162,14 +166,14 @@ STRESS = CostScenario(
     spread_multiplier=2.0,
     slippage_pips=0.3,
     slippage_range_fraction=0.10,
-    commission_usd_per_lot_per_side=2.25,
+    commission_base_per_lot_per_side=2.25,
     description="spread doubled and slippage tripled, for conditions the sample under-represents",
 )
 ADVERSE_SWAP = CostScenario(
     "adverse_swap",
     slippage_pips=0.1,
     slippage_range_fraction=0.05,
-    commission_usd_per_lot_per_side=2.25,
+    commission_base_per_lot_per_side=2.25,
     swap_long_pips_per_day=-0.3,
     swap_short_pips_per_day=-0.3,
     description="base costs plus a 0.3 pip per day financing debit on both sides",

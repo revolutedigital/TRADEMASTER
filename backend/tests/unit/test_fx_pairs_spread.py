@@ -173,3 +173,36 @@ def test_the_synthetic_cross_keeps_only_the_minutes_both_legs_quoted() -> None:
     assert np.all(cross[:, fx.ASK_HIGH] >= cross[:, fx.ASK_LOW])
     with pytest.raises(ValueError, match="9"):
         ps.synthetic_cross(numerator[:, :5], denominator)
+
+
+def test_a_target_exit_lands_on_the_mean_of_the_window_that_signalled_when_anchored() -> None:
+    frame = oscillating_frame(8)
+    matrix = fx.bars_to_matrix(frame)
+    mean = mid_frame(frame)["close"].rolling(480).mean().shift(1).to_numpy()
+
+    trades = simulate(
+        ps.pairs_spread_step, ps.pairs_spread_init, PARAMS, STATE, matrix, anchor_signal=True, max_entry_gap=3600.0
+    )
+
+    hits = trades[trades["reason"] == core.EXIT_TARGET]
+    assert len(hits) >= 5
+    for _, trade in hits.iterrows():
+        assert trade["exit_price"] == pytest.approx(mean[int(trade["entry_index"]) - 1], abs=1e-9)
+
+
+def test_every_column_of_the_synthetic_cross_comes_from_the_right_leg_and_side() -> None:
+    numerator, denominator = leg(5), leg(6)
+
+    cross = ps.synthetic_cross(numerator, denominator)
+
+    bid_open = numerator[:, fx.BID_OPEN] / denominator[:, fx.ASK_OPEN]
+    bid_close = numerator[:, fx.BID_CLOSE] / denominator[:, fx.ASK_CLOSE]
+    ask_open = numerator[:, fx.ASK_OPEN] / denominator[:, fx.BID_OPEN]
+    ask_close = numerator[:, fx.ASK_CLOSE] / denominator[:, fx.BID_CLOSE]
+    expected = {
+        fx.BID_OPEN: bid_open, fx.BID_CLOSE: bid_close, fx.ASK_OPEN: ask_open, fx.ASK_CLOSE: ask_close,
+        fx.BID_HIGH: np.maximum(bid_open, bid_close), fx.BID_LOW: np.minimum(bid_open, bid_close),
+        fx.ASK_HIGH: np.maximum(ask_open, ask_close), fx.ASK_LOW: np.minimum(ask_open, ask_close),
+    }
+    for column, values in expected.items():
+        assert np.allclose(cross[:, column], values, rtol=0, atol=1e-15), column

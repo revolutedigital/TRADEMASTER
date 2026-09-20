@@ -133,8 +133,10 @@ def test_the_commission_of_the_synthetic_cross_counts_two_legs() -> None:
     single = lab.commission_pips("EURUSD", 1.1, RATES, 2.25)
     synthetic = lab.commission_pips(lab.SYNTHETIC, 1.08, RATES, 2.25)
 
-    assert single == pytest.approx(0.45, abs=0.01)
-    assert synthetic > 2 * single
+    assert single == pytest.approx(0.45 * RATES.usd_per("EUR"), abs=0.01)  # EUR 2.25 a side, in dollars
+    per_side_usd = 2.25 * (RATES.usd_per("AUD") + 1.08 * RATES.usd_per("NZD"))  # AUD 2.25 + NZD 2.25 x 1.08
+    pip_usd = 100_000 * 0.0001 * RATES.usd_per("NZD")  # one pip of AUDNZD is worth NZD 10
+    assert synthetic == pytest.approx(2 * per_side_usd / pip_usd)
 
 
 def test_code_commit_refuses_uncommitted_code(monkeypatch) -> None:

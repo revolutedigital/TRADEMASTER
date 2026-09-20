@@ -271,3 +271,87 @@ def test_the_params_reject_nonsense() -> None:
     ):
         with pytest.raises(ValueError):
             sf.spike_fade_params(**{"threshold": 4.0, **override})
+
+
+def test_the_stop_and_target_levels_are_those_of_the_spike_when_anchored_to_the_signal() -> None:
+    frame, at = hand_built(+10.0)
+    steps = quiet_steps(160)
+    steps[at] = 10.0
+    steps[at + 2] = -8.0
+    wick = np.full(160, 0.5)
+    wick[at] = 1.0
+    frame = frame_from_steps(frame.index, steps, wick)
+    mid = mid_frame(frame).iloc[at]
+    spike_range = mid["high"] - mid["low"]
+
+    trades = simulate(
+        sf.spike_fade_step, sf.spike_fade_init, sf.spike_fade_4_params(), STATE, fx.bars_to_matrix(frame),
+        anchor_signal=True, max_entry_gap=300.0,
+    )
+
+    first = trades.iloc[0]
+    assert first["reason"] == core.EXIT_TARGET
+    assert first["exit_price"] == pytest.approx(mid["high"] - 0.5 * spike_range, abs=1e-12)
+    assert first["entry_price"] + first["stop_distance"] == pytest.approx(mid["high"] + 0.5 * spike_range, abs=1e-12)
+
+
+def widen_at(frame: pd.DataFrame, at: int, *, close_pips: float | None = None, open_pips: float | None = None) -> pd.DataFrame:
+    """Set the bid/ask spread of one bar at its close and/or its open, leaving the mid alone."""
+    frame = frame.copy()
+    for pips, column in ((close_pips, "close"), (open_pips, "open")):
+        if pips is not None:
+            mid = 0.5 * (frame[f"bid_{column}"].iloc[at] + frame[f"ask_{column}"].iloc[at])
+            frame.iloc[at, frame.columns.get_loc(f"bid_{column}")] = mid - 0.5 * pips * PIP
+            frame.iloc[at, frame.columns.get_loc(f"ask_{column}")] = mid + 0.5 * pips * PIP
+    return frame
+
+
+@pytest.mark.parametrize(("closing_spread", "fires"), [(0.78, True), (0.82, False)])
+def test_the_spread_limit_is_twice_the_median_closing_spread(closing_spread: float, fires: bool) -> None:
+    frame, at = hand_built(+10.0)  # the quiet spread is 0.4 pip, so the limit is 0.8 pip
+
+    intents = run(widen_at(frame, at, close_pips=closing_spread), sf.spike_fade_4_params())[1][0]
+
+    assert bool(intents[at] != fx.HOLD) is fires
+
+
+def test_only_the_closing_spread_counts_not_the_opening_one() -> None:
+    frame, at = hand_built(+10.0)
+
+    intents = run(widen_at(frame, at, open_pips=6.0), sf.spike_fade_4_params())[1][0]
+
+    assert intents[at] == fx.ENTER_SHORT
+
+
+@pytest.mark.parametrize(("body_share", "fires"), [(0.59, False), (0.61, True)])
+def test_the_body_must_be_at_least_sixty_percent_of_the_range(body_share: float, fires: bool) -> None:
+    index = pd.date_range("2024-05-13 06:00", periods=160, freq="5min", tz="UTC")
+    steps = quiet_steps(160)
+    body = 6.0
+    steps[100] = body
+    wick = np.full(160, 0.5)
+    wick[100] = (body / body_share - body) / 2  # the range is body / share, the wicks share the rest
+    frame = frame_from_steps(index, steps, wick)
+
+    intents = run(frame, sf.spike_fade_4_params())[1][0]
+
+    assert bool(intents[100] != fx.HOLD) is fires
+
+
+def test_the_signals_equal_the_pandas_rule_with_gaps_and_variable_spreads() -> None:
+    base = synthetic_frame(start="2024-03-04", weeks=8, bar_seconds=300, seed=41, spread_jitter=True)
+    rng = np.random.default_rng(41)
+    steps = rng.normal(0.0, 1.2, len(base)) * np.where(rng.random(len(base)) < 0.02, 9.0, 1.0)
+    frame = frame_from_steps(base.index, steps, np.abs(rng.normal(0.0, 0.6, len(base))))
+    jitter = 0.5 + 2.5 * rng.random(len(base))
+    for column in ("open", "high", "low", "close"):
+        mid = 0.5 * (frame[f"bid_{column}"] + frame[f"ask_{column}"])
+        frame[f"bid_{column}"] = mid - 0.2 * PIP * jitter
+        frame[f"ask_{column}"] = mid + 0.2 * PIP * jitter
+    matrix, (intents, stops, targets) = run(frame, sf.spike_fade_4_params())
+
+    index, sides, stop, target = expected_spikes(frame, 4.0)
+
+    fired = np.flatnonzero(intents != fx.HOLD)
+    assert len(index) >= 8 and fired.tolist() == index.tolist()
+    assert np.allclose(stops[fired], stop, rtol=0, atol=1e-12) and np.allclose(targets[fired], target, rtol=0, atol=1e-12)

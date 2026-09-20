@@ -57,7 +57,6 @@ class Configuration:
     init: Callable
     state_size: int
     params: Callable[[str], np.ndarray]
-    on_schedule: Callable | None = None
 
 
 def configurations() -> dict[str, Configuration]:
@@ -70,7 +69,7 @@ def configurations() -> dict[str, Configuration]:
 
     def fixing(key, builder):
         return Configuration(key, 300, USD_PAIRS, ff.fixing_flow_step, ff.fixing_flow_init,
-                             ff.FIXING_FLOW_STATE_SIZE, builder, ff.entry_is_on_schedule)
+                             ff.FIXING_FLOW_STATE_SIZE, builder)
 
     def fade(key, builder):
         return Configuration(key, 300, every, sf.spike_fade_step, sf.spike_fade_init,
@@ -170,11 +169,15 @@ class SampleResult:
         return self.counts.sum(axis=0)
 
 
-def commission_pips(pair: str, price: float, rates: ConversionRates, usd_per_side: float) -> float:
-    if pair == SYNTHETIC:  # one lot of AUDUSD against price lots of NZDUSD, both ways
+def commission_pips(pair: str, price: float, rates: ConversionRates, base_per_side: float) -> float:
+    """Round-trip commission in pips; the broker charges `base_per_side` of the pair's base currency per lot."""
+    if pair == SYNTHETIC:  # one lot of AUDUSD against `price` lots of NZDUSD, both ways
         instrument = Instrument.from_symbol(SYNTHETIC)
-        return 2 * usd_per_side * (1 + price) / pip_value(instrument, STANDARD_LOT_UNITS, rates)
-    return commission_round_trip_pips(Instrument.from_symbol(pair), price, rates, usd_per_lot_per_side=usd_per_side)
+        per_side = base_per_side * (rates.usd_per("AUD") + price * rates.usd_per("NZD"))
+        return 2 * per_side / pip_value(instrument, STANDARD_LOT_UNITS, rates)
+    return commission_round_trip_pips(
+        Instrument.from_symbol(pair), price, rates, base_currency_per_lot_per_side=base_per_side
+    )
 
 
 def pair_minutes(pair: str, matrices, window, coins) -> np.ndarray:
@@ -210,14 +213,14 @@ def run_sample(matrices, windows, universe, rates, configs, coins=None) -> Sampl
                 params = config.params(pair)
                 for scenario in (FUSION_ZERO, STRESS):
                     scenario_bars, slippage = prepare_run(bars, instrument, scenario)
+                    if pair == SYNTHETIC:  # both legs slip
+                        slippage = 2.0 * slippage
                     result = core.run_simulation(config.step, config.init, params, config.state_size,
-                                                 scenario_bars, slippage)
-                    if config.on_schedule is not None:
-                        keep = config.on_schedule(scenario_bars, result[0], params)
-                        result = tuple(part[keep] for part in result)
+                                                 scenario_bars, slippage, anchor_signal=True,
+                                                 max_entry_gap=float(config.seconds))
                     trades = finalize_trades(
                         result, scenario_bars, instrument, scenario,
-                        commission_pips=commission_pips(pair, price, rates, scenario.commission_usd_per_lot_per_side),
+                        commission_pips=commission_pips(pair, price, rates, scenario.commission_base_per_lot_per_side),
                         calendar=CALENDAR,
                     )
                     if scenario is STRESS:

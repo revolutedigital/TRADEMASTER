@@ -21,6 +21,8 @@ Precisamos de (a) um laboratório que teste várias famílias de estratégia em 
 - **Escala:** placebo de 200 embaralhamentos × 7 famílias × 26 milhões de barras (10 pares × 5 anos de M1) = ~36 bilhões de passos. No núcleo próprio isso leva minutos; no Nautilus, ~90 horas de núcleo.
 - **Adaptador:** o NautilusTrader 1.231 tem adaptadores oficiais de Interactive Brokers, Binance, Bybit, Kraken, OKX, Databento e outros, **mas nenhum de cTrader**. Existe um adaptador comunitário de cTrader em pré-alfa (só a camada de transporte; faltam provedor de instrumentos e clientes de dados e de execução; sem release). Adotar o Nautilus para a cTrader significa escrever a parte mais difícil.
 - **Instalação:** o Nautilus e o numba instalam e rodam no Python 3.13 do projeto (o Nautilus em ambiente separado, fora dos requisitos).
+- **Confirmações da pesquisa independente (verificada por um cético):** na v2 (Rust, ainda release candidate) **não existe caminho suportado para um adaptador externo**: a subclasse Python de cliente de dados e de execução da v1 não tem equivalente, e só entram adaptadores compilados dentro do próprio projeto; o selo "stable" do adaptador de Interactive Brokers é do README, e em 2026-09-20 havia 11 issues abertos com esse título (vários em 2.0.0rc4); e o IB Gateway exige autenticação manual (2FA) uma vez por semana, o que quebra o "liga e deixa rodando". Esses três pontos tornam a rota Nautilus + corretora do Igor mais cara do que o núcleo próprio.
+- **Latência não decide:** em passos de minutos, 190 ms de latência do Brasil movem o preço ~0,07 pip (σ do EURUSD ≈ 1,26 pip por minuto), contra 1,1 a 3,8 pips de custo por ida e volta. Um VPS perto da corretora só importa se algum dia entrar estratégia de segundos.
 
 ## Consequências
 
@@ -37,4 +39,4 @@ Precisamos de (a) um laboratório que teste várias famílias de estratégia em 
 
 ## Quando revisar
 
-Se a segunda corretora for a Interactive Brokers, reavaliar o Nautilus como runner dessa rota. Se o numba se mostrar um freio de desenvolvimento nas famílias mais complexas (deriva pós-notícia, pares correlacionados), reavaliar a divisão entre laboratório compilado e estratégia em Python.
+Se a segunda corretora for a Interactive Brokers, reavaliar o Nautilus como runner dessa rota, olhando o estado dos issues do adaptador e a estabilidade da v2. Se o numba se mostrar um freio de desenvolvimento nas famílias mais complexas (deriva pós-notícia, pares correlacionados), reavaliar a divisão entre laboratório compilado e estratégia em Python.

@@ -11,7 +11,15 @@ from app.config import settings
 from app.models.base import Base
 
 # Import all models so Alembic can detect them
-from app.models import asset_study_job, market, market_opportunity_scan, portfolio, signal, trade  # noqa: F401
+from app.models import (  # noqa: F401
+    asset_study_job,
+    fx_bot,
+    market,
+    market_opportunity_scan,
+    portfolio,
+    signal,
+    trade,
+)
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)

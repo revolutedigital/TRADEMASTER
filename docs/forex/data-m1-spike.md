@@ -32,3 +32,13 @@ Medido em 2026-09-20. Código: `backend/scripts/research/fx_dataset_m1.py` (Duka
 ## Teste do step
 
 - O mês de teste passou no controle de qualidade e o relatório traz o ritmo e a projeção (acima). **Step 2 concluído.**
+
+## Resultado do step 6 para o EURUSD (2021-09 a 2026-08)
+
+`backend/scripts/research/fx_histdata_ticks.py` baixa os ticks mensais, resolve o fuso pela regra europeia, monta o M1 bid/ask e valida cada mês contra o H1 da Dukascopy que o projeto já tem.
+
+- **1.811.388 minutos em 60 meses**, 16 minutos de execução (2 conexões), **59 dos 60 meses passam** o critério (≥ 99% das horas com fechamento idêntico ao oráculo, nos dois lados, e nenhuma cotação cruzada).
+- **Concordância média: 99,88% (bid) e 99,89% (ask)**; mínimo mensal 98,4% (2023-09, 8 horas de 501 com 1 a 4 pips de diferença, espalhadas: parecem ticks ausentes no HistData, não erro de fuso).
+- **Buracos confirmados:** **2023-03 a 2023-07** têm 20.173 a 23.354 minutos (o normal é ~31.000), até 31% das horas do oráculo sem dado. Esses 5 meses (8% da amostra) são tratados como buraco: ficam fora das análises ou são preenchidos com a Dukascopy.
+- Os outros 9 pares (GBPUSD, USDJPY, AUDUSD, NZDUSD, USDCAD, USDCHF, EURJPY, GBPJPY, EURGBP) estão sendo processados em segundo plano. Os três cruzados não têm H1 de oráculo; serão validados por triangulação com os majors.
+

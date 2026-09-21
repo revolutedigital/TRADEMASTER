@@ -13,6 +13,8 @@ Nothing here touches the trading engine, the database, or an exchange.
 from __future__ import annotations
 
 import argparse
+import os
+import pickle
 import sys
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
@@ -43,6 +45,8 @@ SAMPLES = {  # stage: (months, directory of the matrices, data manifest)
     "confirmation": (lab.CONFIRMATION, lab.LAB_DIR, lab.DEFAULT_MANIFEST),
 }
 NULL_T_FILE = PRE_2019_LAB / "null_t_discovery.npy"
+PLACEBO_RESULTS_FILE = PRE_2019_LAB / "placebo_results.pkl"  # the daily tables of every placebo replicate, for the power check
+CALIBRATION_LOCK = PRE_2019_LAB / "calibrate.lock"
 
 
 def configurations() -> dict[str, lab.Configuration]:
@@ -89,10 +93,28 @@ def prepare() -> int:
     return 0
 
 
+def _claim(lock: Path) -> None:
+    """One calibration at a time: two runs would fight for the machine and the registry."""
+    if lock.exists() and Path(f"/proc/{lock.read_text().strip()}").exists():
+        raise RuntimeError(f"a calibration is already running (pid {lock.read_text().strip()})")
+    lock.write_text(str(os.getpid()))
+
+
 def calibrate(replicates: int, workers: int) -> int:
     commit = lab.code_commit()
+    _claim(CALIBRATION_LOCK)
+    try:
+        return _calibrate(commit, replicates, workers)
+    finally:
+        CALIBRATION_LOCK.unlink(missing_ok=True)
+
+
+def _calibrate(commit: str, replicates: int, workers: int) -> int:
+    os.nice(10)  # the demo runner polls the broker four times a second and must not starve
     configs = configurations()
     results = run_placebos("discovery", list(configs), replicates, workers)
+    with PLACEBO_RESULTS_FILE.open("wb") as handle:
+        pickle.dump(results, handle)
     rate = lab.false_approval_rate(results, configs, stats.BOOTSTRAP_DRAWS, BOOTSTRAP_SEED)
     null_t = lab.null_t_matrix(results)
     np.save(NULL_T_FILE, null_t)

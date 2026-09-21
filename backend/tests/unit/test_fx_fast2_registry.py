@@ -42,6 +42,15 @@ def test_discovery_needs_the_calibration_first_and_closes_with_its_report() -> N
     assert any("after the discovery report" in p for p in check(late))
 
 
+def test_a_second_calibration_needs_a_documented_correction_first() -> None:
+    twice = [created(), event("calibration_report"), event("calibration_report")]
+    corrected = [created(), event("calibration_report"),
+                 event("amendment", reason="fix", preregistration_sha256=DOC, grid_sha256=GRID), event("calibration_report")]
+
+    assert any("second calibration report" in p for p in check(twice))
+    assert check(corrected) == []
+
+
 def test_a_configuration_outside_the_grid_or_that_did_not_pass_the_stage_before_is_refused() -> None:
     base = [created(), event("calibration_report")]
     assert any("not in the grid" in p for p in check([*base, run("discovery", "Z")]))

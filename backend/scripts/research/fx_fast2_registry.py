@@ -87,6 +87,7 @@ def problems(events: Sequence[Event], preregistration_sha256: str, grid_sha256: 
     if events[0].get("event") != "registry_created":
         found.append("the first event must be registry_created")
     calibrated = False
+    amended_since_calibration = False  # a second calibration is only for a documented correction
     approved: dict[str, set[str]] = {}  # stage -> configurations that passed it (once its report exists)
     registered: dict[str, str] = {}
     for position, event in enumerate(events, start=1):
@@ -104,8 +105,11 @@ def problems(events: Sequence[Event], preregistration_sha256: str, grid_sha256: 
                     found.append(f"{where}: {field} must be a SHA-256 hex digest")
             if kind == "amendment" and not _has_text(event.get("reason")):
                 found.append(f"{where}: an amendment needs a reason")
+            amended_since_calibration = True
         elif kind == "calibration_report":
-            calibrated = True
+            if calibrated and not amended_since_calibration:
+                found.append(f"{where}: a second calibration report without an amendment after the first")
+            calibrated, amended_since_calibration = True, False
         elif kind in ("discovery_report", "replication_report"):
             stage = "discovery" if kind == "discovery_report" else "replication"
             previous = None if stage == "discovery" else approved.get("discovery")

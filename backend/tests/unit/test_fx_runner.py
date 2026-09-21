@@ -10,7 +10,7 @@ from app.fx.runner import executor as ex
 from app.fx.runner.executor import Executor, ProtectionError
 from app.fx.runner.fake import FakeVenue
 from app.fx.runner.journal import Journal
-from app.fx.runner.reconcile import reconcile
+from app.fx.runner.reconcile import reconcile, record_exits
 from app.fx.runner.risk import RiskGuard, RiskLimits
 from app.fx.runner.venue import VenueUnavailable
 
@@ -265,6 +265,51 @@ async def test_a_trade_still_open_or_closed_without_a_known_result_is_not_a_clos
     await reconcile(bench.venue, bench.journal)  # the server stop fired while the bot was away: no result known
 
     assert closed_trades(bench.journal.events()) == []
+
+
+async def test_an_exit_the_broker_made_on_its_own_is_journaled_with_its_result(tmp_path) -> None:
+    from app.fx.runner.journal import closed_trades
+
+    bench = Bench(tmp_path)
+    position = await bench.buy()
+    assert await record_exits(bench.venue, bench.journal, bench.venue.exit_of) == []  # still open
+
+    bench.venue.set_quote("EURUSD", 1.10200, 1.10208)  # through the target while the bot is alive
+    recorded = await record_exits(bench.venue, bench.journal, bench.venue.exit_of)
+
+    (trade,) = closed_trades(bench.journal.events())
+    assert recorded == [position.id] and trade.exit_reason == "broker target"
+    assert trade.pnl == pytest.approx(bench.venue.balance - 500.0) and trade.r_multiple == pytest.approx(1.5)
+    assert await record_exits(bench.venue, bench.journal, bench.venue.exit_of) == []  # never recorded twice
+
+
+async def test_an_exit_the_broker_has_no_record_of_yet_is_asked_for_again_next_time(tmp_path) -> None:
+    bench = Bench(tmp_path)
+    position = await bench.buy()
+    bench.venue.set_quote("EURUSD", 1.09850, 1.09858)  # the stop fired
+
+    async def no_record_yet(position_id: str, symbol: str) -> None:
+        return None
+
+    assert await record_exits(bench.venue, bench.journal, no_record_yet) == []
+    assert bench.journal.open_position_ids() == {position.id}
+    assert await record_exits(bench.venue, bench.journal, bench.venue.exit_of) == [position.id]
+    assert bench.journal.open_position_ids() == set()
+
+
+async def test_reconcile_records_the_result_of_a_stop_that_fired_while_the_bot_was_down(tmp_path) -> None:
+    from app.fx.runner.journal import closed_trades
+
+    bench = Bench(tmp_path)
+    position = await bench.buy()
+    bench.venue.set_quote("EURUSD", 1.09850, 1.09858)
+
+    report = await reconcile(bench.venue, bench.journal, bench.venue.exit_of)
+
+    (trade,) = closed_trades(bench.journal.events())
+    assert report.closed_while_down == [position.id] and trade.exit_reason == "broker stop"
+    assert trade.r_multiple < 0
+    assert "closed_while_down" not in [e["event"] for e in bench.journal.events()]  # the result is known, so it is a close
 
 
 class RefusesAmend(FakeVenue):

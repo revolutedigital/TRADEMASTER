@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from app.fx import strategy as fx
 from app.fx.instruments import ConversionRates, Instrument, profit
-from app.fx.runner.venue import Account, OrderRejected, Position, Quote, VenueUnavailable
+from app.fx.runner.venue import Account, Exit, OrderRejected, Position, Quote, VenueUnavailable
 
 
 class FakeVenue:
@@ -14,6 +14,7 @@ class FakeVenue:
         self.quotes: dict[str, Quote] = {}
         self._positions: dict[str, Position] = {}
         self._by_client_id: dict[str, str] = {}
+        self._exits: dict[str, Exit] = {}
         self._counter = 0
         self.orders_sent = 0
         self.unavailable_calls = 0  # how many upcoming calls raise VenueUnavailable
@@ -26,27 +27,28 @@ class FakeVenue:
         for position in list(self._positions.values()):
             if position.symbol != symbol:
                 continue
-            exit_price = None
+            exit_price, reason = None, ""
             if position.side == fx.LONG:
                 if position.stop_price is not None and bid <= position.stop_price:
-                    exit_price = bid  # a gap through the stop fills at the gapped price
+                    exit_price, reason = bid, "stop"  # a gap through the stop fills at the gapped price
                 elif position.target_price is not None and bid >= position.target_price:
-                    exit_price = position.target_price
+                    exit_price, reason = position.target_price, "target"
             else:
                 if position.stop_price is not None and ask >= position.stop_price:
-                    exit_price = ask
+                    exit_price, reason = ask, "stop"
                 elif position.target_price is not None and ask <= position.target_price:
-                    exit_price = position.target_price
+                    exit_price, reason = position.target_price, "target"
             if exit_price is not None:
-                self._settle(position, exit_price)
+                self._settle(position, exit_price, reason)
 
-    def _settle(self, position: Position, exit_price: float) -> float:
+    def _settle(self, position: Position, exit_price: float, reason: str) -> float:
         result = profit(
             Instrument.from_symbol(position.symbol), side="LONG" if position.side == fx.LONG else "SHORT",
             units=position.units, entry_price=position.entry_price, exit_price=exit_price, rates=self.rates,
         )
         self.balance += result
         del self._positions[position.id]
+        self._exits[position.id] = Exit(result, exit_price, reason, self.quotes[position.symbol].time)
         return result
 
     def _gate(self) -> None:
@@ -110,4 +112,8 @@ class FakeVenue:
         self._gate()
         position = self._positions[position_id]
         quote = self.quotes[position.symbol]
-        return self._settle(position, quote.bid if position.side == fx.LONG else quote.ask)
+        return self._settle(position, quote.bid if position.side == fx.LONG else quote.ask, "market")
+
+    async def exit_of(self, position_id: str, symbol: str) -> Exit | None:
+        self._gate()
+        return self._exits.get(position_id)

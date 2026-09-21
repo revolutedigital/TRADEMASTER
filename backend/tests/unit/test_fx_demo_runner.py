@@ -104,6 +104,31 @@ async def test_the_loop_stops_on_the_stop_file_and_flattens(tmp_path) -> None:
     assert reason == "stop file"
 
 
+async def test_the_loop_journals_an_exit_the_broker_made_on_its_own(tmp_path) -> None:
+    from app.fx.runner.journal import closed_trades
+
+    venue = FakeVenue(1000.0, RATES)
+    venue.set_quote("EURUSD", 1.1000, 1.10002)
+    bot, _, guard, journal, executor = runner.build("C1", Transport([]), tmp_path)
+    executor.venue = venue
+    bot.venue = venue
+    position = await venue.market_order(symbol="EURUSD", side=fx.LONG, units=1000, stop_price=1.0997,
+                                        target_price=1.1003, client_order_id="x")
+    journal.append("order_filled", position_id=position.id, client_order_id="x", symbol="EURUSD", side=fx.LONG,
+                   units=1000, risk_at_stop=0.3, stop_price=1.0997, target_price=1.1003)
+    venue.set_quote("EURUSD", 1.1004, 1.10042)  # the target fills on the server
+    now = [1_715_000_000.0]
+
+    def clock() -> float:
+        now[0] += 20
+        return now[0]
+
+    await runner.loop(bot, venue, guard, executor, tmp_path / "none", clock=clock, iterations=2, sleep=lambda s: _noop())
+
+    (trade,) = closed_trades(journal.events())
+    assert trade.exit_reason == "broker target" and trade.pnl > 0
+
+
 async def test_the_loop_feeds_quotes_and_heartbeats_without_error(tmp_path) -> None:
     venue = FakeVenue(1000.0, RATES)
     venue.set_quote("EURUSD", 1.1000, 1.10002)

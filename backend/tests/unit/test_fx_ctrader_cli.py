@@ -2,6 +2,7 @@
 
 import json
 import sys
+from datetime import UTC, datetime
 
 import pytest
 
@@ -129,7 +130,14 @@ class ScriptedTransport:
             self.open.pop(identifier)
             return json.dumps({"positionId": identifier, "status": "closed"})
         if command.startswith("deals"):
-            return json.dumps({"deals": [{"positionId": 101, "netProfit": -0.12}]})
+            return json.dumps({"deals": [
+                {"positionId": 101, "dealType": "Market", "executionPrice": 1.1484, "netProfit": -0.12,
+                 "time": "2026-09-20T23:01:55.706Z"},
+                {"positionId": 205, "dealType": "Limit", "executionPrice": 1.14775, "netProfit": 0.24,
+                 "time": "2026-09-21T00:02:49.456Z"},
+                {"positionId": 206, "dealType": "Stop", "executionPrice": 1.14835, "netProfit": -0.36,
+                 "time": "2026-09-21T00:20:00.000Z"},
+            ]})
         raise AssertionError(command)
 
 
@@ -158,6 +166,17 @@ async def test_an_order_opens_a_position_that_the_venue_can_amend_and_close() ->
 
     assert await venue.close(position.id) == -0.12
     assert await venue.positions() == []
+
+
+async def test_the_closing_deal_says_how_a_position_ended_and_an_unknown_position_has_none() -> None:
+    venue = CliVenue(ScriptedTransport(), 10139135)
+
+    target = await venue.exit_of("205", "EURUSD")
+    assert (target.reason, target.result, target.price) == ("target", 0.24, 1.14775)
+    assert target.time == datetime(2026, 9, 21, 0, 2, 49, 456000, tzinfo=UTC).timestamp()
+    assert (await venue.exit_of("206", "EURUSD")).reason == "stop"
+    assert (await venue.exit_of("101", "EURUSD")).reason == "market"
+    assert await venue.exit_of("999", "EURUSD") is None
 
 
 async def test_a_retry_of_an_accepted_order_returns_the_same_position_and_a_lost_answer_is_recovered() -> None:

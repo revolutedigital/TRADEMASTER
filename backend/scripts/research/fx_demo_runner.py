@@ -32,7 +32,7 @@ from app.fx.runner.bot import Bot
 from app.fx.runner.ctrader_cli import CliVenue, PtySession, Transport, json_of
 from app.fx.runner.executor import Executor
 from app.fx.runner.journal import Journal, closed_trades
-from app.fx.runner.reconcile import reconcile
+from app.fx.runner.reconcile import reconcile, record_exits
 from app.fx.runner.risk import RiskGuard, RiskLimits
 from app.fx.runner.venue import OrderRejected, VenueUnavailable
 from scripts.research import fx_fast_lab as lab
@@ -45,6 +45,7 @@ DATA = Path("data/soak")
 LIMITS = RiskLimits(risk_fraction=0.00035, max_daily_loss_fraction=0.01, max_open_positions=1, max_spread_pips=1.5)
 POLL_SECONDS = 0.25
 MAX_FAILED_LOGINS = 3
+SYNC_SECONDS = 15.0  # how often the broker's own exits (stop, target) are read into the journal
 PERIODS = {60: "m1", 300: "m5", 900: "m15", 3600: "h1"}
 
 
@@ -104,8 +105,12 @@ def build(strategy: str, transport: Transport, data: Path = DATA):
 async def loop(bot: Bot, venue: CliVenue, guard: RiskGuard, executor: Executor, stop_file: Path,
                clock: Callable[[], float] = time.time, iterations: int | None = None,
                sleep: Callable[[float], object] = asyncio.sleep) -> str:
-    """Poll quotes and feed the bot until stopped; returns why it stopped."""
-    count, last_equity = 0, 0.0
+    """Poll quotes and feed the bot until stopped; returns why it stopped.
+
+    A stop or target fills on the broker's server without the bot sending anything, so every few seconds the
+    loop reads such exits (with their result) into the journal: that is what the performance report counts.
+    """
+    count, last_equity, last_sync = 0, 0.0, 0.0
     while iterations is None or count < iterations:
         count += 1
         now = clock()
@@ -121,6 +126,10 @@ async def loop(bot: Bot, venue: CliVenue, guard: RiskGuard, executor: Executor, 
         if now - last_equity > 30:
             guard.observe(now, (await venue.account()).equity)
             last_equity = now
+        if now - last_sync > SYNC_SECONDS:
+            for position_id in await record_exits(venue, executor.journal, venue.exit_of):
+                sys.stdout.write(f"{datetime.now(UTC):%H:%M:%S}Z position {position_id} was closed by the broker\n")
+            last_sync = now
         await sleep(POLL_SECONDS)
     return "iterations done"
 
@@ -143,7 +152,7 @@ async def run(strategy: str) -> int:
             failed_logins = 0
             bot, venue, guard, journal, executor = build(strategy, session)
             await asyncio.to_thread(warm_up, bot, session, time.time())
-            report = await reconcile(venue, journal)
+            report = await reconcile(venue, journal, venue.exit_of)
             sys.stdout.write(f"{datetime.now(UTC):%H:%M:%S}Z running {strategy}; reconcile {report}\n")
             reason = await loop(bot, venue, guard, executor, STOP_FILE)
             sys.stdout.write(f"stopping: {reason}\n")

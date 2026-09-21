@@ -40,6 +40,16 @@ class Position:
 
 
 @dataclass(frozen=True)
+class Exit:
+    """How a position that is no longer open ended, as the broker recorded it."""
+
+    result: float  # realised, in the account currency, commission and swap included
+    price: float
+    reason: str  # "target", "stop" or "market"
+    time: float  # epoch seconds
+
+
+@dataclass(frozen=True)
 class Account:
     balance: float
     equity: float

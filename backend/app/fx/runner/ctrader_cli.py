@@ -21,14 +21,16 @@ import signal
 import threading
 import time
 from collections.abc import Callable, Sequence
+from datetime import datetime
 from typing import Protocol
 
 from app.fx import strategy as fx
-from app.fx.runner.venue import Account, OrderRejected, Position, Quote, VenueUnavailable
+from app.fx.runner.venue import Account, Exit, OrderRejected, Position, Quote, VenueUnavailable
 
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 PROMPT = re.compile(r">\s*$")
 PASSWORD_PROMPT = re.compile(r"Password:\s*$")
+RECENT_DEALS = 30  # how many of the latest deals are searched for the one that closed a position
 
 
 class Transport(Protocol):
@@ -113,6 +115,7 @@ class CliVenue:
         self._transport, self._account_id, self._clock = transport, account_id, clock
         self._client_ids: dict[str, str] = {}  # position id -> client order id
         self._sent: dict[str, str] = {}  # client order id -> position id
+        self._symbols: dict[str, str] = {}  # position id -> symbol
 
     async def _ask(self, command: str, timeout: float = 30.0) -> str:
         return await asyncio.to_thread(self._transport.send, command, timeout)
@@ -123,6 +126,7 @@ class CliVenue:
 
     def _position(self, raw: dict) -> Position:
         identifier = str(raw["id"])
+        self._symbols[identifier] = raw["symbolName"]
         return Position(
             id=identifier, symbol=raw["symbolName"], side=fx.LONG if raw["tradeSide"] == "Buy" else fx.SHORT,
             units=int(raw["volume"]), entry_price=float(raw["entryPrice"]),
@@ -174,6 +178,17 @@ class CliVenue:
 
     async def close(self, position_id: str) -> float:
         json_of(await self._ask(f"position close {position_id} yes", 60.0))
-        deals = json_of(await self._ask("deals EURUSD 5")).get("deals", [])
-        matching = [d for d in deals if str(d.get("positionId")) == position_id]
-        return float(matching[-1]["netProfit"]) if matching else 0.0
+        closed = await self.exit_of(position_id, self._symbols[position_id])
+        return closed.result if closed else 0.0
+
+    async def exit_of(self, position_id: str, symbol: str) -> Exit | None:
+        """The deal that closed a position, from the broker's deal history (newest last)."""
+        deals = json_of(await self._ask(f"deals {symbol} {RECENT_DEALS}")).get("deals", [])
+        closing = [d for d in deals if str(d.get("positionId")) == position_id]
+        if not closing:
+            return None
+        deal = closing[-1]
+        kind = str(deal.get("dealType", "")).lower()  # a take profit fills as a "Limit" deal
+        reason = "target" if kind == "limit" else "stop" if "stop" in kind else "market"
+        closed_at = datetime.fromisoformat(deal["time"].replace("Z", "+00:00")).timestamp()
+        return Exit(float(deal["netProfit"]), float(deal["executionPrice"]), reason, closed_at)

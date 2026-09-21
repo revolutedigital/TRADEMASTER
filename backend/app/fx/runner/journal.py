@@ -52,7 +52,8 @@ def closed_trades(events: list[dict]) -> list[ClosedTrade]:
             entry = opened.pop(event["position_id"])
             risk = entry.get("risk_at_stop")
             trades.append(ClosedTrade(
-                symbol=entry["symbol"], side=entry["side"], entry_time=entry["at"], exit_time=event["at"],
+                symbol=entry["symbol"], side=entry["side"], entry_time=entry["at"],
+                exit_time=event.get("exit_time", event["at"]),  # the broker's clock when it made the exit itself
                 pnl=event["result"], r_multiple=event["result"] / risk if risk else None,
                 exit_reason=event.get("reason", ""),
             ))

@@ -92,7 +92,9 @@ def load_pair_frame(
     if not labels.index.isin(features.index).all():
         raise ValueError(f"labels do not align with features for {pair}")
     names = model_feature_names(features)
-    combined = features.loc[labels.index, names].join(labels, how="inner", validate="one_to_one")
+    combined = features.loc[labels.index, ["decision_index", *names]].join(
+        labels, how="inner", validate="one_to_one"
+    )
     if len(combined) != len(labels):
         raise ValueError(f"feature/label join lost rows for {pair}")
     return combined, names

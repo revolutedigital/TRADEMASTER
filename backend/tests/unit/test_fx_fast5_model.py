@@ -3,14 +3,44 @@
 import numpy as np
 import pandas as pd
 import pytest
+from pathlib import Path
 
 from scripts.research.fx_fast5_model import (
     PlattCalibrator,
     TimeWindow,
     fit_platt,
+    load_pair_frame,
     model_matrix,
     period_mask,
 )
+
+
+def test_pair_loader_preserves_decision_index_as_metadata(tmp_path: Path) -> None:
+    panel = tmp_path / "features"
+    labels = tmp_path / "labels"
+    panel.mkdir()
+    labels.mkdir()
+    timestamp = pd.Timestamp("2019-01-02T00:00:00Z")
+    pd.DataFrame(
+        {"decision_index": [42], "spread_pips": [1.0]},
+        index=pd.DatetimeIndex([timestamp]),
+    ).to_parquet(panel / "EURUSD-features.parquet")
+    for year in (2019, 2020, 2021):
+        year_timestamp = timestamp if year == 2019 else pd.Timestamp(f"{year}-01-02T00:00:00Z")
+        if year != 2019:
+            existing = pd.read_parquet(panel / "EURUSD-features.parquet")
+            extra = pd.DataFrame(
+                {"decision_index": [42 + year], "spread_pips": [1.0]},
+                index=pd.DatetimeIndex([year_timestamp]),
+            )
+            pd.concat([existing, extra]).to_parquet(panel / "EURUSD-features.parquet")
+        pd.DataFrame(
+            {"entry_index": [43], "risk_pips": [2.0]},
+            index=pd.DatetimeIndex([year_timestamp]),
+        ).to_parquet(labels / f"EURUSD-{year}-entry-labels.parquet")
+    frame, names = load_pair_frame(panel, labels, "EURUSD")
+    assert "decision_index" in frame
+    assert "decision_index" not in names
 
 
 def test_period_mask_applies_both_sides_of_embargo() -> None:

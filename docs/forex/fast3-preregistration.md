@@ -171,3 +171,13 @@ LIVE continua exigindo autorização explícita separada do Igor.
   E[R] líquido continua com a grade pré-fixada; probabilidade continua calibrada, reportada e sujeita
   ao limite de erro, mas não veta uma entrada cujo E[R] conservador seja positivo. A emenda altera a
   metodologia a partir deste ponto e todo resultado anterior permanece identificado como diagnóstico.
+- **2026-09-21, após os diagnósticos de saída terminal falharem e antes de calcular a nova família:**
+  adicionada a família de saída protetiva fixa `BARRIER`, com stop de 1R, alvo de {0,5R; 1R; 2R}
+  e timeout em {15; 60; 180; 360} minutos. São 12 templates adicionais, todos contados como
+  tentativas no PBO/DSR. Stop vence empate intrabar; alvo usa ordem-limite sem slippage de saída;
+  stop paga o slippage do cenário; timeout usa o fechamento executável já definido. O modelo aprende
+  separadamente o retorno realizado base e estresse e o score de entrada é o menor dos dois EVs.
+  Motivo: os quatro diagnósticos de saída puramente terminal não produziram política elegível; em H360
+  o aparente quase-sinal base desapareceu quando o score passou a aprender o custo-estresse. A mudança
+  testa uma hipótese de saída diferente, declarada antes de seus resultados. Não adiciona trailing,
+  não altera D3/S2 e não transforma os diagnósticos anteriores em confirmação.

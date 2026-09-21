@@ -1,1 +1,2 @@
 {"date":"2026-09-21","event":"registry_created","preregistration_sha256":"49f8557ca1528f4e966344176d3fa73fb02a4721362a5a9d99ee7747f8342347"}
+{"artifact_sha256": "d45b6f6631c39c81c6cee4cff0c0f11347293b057a2daa8216e0a1f401d0e64b", "code_commit": "46051a0f26592bb24756cad1035b7e127b9fe2b9", "date": "2026-09-21", "event": "factory_validated", "tests": "5 synthetic first-touch and trailing-path tests passed"}

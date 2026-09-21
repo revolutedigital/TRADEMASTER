@@ -30,7 +30,7 @@ CALIBRATION_END = pd.Timestamp("2021-07-01", tz="UTC")
 SELECTION_END = pd.Timestamp("2022-01-01", tz="UTC")
 TEST_END = pd.Timestamp("2023-01-01", tz="UTC")
 EV_THRESHOLDS = (0.03, 0.05, 0.08, 0.12, 0.18)
-PROBABILITY_THRESHOLDS = (0.52, 0.55, 0.58, 0.62)
+PROBABILITY_THRESHOLDS = (0.0,)
 EXCLUDED_FEATURES = frozenset({"atr_price", "history_contiguous"})
 
 

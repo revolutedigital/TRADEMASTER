@@ -104,9 +104,11 @@ regression quando houver ao menos 1.000 exemplos por classe; abaixo disso, Platt
 ## Política de entrada
 
 Em cada instante, cada modelo produz E[R], P(R>0), probabilidades de barreira e uma faixa de
-incerteza. Os thresholds permitidos de E[R] são {0,03; 0,05; 0,08; 0,12; 0,18}; de P(R>0),
-{0,52; 0,55; 0,58; 0,62}; e de quantil mínimo de confiança, {0,00; 0,02; 0,05}. A combinação é
-escolhida só nos folds internos. Se compra e venda passarem, vence o maior E[R] conservador.
+incerteza. Os thresholds permitidos de E[R] são {0,03; 0,05; 0,08; 0,12; 0,18}; e de quantil mínimo
+de confiança, {0,00; 0,02; 0,05}. A combinação é escolhida só nos folds internos. P(R>0) é exibida,
+calibrada e auditada, mas não é um veto: uma distribuição com menos de 50% de acerto pode ter EV
+positivo quando o ganho condicional é maior que a perda. Se compra e venda passarem, vence o maior
+E[R] conservador.
 
 Há no máximo uma posição por par. Ela fica aberta até o horizonte fixo; novos sinais do par são
 ignorados. Essa política evita contar eventos sobrepostos como trades independentes. Os controles
@@ -159,3 +161,13 @@ LIVE continua exigindo autorização explícita separada do Igor.
 5. Abrir D3 uma vez. Só se aprovada, registrar o relatório.
 6. Abrir S2 uma vez. Só depois discutir canário Demo. Nunca ativar LIVE nesta rodada.
 
+## Emendas
+
+- **2026-09-21, durante desenvolvimento, antes de travar modelo e sem abrir D3 ou S2:** removido o
+  threshold absoluto de P(R>0) da política de entrada. Os quatro diagnósticos preliminares usaram
+  os cortes originais {0,52; 0,55; 0,58; 0,62}; nenhum atingiu 300 trades no semestre de seleção e,
+  por isso, 2022 não foi aberto em nenhum deles. A distribuição prevista revelou o erro conceitual:
+  P(R>0) mede frequência, não valor esperado, e elimina legitimamente trades de payoff assimétrico.
+  E[R] líquido continua com a grade pré-fixada; probabilidade continua calibrada, reportada e sujeita
+  ao limite de erro, mas não veta uma entrada cujo E[R] conservador seja positivo. A emenda altera a
+  metodologia a partir deste ponto e todo resultado anterior permanece identificado como diagnóstico.

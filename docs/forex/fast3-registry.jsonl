@@ -4,3 +4,4 @@
 {"code_commit": "fbc0857", "date": "2026-09-21", "event": "development_run"}
 {"code_commit": "ce9218b", "date": "2026-09-21", "event": "development_run"}
 {"code_commit": "28ab926", "date": "2026-09-21", "event": "development_run"}
+{"date": "2026-09-21", "event": "amendment", "preregistration_sha256": "3521ba93c9e483190e693a9863003d23ab067423d7d853a0f161e07688030b71", "reason": "P(R>0) is win frequency, not expected value; after four preliminary diagnostics selected no policy and left 2022 unopened, keep calibrated probabilities for audit but gate entries on cost-adjusted E[R]"}

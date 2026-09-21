@@ -270,6 +270,28 @@ def train_pair(
     return report
 
 
+def verified_existing_report(pair: str, output: Path) -> dict[str, object] | None:
+    report_path = output / f"{pair}-model-report.json"
+    prediction_path = output / f"{pair}-q2-probabilities.parquet"
+    if not report_path.exists() or not prediction_path.exists():
+        return None
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    if report.get("pair") != pair or report.get("predictions_sha256") != _sha256(prediction_path):
+        return None
+    models = report.get("models")
+    if not isinstance(models, list) or len(models) != 4:
+        return None
+    for item in models:
+        if not isinstance(item, dict):
+            return None
+        artifact = f"{pair}-{item.get('side')}-{item.get('scenario')}.json"
+        model_path = output / artifact
+        if not model_path.exists() or item.get("model_sha256") != _sha256(model_path):
+            return None
+    report["report_sha256"] = _sha256(report_path)
+    return report
+
+
 def train_all(
     pairs: tuple[str, ...],
     feature_panel: Path = DEFAULT_FEATURE_PANEL,
@@ -280,10 +302,16 @@ def train_all(
         raise ValueError("unknown pair")
     reports = []
     for pair in pairs:
-        report = train_pair(pair, feature_panel, label_root, output)
+        report = verified_existing_report(pair, output)
+        if report is None:
+            report = train_pair(pair, feature_panel, label_root, output)
+            status = "trained"
+        else:
+            status = "verified existing"
         reports.append(report)
         sys.stdout.write(
-            f"{pair}: q2={report['selection_rows']:,}, candidates={report['threshold_counts']}\n"
+            f"{pair}: {status}, q2={report['selection_rows']:,}, "
+            f"candidates={report['threshold_counts']}\n"
         )
         sys.stdout.flush()
     manifest = {

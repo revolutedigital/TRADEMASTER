@@ -1,2 +1,3 @@
 {"date": "2026-09-21", "event": "registry_created", "preregistration_sha256": "17e9c4736caa80ec75e47c41502f2da9f6e208b4f3f2997875edd841c48fc465"}
 {"artifact_sha256": "7f28572267d743c5fd229df35a3cdbe58d2608e307972874eb84b44de603806c", "code_commit": "d0f0d6c276f515668fd2934b3d38790871cb6158", "date": "2026-09-21", "event": "factory_validated"}
+{"code_commit": "46e8061", "date": "2026-09-21", "event": "development_run", "features_sha256": "661fbe803c871654e8b0697df5e5c6730a5b2e68c9812439561ed382f4a32223", "outcomes_sha256": "389099cf7fab1447c9524c7865699a719f0dcb9af93cb56bcb2ee37441df740b", "run_id": "smoke-eurusd-2021-01", "scope": "structural smoke only; no performance statistic or model selection"}

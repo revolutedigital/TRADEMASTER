@@ -43,6 +43,16 @@ def weekly_open_ok(frame: pd.DataFrame) -> bool:
     if sunday.empty:
         return True
     first = pd.Series(sunday, index=sunday).groupby(sunday.date).min()
+    month_start = pd.Timestamp(year=frame.index[0].year, month=frame.index[0].month, day=1, tz="UTC")
+    # A UTC month can begin on Sunday evening in New York, after that week's real 17:00 open. That
+    # first partial Sunday belongs to the preceding UTC month and cannot be used to judge the clock.
+    complete_sundays = [
+        (pd.Timestamp(day).tz_localize("America/New_York") + OPEN_EARLIEST).tz_convert("UTC") >= month_start
+        for day in first.index
+    ]
+    first = first[complete_sundays]
+    if first.empty:
+        return True
     offsets = first.map(lambda stamp: pd.Timedelta(hours=stamp.hour, minutes=stamp.minute, seconds=stamp.second))
     return bool(((offsets >= OPEN_EARLIEST) & (offsets <= OPEN_LATEST)).all())
 

@@ -24,3 +24,15 @@ def test_a_frame_without_a_sunday_says_nothing() -> None:
     frame = pd.DataFrame({"bid_open": 1.1}, index=pd.date_range("2017-07-11 10:00", periods=60, freq="min", tz="UTC"))
 
     assert manifest.weekly_open_ok(frame)
+
+
+def test_a_partial_sunday_at_the_utc_month_boundary_is_not_mistaken_for_the_weekly_open() -> None:
+    # August 2011 starts at 00:00 UTC on a Monday, which is still Sunday 20:00 in New York. The real
+    # 17:00 open belongs to July in UTC and is outside this monthly slice, so the partial Sunday says
+    # nothing about the feed's clock.
+    frame = pd.DataFrame(
+        {"bid_open": 1.1},
+        index=pd.date_range("2011-08-01 00:00", periods=60, freq="min", tz="UTC"),
+    )
+
+    assert manifest.weekly_open_ok(frame)

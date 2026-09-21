@@ -30,6 +30,7 @@ from app.fx.runner.venue import Account, Exit, OrderRejected, Position, Quote, V
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 PROMPT = re.compile(r">\s*$")
 PASSWORD_PROMPT = re.compile(r"Password:\s*$")
+TERMINATE_GRACE_SECONDS = 3.0
 RECENT_DEALS = 30  # how many of the latest deals are searched for the one that closed a position
 
 
@@ -94,9 +95,19 @@ class PtySession:
             pass
         try:
             os.kill(self._pid, signal.SIGTERM)
-            os.waitpid(self._pid, 0)
+            if not self._reaped_within(TERMINATE_GRACE_SECONDS):
+                os.kill(self._pid, signal.SIGKILL)  # the docker client catches SIGTERM and may never die of it
+                os.waitpid(self._pid, 0)
         except (OSError, ChildProcessError):
             pass
+
+    def _reaped_within(self, seconds: float) -> bool:
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if os.waitpid(self._pid, os.WNOHANG) != (0, 0):
+                return True
+            time.sleep(0.1)
+        return False
 
 
 def json_of(text: str) -> dict:

@@ -2,6 +2,7 @@
 
 import json
 import sys
+import time
 from datetime import UTC, datetime
 
 import pytest
@@ -77,6 +78,28 @@ def test_the_password_is_typed_at_the_prompt_and_never_given_in_the_arguments(mo
     finally:
         logged_in.close()
     assert not any("s3cret#" in part for part in argv)
+
+
+STUBBORN_CLI = r"""
+import signal, sys, time
+signal.signal(signal.SIGTERM, signal.SIG_IGN)  # like the docker client, which catches SIGTERM
+sys.stdout.write("> "); sys.stdout.flush()
+while True:
+    time.sleep(1)
+"""
+
+
+def test_closing_a_session_that_ignores_sigterm_does_not_hang(monkeypatch) -> None:
+    monkeypatch.setattr("app.fx.runner.ctrader_cli.TERMINATE_GRACE_SECONDS", 0.3)
+    stubborn = PtySession([sys.executable, "-c", STUBBORN_CLI], login_timeout=10)
+    stubborn.start()
+    started = time.monotonic()
+
+    stubborn.close()
+
+    assert time.monotonic() - started < 5
+    with pytest.raises(VenueUnavailable):
+        stubborn.send("price EURUSD", timeout=1)
 
 
 def test_a_rejected_password_fails_the_start_instead_of_hanging(monkeypatch) -> None:

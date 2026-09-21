@@ -1,87 +1,254 @@
-"""Evaluate and freeze top-ranked Q2 runner policies for round 6."""
+"""Evaluate and freeze the causal global Top-P runner policy in 2021-Q2."""
 
 from __future__ import annotations
 
 import argparse
 import gc
 import json
-import math
 import sys
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from app.fx.instruments import ConversionRates
 from scripts.research.fx_dataset import ALL_PAIRS
-from scripts.research.fx_fast4_materialize import _median_rates
+from scripts.research.fx_fast4_diagnostic import _fx_day, stationary_bootstrap_lower_bound
+from scripts.research.fx_fast4_materialize import _median_rates, _sha256
 from scripts.research.fx_fast5_events import TRAILING_DISTANCES_R
-from scripts.research.fx_fast5_model import DEFAULT_OUTPUT as MODEL_ROOT
 from scripts.research.fx_fast5_policy import (
     _add_outcomes,
     _costs,
+    _profit_factor,
     _rebuild_ticks_and_validate,
-    enforce_common_non_overlap,
-    policy_metrics,
-    select_candidate_side,
-    selection_gate,
 )
+from scripts.research.fx_fast6_model import DEFAULT_OUTPUT as MODEL_ROOT
+from scripts.research.fx_fast6_model import TOP_FRACTIONS, strongest_direction
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_OUTPUT = REPO_ROOT / "backend" / "data" / "lab_fast6" / "policies"
-TOP_FRACTIONS = (0.0025, 0.005, 0.01, 0.02, 0.05, 0.10)
+Q2_START = pd.Timestamp("2021-04-01T06:00:00Z")
+Q2_END = pd.Timestamp("2021-06-30T18:00:00Z")
+REFERENCE_DAYS = 60
+MAX_PORTFOLIO_POSITIONS = 3
+Q2_MONTHS = (
+    pd.Period("2021-04", freq="M"),
+    pd.Period("2021-05", freq="M"),
+    pd.Period("2021-06", freq="M"),
+)
 
 
-def top_ranked_candidates(candidates: pd.DataFrame, fraction: float) -> pd.DataFrame:
-    if not 0 < fraction <= 1:
-        raise ValueError("fraction must be in (0, 1]")
+@dataclass(frozen=True)
+class GlobalPolicyMetrics:
+    trades: int
+    mean_base_r: float
+    mean_stress_r: float
+    lower_95_base_r: float
+    stress_profit_factor: float
+    positive_month_fraction: float
+    participating_pairs: int
+    maximum_pair_profit_fraction: float
+
+
+def with_fx_day(frame: pd.DataFrame) -> pd.DataFrame:
+    enriched = frame.copy()
+    enriched["fx_day"] = _fx_day(enriched.index)
+    return enriched
+
+
+def causal_daily_cutoffs(
+    reference: pd.DataFrame,
+    fraction: float,
+    absolute_floor: float,
+    *,
+    start: pd.Timestamp = Q2_START,
+    end: pd.Timestamp = Q2_END,
+) -> dict[pd.Timestamp, float]:
+    if not 0 < fraction < 1:
+        raise ValueError("fraction must be between zero and one")
+    prepared = with_fx_day(reference)
+    days = pd.date_range(
+        _fx_day(pd.DatetimeIndex([start]))[0],
+        _fx_day(pd.DatetimeIndex([end]))[0],
+        freq="D",
+    )
+    cutoffs: dict[pd.Timestamp, float] = {}
+    for day in days:
+        prior_start = day - pd.Timedelta(days=REFERENCE_DAYS)
+        prior = prepared.loc[
+            (prepared["fx_day"] >= prior_start) & (prepared["fx_day"] < day),
+            "trusted_score",
+        ]
+        if prior.empty:
+            cutoffs[day] = float("inf")
+        else:
+            cutoffs[day] = max(float(prior.quantile(1 - fraction)), absolute_floor)
+    return cutoffs
+
+
+def qualifying_candidates(
+    reference: pd.DataFrame,
+    cutoffs: dict[pd.Timestamp, float],
+    *,
+    start: pd.Timestamp = Q2_START,
+    end: pd.Timestamp = Q2_END,
+) -> pd.DataFrame:
+    q2 = with_fx_day(reference.loc[(reference.index >= start) & (reference.index < end)])
+    threshold = q2["fx_day"].map(cutoffs)
+    eligible = threshold.notna() & (q2["trusted_score"] >= threshold)
+    return q2.loc[eligible].drop(columns="fx_day")
+
+
+def _candidate_index(frame: pd.DataFrame) -> pd.MultiIndex:
+    return pd.MultiIndex.from_arrays(
+        [frame.index, frame["pair"].to_numpy()], names=("decision_time", "pair")
+    )
+
+
+def simulate_candidate_pool(
+    predictions: pd.DataFrame,
+    pool: pd.DataFrame,
+    rates: ConversionRates,
+) -> dict[float, pd.DataFrame]:
+    by_trail: dict[float, list[pd.DataFrame]] = {trail: [] for trail in TRAILING_DISTANCES_R}
+    for pair in ALL_PAIRS:
+        pair_pool = pool.loc[pool["pair"] == pair]
+        if pair_pool.empty:
+            continue
+        pair_predictions = predictions.loc[predictions["pair"] == pair]
+        cleaned, instrument = _rebuild_ticks_and_validate(pair, pair_predictions)
+        costs = _costs(pair, cleaned, rates)
+        for trail in TRAILING_DISTANCES_R:
+            outcomes = _add_outcomes(pair_pool, cleaned, instrument, costs, trail)
+            outcomes.index = _candidate_index(outcomes)
+            by_trail[trail].append(outcomes)
+        del cleaned
+        gc.collect()
+    return {
+        trail: pd.concat(parts).sort_index(kind="stable") if parts else pd.DataFrame()
+        for trail, parts in by_trail.items()
+    }
+
+
+def enforce_global_portfolio(
+    candidates: pd.DataFrame, *, max_positions: int = MAX_PORTFOLIO_POSITIONS
+) -> pd.DataFrame:
+    if max_positions < 1:
+        raise ValueError("max_positions must be positive")
     if candidates.empty:
         return candidates.copy()
-    count = math.ceil(fraction * len(candidates))
-    ranked = candidates.assign(decision_time=candidates.index).sort_values(
-        ["score", "probability_base", "decision_time"],
-        ascending=[False, False, True],
-        kind="stable",
+    required = {
+        "base_r",
+        "stress_r",
+        "holding_seconds_base",
+        "holding_seconds_stress",
+        "trusted_score",
+    }
+    missing = required - set(candidates.columns)
+    if missing:
+        raise ValueError(f"outcome columns missing: {sorted(missing)}")
+    valid = candidates[list(required)].notna().all(axis=1)
+    ordered = (
+        candidates.loc[valid]
+        .reset_index()
+        .sort_values(["decision_time", "trusted_score"], ascending=[True, False], kind="stable")
     )
-    return ranked.iloc[:count].drop(columns="decision_time").sort_index(kind="stable")
+    keep = np.zeros(len(ordered), dtype=bool)
+    open_positions: list[tuple[pd.Timestamp, str]] = []
+    for position, row in ordered.iterrows():
+        timestamp = row["decision_time"]
+        open_positions = [item for item in open_positions if item[0] > timestamp]
+        if len(open_positions) >= max_positions:
+            continue
+        pair = str(row["pair"])
+        if any(open_pair == pair for _, open_pair in open_positions):
+            continue
+        keep[position] = True
+        holding = max(row["holding_seconds_base"], row["holding_seconds_stress"])
+        open_positions.append((timestamp + pd.Timedelta(seconds=float(holding)), pair))
+    selected = ordered.loc[keep].set_index(["decision_time", "pair"])
+    return selected.sort_index(kind="stable")
 
 
-def evaluate_pair(
-    pair: str, model_root: Path, output: Path, rates: ConversionRates
+def global_policy_metrics(trades: pd.DataFrame) -> GlobalPolicyMetrics:
+    if trades.empty:
+        return GlobalPolicyMetrics(0, *(float("nan"),) * 5, 0, float("nan"))
+    flat = trades.reset_index().set_index("decision_time")
+    months = flat.index.tz_localize(None).to_period("M")
+    monthly = flat.assign(month=months).groupby("month")["stress_r"].mean()
+    positive_months = sum(float(monthly.get(month, float("nan"))) > 0 for month in Q2_MONTHS)
+    pair_profit = flat.groupby("pair")["base_r"].sum().clip(lower=0)
+    positive_profit = float(pair_profit.sum())
+    concentration = (
+        float(pair_profit.max() / positive_profit) if positive_profit > 0 else float("inf")
+    )
+    return GlobalPolicyMetrics(
+        trades=len(flat),
+        mean_base_r=float(flat["base_r"].mean()),
+        mean_stress_r=float(flat["stress_r"].mean()),
+        lower_95_base_r=stationary_bootstrap_lower_bound(flat),
+        stress_profit_factor=_profit_factor(flat["stress_r"]),
+        positive_month_fraction=positive_months / len(Q2_MONTHS),
+        participating_pairs=int(flat["pair"].nunique()),
+        maximum_pair_profit_fraction=concentration,
+    )
+
+
+def selection_gate(metrics: GlobalPolicyMetrics) -> bool:
+    return (
+        metrics.trades >= 100
+        and metrics.mean_base_r > 0
+        and metrics.mean_stress_r > 0
+        and metrics.positive_month_fraction >= 2 / 3
+        and metrics.stress_profit_factor > 1.05
+        and metrics.participating_pairs >= 4
+        and metrics.maximum_pair_profit_fraction <= 0.35
+    )
+
+
+def evaluate(
+    model_root: Path = MODEL_ROOT,
+    output: Path = DEFAULT_OUTPUT,
 ) -> dict[str, object]:
-    predictions = pd.read_parquet(model_root / f"{pair}-q2-probabilities.parquet")
-    directional = select_candidate_side(predictions, float("-inf"))
-    pool = top_ranked_candidates(directional, max(TOP_FRACTIONS))
-    cleaned, instrument = _rebuild_ticks_and_validate(pair, predictions)
-    costs = _costs(pair, cleaned, rates)
-    attempts: list[dict[str, object]] = []
+    manifest = json.loads((model_root / "manifest.json").read_text(encoding="utf-8"))
+    predictions = pd.read_parquet(model_root / "reference-probabilities.parquet")
+    strongest = strongest_direction(predictions)
+    floors = manifest["absolute_floors"]
+    cutoffs = {
+        fraction: causal_daily_cutoffs(strongest, fraction, float(floors[str(fraction)]))
+        for fraction in TOP_FRACTIONS
+    }
+    qualifying = {
+        fraction: qualifying_candidates(strongest, cutoffs[fraction]) for fraction in TOP_FRACTIONS
+    }
+    pool = qualifying[max(TOP_FRACTIONS)]
+    outcomes = simulate_candidate_pool(predictions, pool, _median_rates())
     output.mkdir(parents=True, exist_ok=True)
+    attempts: list[dict[str, object]] = []
     for trail in TRAILING_DISTANCES_R:
-        outcomes = _add_outcomes(pool, cleaned, instrument, costs, trail)
+        trail_outcomes = outcomes[trail]
         for fraction in TOP_FRACTIONS:
-            ranked = top_ranked_candidates(directional, fraction)
-            eligible = outcomes.loc[ranked.index]
-            trades = enforce_common_non_overlap(eligible)
-            metrics = policy_metrics(trades)
+            candidate_index = _candidate_index(qualifying[fraction])
+            eligible = trail_outcomes.loc[trail_outcomes.index.isin(candidate_index)]
+            trades = enforce_global_portfolio(eligible)
+            metrics = global_policy_metrics(trades)
             fraction_label = str(fraction * 100).replace(".", "p")
             trail_label = str(trail).replace(".", "p")
-            attempt_id = f"{pair}-top{fraction_label}-t{trail_label}"
-            trades.to_parquet(
-                output / f"{attempt_id}-trades.parquet", compression="zstd", index=True
-            )
+            attempt_id = f"global-top{fraction_label}-t{trail_label}"
+            trade_path = output / f"{attempt_id}-trades.parquet"
+            trades.to_parquet(trade_path, compression="zstd", index=True)
             attempts.append(
                 {
                     "attempt": attempt_id,
                     "top_fraction": fraction,
-                    "authorized_events": len(ranked),
-                    "score_cutoff": float(ranked["score"].min()),
                     "trail_distance_r": trail,
+                    "qualified_events": len(qualifying[fraction]),
                     **asdict(metrics),
                     "selection_gate": selection_gate(metrics),
+                    "trades_sha256": _sha256(trade_path),
                 }
             )
-    del cleaned
-    gc.collect()
     passed = [attempt for attempt in attempts if attempt["selection_gate"]]
     selected = max(
         passed,
@@ -93,62 +260,31 @@ def evaluate_pair(
         default=None,
     )
     report = {
-        "pair": pair,
-        "directional_events": len(directional),
-        "simulated_top_10_percent": len(pool),
+        "kind": "round6_q2_causal_global_top_p",
+        "protected_samples_opened": False,
+        "year_2022_opened": False,
+        "attempt_count": len(attempts),
+        "maximum_positions": MAX_PORTFOLIO_POSITIONS,
+        "absolute_floors": floors,
         "attempts": attempts,
         "selected_policy": selected,
-        "status": "policy_frozen" if selected else "do_not_trade",
+        "status": "policy_frozen" if selected else "no_global_policy",
     }
-    (output / f"{pair}-q2-ranked-grid.json").write_text(
-        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    report_path = output / "frozen-policy.json"
+    report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    sys.stdout.write(
+        f"round6: {len(attempts)} attempts, "
+        f"{report['status']}, pool={len(pool):,}, sha256={_sha256(report_path)}\n"
     )
     return report
 
 
-def evaluate_all(
-    pairs: tuple[str, ...],
-    model_root: Path = MODEL_ROOT,
-    output: Path = DEFAULT_OUTPUT,
-) -> dict[str, object]:
-    if set(pairs) - set(ALL_PAIRS):
-        raise ValueError("unknown pair")
-    rates = _median_rates()
-    reports = []
-    for pair in pairs:
-        report = evaluate_pair(pair, model_root, output, rates)
-        reports.append(report)
-        selected = report["selected_policy"]
-        summary = (
-            f"top={selected['top_fraction']}, trail={selected['trail_distance_r']}, "
-            f"stress={selected['mean_stress_r']:.4f}R"
-            if selected
-            else "do_not_trade"
-        )
-        sys.stdout.write(f"{pair}: {summary}\n")
-        sys.stdout.flush()
-    manifest = {
-        "kind": "round6_q2_ranked_frozen_policies",
-        "protected_samples_opened": False,
-        "year_2022_opened": False,
-        "attempt_count": len(pairs) * len(TOP_FRACTIONS) * len(TRAILING_DISTANCES_R),
-        "pairs": reports,
-    }
-    output.mkdir(parents=True, exist_ok=True)
-    (output / "frozen-policies.json").write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-    return manifest
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--pairs", default=",".join(ALL_PAIRS))
     parser.add_argument("--model-root", type=Path, default=MODEL_ROOT)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     arguments = parser.parse_args(argv)
-    pairs = tuple(value.strip().upper() for value in arguments.pairs.split(",") if value.strip())
-    evaluate_all(pairs, arguments.model_root, arguments.output)
+    evaluate(arguments.model_root, arguments.output)
     return 0
 
 

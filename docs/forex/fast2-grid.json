@@ -1,0 +1,4866 @@
+[
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.0,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.0.w0.3-1.2.se09:30.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.0,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.0.w0.3-1.2.se09:30.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.0,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.0.w0.3-1.2.se11:00.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.0,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.0.w0.3-1.2.se11:00.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.0,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.0.w0.3-0.8.se09:30.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.0,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.0.w0.3-0.8.se09:30.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.0,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.0.w0.3-0.8.se11:00.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.0,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.0.w0.3-0.8.se11:00.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.0,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.0.w0.6-2.0.se09:30.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.0,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.0.w0.6-2.0.se09:30.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.0,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.0.w0.6-2.0.se11:00.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.0,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.0.w0.6-2.0.se11:00.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.0,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.0.wnone.se09:30.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.0,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.0.wnone.se09:30.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.0,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.0.wnone.se11:00.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.0,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.0.wnone.se11:00.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.5.w0.3-1.2.se09:30.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.5.w0.3-1.2.se09:30.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.5.w0.3-1.2.se11:00.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.5.w0.3-1.2.se11:00.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.5.w0.3-0.8.se09:30.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.5.w0.3-0.8.se09:30.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.5.w0.3-0.8.se11:00.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.5.w0.3-0.8.se11:00.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.5.w0.6-2.0.se09:30.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.5.w0.6-2.0.se09:30.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.5.w0.6-2.0.se11:00.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.5.w0.6-2.0.se11:00.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.5.wnone.se09:30.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.5.wnone.se09:30.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.5.wnone.se11:00.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 1.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr1.5.wnone.se11:00.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 2.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr2.5.w0.3-1.2.se09:30.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 2.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr2.5.w0.3-1.2.se09:30.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 2.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr2.5.w0.3-1.2.se11:00.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 2.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr2.5.w0.3-1.2.se11:00.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 2.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr2.5.w0.3-0.8.se09:30.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 2.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr2.5.w0.3-0.8.se09:30.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 2.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr2.5.w0.3-0.8.se11:00.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 2.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr2.5.w0.3-0.8.se11:00.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 2.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr2.5.w0.6-2.0.se09:30.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 2.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr2.5.w0.6-2.0.se09:30.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 2.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr2.5.w0.6-2.0.se11:00.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 2.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr2.5.w0.6-2.0.se11:00.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 2.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr2.5.wnone.se09:30.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 2.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr2.5.wnone.se09:30.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:30",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 2.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr2.5.wnone.se11:00.x12:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:30",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 24,
+   "range_end": "08:00",
+   "range_start": "00:00",
+   "reward_risk": 2.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "london"
+  },
+  "family": "F1a",
+  "key": "F1a.rr2.5.wnone.se11:00.x16:30",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.0,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.0.w0.3-1.2.se09:30.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.0,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.0.w0.3-1.2.se09:30.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.0,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.0.w0.3-1.2.se11:00.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.0,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.0.w0.3-1.2.se11:00.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.0,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.0.w0.3-0.8.se09:30.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.0,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.0.w0.3-0.8.se09:30.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.0,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.0.w0.3-0.8.se11:00.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.0,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.0.w0.3-0.8.se11:00.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.0,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.0.w0.6-2.0.se09:30.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.0,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.0.w0.6-2.0.se09:30.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.0,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.0.w0.6-2.0.se11:00.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.0,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.0.w0.6-2.0.se11:00.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.0,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.0.wnone.se09:30.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.0,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.0.wnone.se09:30.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.0,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.0.wnone.se11:00.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.0,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.0.wnone.se11:00.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.5.w0.3-1.2.se09:30.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.5.w0.3-1.2.se09:30.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.5.w0.3-1.2.se11:00.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.5.w0.3-1.2.se11:00.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.5.w0.3-0.8.se09:30.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.5.w0.3-0.8.se09:30.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.5.w0.3-0.8.se11:00.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.5.w0.3-0.8.se11:00.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.5.w0.6-2.0.se09:30.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.5.w0.6-2.0.se09:30.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.5.w0.6-2.0.se11:00.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.5.w0.6-2.0.se11:00.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.5.wnone.se09:30.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.5.wnone.se09:30.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.5.wnone.se11:00.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 1.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr1.5.wnone.se11:00.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 2.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr2.5.w0.3-1.2.se09:30.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 2.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr2.5.w0.3-1.2.se09:30.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 2.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr2.5.w0.3-1.2.se11:00.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 1.2,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 2.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr2.5.w0.3-1.2.se11:00.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 2.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr2.5.w0.3-0.8.se09:30.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 2.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr2.5.w0.3-0.8.se09:30.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 2.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr2.5.w0.3-0.8.se11:00.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 0.8,
+   "min_atr_multiple": 0.3,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 2.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr2.5.w0.3-0.8.se11:00.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 2.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr2.5.w0.6-2.0.se09:30.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 2.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr2.5.w0.6-2.0.se09:30.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 2.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr2.5.w0.6-2.0.se11:00.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 2.0,
+   "min_atr_multiple": 0.6,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 2.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr2.5.w0.6-2.0.se11:00.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 2.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr2.5.wnone.se09:30.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 2.5,
+   "signal_end": "09:30",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr2.5.wnone.se09:30.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "12:00",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 2.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr2.5.wnone.se11:00.x12:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "exit_time": "16:00",
+   "max_atr_multiple": 50.0,
+   "min_atr_multiple": 0.05,
+   "min_range_bars": 15,
+   "range_end": "08:00",
+   "range_start": "03:00",
+   "reward_risk": 2.5,
+   "signal_end": "11:00",
+   "signal_start": "08:00",
+   "zone": "new_york"
+  },
+  "family": "F1b",
+  "key": "F1b.rr2.5.wnone.se11:00.x16:00",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 900
+ },
+ {
+  "args": {
+   "buy_dollar": true,
+   "entry_time": "14:30",
+   "exit_time": "15:55",
+   "stop_atr": 2.0
+  },
+  "family": "F2a",
+  "key": "F2a.in14:30.out15:55.atr2.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": true,
+   "entry_time": "14:30",
+   "exit_time": "15:55",
+   "stop_atr": 3.0
+  },
+  "family": "F2a",
+  "key": "F2a.in14:30.out15:55.atr3.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": true,
+   "entry_time": "14:30",
+   "exit_time": "15:55",
+   "stop_atr": 5.0
+  },
+  "family": "F2a",
+  "key": "F2a.in14:30.out15:55.atr5.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": true,
+   "entry_time": "14:30",
+   "exit_time": "16:00",
+   "stop_atr": 2.0
+  },
+  "family": "F2a",
+  "key": "F2a.in14:30.out16:00.atr2.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": true,
+   "entry_time": "14:30",
+   "exit_time": "16:00",
+   "stop_atr": 3.0
+  },
+  "family": "F2a",
+  "key": "F2a.in14:30.out16:00.atr3.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": true,
+   "entry_time": "14:30",
+   "exit_time": "16:00",
+   "stop_atr": 5.0
+  },
+  "family": "F2a",
+  "key": "F2a.in14:30.out16:00.atr5.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": true,
+   "entry_time": "15:00",
+   "exit_time": "15:55",
+   "stop_atr": 2.0
+  },
+  "family": "F2a",
+  "key": "F2a.in15:00.out15:55.atr2.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": true,
+   "entry_time": "15:00",
+   "exit_time": "15:55",
+   "stop_atr": 3.0
+  },
+  "family": "F2a",
+  "key": "F2a.in15:00.out15:55.atr3.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": true,
+   "entry_time": "15:00",
+   "exit_time": "15:55",
+   "stop_atr": 5.0
+  },
+  "family": "F2a",
+  "key": "F2a.in15:00.out15:55.atr5.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": true,
+   "entry_time": "15:00",
+   "exit_time": "16:00",
+   "stop_atr": 2.0
+  },
+  "family": "F2a",
+  "key": "F2a.in15:00.out16:00.atr2.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": true,
+   "entry_time": "15:00",
+   "exit_time": "16:00",
+   "stop_atr": 3.0
+  },
+  "family": "F2a",
+  "key": "F2a.in15:00.out16:00.atr3.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": true,
+   "entry_time": "15:00",
+   "exit_time": "16:00",
+   "stop_atr": 5.0
+  },
+  "family": "F2a",
+  "key": "F2a.in15:00.out16:00.atr5.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": true,
+   "entry_time": "15:30",
+   "exit_time": "15:55",
+   "stop_atr": 2.0
+  },
+  "family": "F2a",
+  "key": "F2a.in15:30.out15:55.atr2.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": true,
+   "entry_time": "15:30",
+   "exit_time": "15:55",
+   "stop_atr": 3.0
+  },
+  "family": "F2a",
+  "key": "F2a.in15:30.out15:55.atr3.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": true,
+   "entry_time": "15:30",
+   "exit_time": "15:55",
+   "stop_atr": 5.0
+  },
+  "family": "F2a",
+  "key": "F2a.in15:30.out15:55.atr5.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": true,
+   "entry_time": "15:30",
+   "exit_time": "16:00",
+   "stop_atr": 2.0
+  },
+  "family": "F2a",
+  "key": "F2a.in15:30.out16:00.atr2.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": true,
+   "entry_time": "15:30",
+   "exit_time": "16:00",
+   "stop_atr": 3.0
+  },
+  "family": "F2a",
+  "key": "F2a.in15:30.out16:00.atr3.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": true,
+   "entry_time": "15:30",
+   "exit_time": "16:00",
+   "stop_atr": 5.0
+  },
+  "family": "F2a",
+  "key": "F2a.in15:30.out16:00.atr5.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": false,
+   "entry_time": "16:05",
+   "exit_time": "16:45",
+   "stop_atr": 2.0
+  },
+  "family": "F2b",
+  "key": "F2b.in16:05.out16:45.atr2.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": false,
+   "entry_time": "16:05",
+   "exit_time": "16:45",
+   "stop_atr": 3.0
+  },
+  "family": "F2b",
+  "key": "F2b.in16:05.out16:45.atr3.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": false,
+   "entry_time": "16:05",
+   "exit_time": "16:45",
+   "stop_atr": 5.0
+  },
+  "family": "F2b",
+  "key": "F2b.in16:05.out16:45.atr5.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": false,
+   "entry_time": "16:05",
+   "exit_time": "17:00",
+   "stop_atr": 2.0
+  },
+  "family": "F2b",
+  "key": "F2b.in16:05.out17:00.atr2.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": false,
+   "entry_time": "16:05",
+   "exit_time": "17:00",
+   "stop_atr": 3.0
+  },
+  "family": "F2b",
+  "key": "F2b.in16:05.out17:00.atr3.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": false,
+   "entry_time": "16:05",
+   "exit_time": "17:00",
+   "stop_atr": 5.0
+  },
+  "family": "F2b",
+  "key": "F2b.in16:05.out17:00.atr5.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": false,
+   "entry_time": "16:05",
+   "exit_time": "17:30",
+   "stop_atr": 2.0
+  },
+  "family": "F2b",
+  "key": "F2b.in16:05.out17:30.atr2.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": false,
+   "entry_time": "16:05",
+   "exit_time": "17:30",
+   "stop_atr": 3.0
+  },
+  "family": "F2b",
+  "key": "F2b.in16:05.out17:30.atr3.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": false,
+   "entry_time": "16:05",
+   "exit_time": "17:30",
+   "stop_atr": 5.0
+  },
+  "family": "F2b",
+  "key": "F2b.in16:05.out17:30.atr5.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": false,
+   "entry_time": "16:15",
+   "exit_time": "16:45",
+   "stop_atr": 2.0
+  },
+  "family": "F2b",
+  "key": "F2b.in16:15.out16:45.atr2.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": false,
+   "entry_time": "16:15",
+   "exit_time": "16:45",
+   "stop_atr": 3.0
+  },
+  "family": "F2b",
+  "key": "F2b.in16:15.out16:45.atr3.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": false,
+   "entry_time": "16:15",
+   "exit_time": "16:45",
+   "stop_atr": 5.0
+  },
+  "family": "F2b",
+  "key": "F2b.in16:15.out16:45.atr5.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": false,
+   "entry_time": "16:15",
+   "exit_time": "17:00",
+   "stop_atr": 2.0
+  },
+  "family": "F2b",
+  "key": "F2b.in16:15.out17:00.atr2.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": false,
+   "entry_time": "16:15",
+   "exit_time": "17:00",
+   "stop_atr": 3.0
+  },
+  "family": "F2b",
+  "key": "F2b.in16:15.out17:00.atr3.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": false,
+   "entry_time": "16:15",
+   "exit_time": "17:00",
+   "stop_atr": 5.0
+  },
+  "family": "F2b",
+  "key": "F2b.in16:15.out17:00.atr5.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": false,
+   "entry_time": "16:15",
+   "exit_time": "17:30",
+   "stop_atr": 2.0
+  },
+  "family": "F2b",
+  "key": "F2b.in16:15.out17:30.atr2.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": false,
+   "entry_time": "16:15",
+   "exit_time": "17:30",
+   "stop_atr": 3.0
+  },
+  "family": "F2b",
+  "key": "F2b.in16:15.out17:30.atr3.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "buy_dollar": false,
+   "entry_time": "16:15",
+   "exit_time": "17:30",
+   "stop_atr": 5.0
+  },
+  "family": "F2b",
+  "key": "F2b.in16:15.out17:30.atr5.0",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDJPY",
+   "USDCAD",
+   "USDCHF"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 12,
+   "retrace": 0.5,
+   "stop_range": 0.5,
+   "threshold": 3.0
+  },
+  "family": "F3",
+  "key": "F3.th3.0.stop0.5.ret0.5.hold12",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 24,
+   "retrace": 0.5,
+   "stop_range": 0.5,
+   "threshold": 3.0
+  },
+  "family": "F3",
+  "key": "F3.th3.0.stop0.5.ret0.5.hold24",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 12,
+   "retrace": 0.75,
+   "stop_range": 0.5,
+   "threshold": 3.0
+  },
+  "family": "F3",
+  "key": "F3.th3.0.stop0.5.ret0.75.hold12",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 24,
+   "retrace": 0.75,
+   "stop_range": 0.5,
+   "threshold": 3.0
+  },
+  "family": "F3",
+  "key": "F3.th3.0.stop0.5.ret0.75.hold24",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 12,
+   "retrace": 0.5,
+   "stop_range": 1.0,
+   "threshold": 3.0
+  },
+  "family": "F3",
+  "key": "F3.th3.0.stop1.0.ret0.5.hold12",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 24,
+   "retrace": 0.5,
+   "stop_range": 1.0,
+   "threshold": 3.0
+  },
+  "family": "F3",
+  "key": "F3.th3.0.stop1.0.ret0.5.hold24",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 12,
+   "retrace": 0.75,
+   "stop_range": 1.0,
+   "threshold": 3.0
+  },
+  "family": "F3",
+  "key": "F3.th3.0.stop1.0.ret0.75.hold12",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 24,
+   "retrace": 0.75,
+   "stop_range": 1.0,
+   "threshold": 3.0
+  },
+  "family": "F3",
+  "key": "F3.th3.0.stop1.0.ret0.75.hold24",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 12,
+   "retrace": 0.5,
+   "stop_range": 0.5,
+   "threshold": 4.0
+  },
+  "family": "F3",
+  "key": "F3.th4.0.stop0.5.ret0.5.hold12",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 24,
+   "retrace": 0.5,
+   "stop_range": 0.5,
+   "threshold": 4.0
+  },
+  "family": "F3",
+  "key": "F3.th4.0.stop0.5.ret0.5.hold24",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 12,
+   "retrace": 0.75,
+   "stop_range": 0.5,
+   "threshold": 4.0
+  },
+  "family": "F3",
+  "key": "F3.th4.0.stop0.5.ret0.75.hold12",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 24,
+   "retrace": 0.75,
+   "stop_range": 0.5,
+   "threshold": 4.0
+  },
+  "family": "F3",
+  "key": "F3.th4.0.stop0.5.ret0.75.hold24",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 12,
+   "retrace": 0.5,
+   "stop_range": 1.0,
+   "threshold": 4.0
+  },
+  "family": "F3",
+  "key": "F3.th4.0.stop1.0.ret0.5.hold12",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 24,
+   "retrace": 0.5,
+   "stop_range": 1.0,
+   "threshold": 4.0
+  },
+  "family": "F3",
+  "key": "F3.th4.0.stop1.0.ret0.5.hold24",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 12,
+   "retrace": 0.75,
+   "stop_range": 1.0,
+   "threshold": 4.0
+  },
+  "family": "F3",
+  "key": "F3.th4.0.stop1.0.ret0.75.hold12",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 24,
+   "retrace": 0.75,
+   "stop_range": 1.0,
+   "threshold": 4.0
+  },
+  "family": "F3",
+  "key": "F3.th4.0.stop1.0.ret0.75.hold24",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 12,
+   "retrace": 0.5,
+   "stop_range": 0.5,
+   "threshold": 6.0
+  },
+  "family": "F3",
+  "key": "F3.th6.0.stop0.5.ret0.5.hold12",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 24,
+   "retrace": 0.5,
+   "stop_range": 0.5,
+   "threshold": 6.0
+  },
+  "family": "F3",
+  "key": "F3.th6.0.stop0.5.ret0.5.hold24",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 12,
+   "retrace": 0.75,
+   "stop_range": 0.5,
+   "threshold": 6.0
+  },
+  "family": "F3",
+  "key": "F3.th6.0.stop0.5.ret0.75.hold12",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 24,
+   "retrace": 0.75,
+   "stop_range": 0.5,
+   "threshold": 6.0
+  },
+  "family": "F3",
+  "key": "F3.th6.0.stop0.5.ret0.75.hold24",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 12,
+   "retrace": 0.5,
+   "stop_range": 1.0,
+   "threshold": 6.0
+  },
+  "family": "F3",
+  "key": "F3.th6.0.stop1.0.ret0.5.hold12",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 24,
+   "retrace": 0.5,
+   "stop_range": 1.0,
+   "threshold": 6.0
+  },
+  "family": "F3",
+  "key": "F3.th6.0.stop1.0.ret0.5.hold24",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 12,
+   "retrace": 0.75,
+   "stop_range": 1.0,
+   "threshold": 6.0
+  },
+  "family": "F3",
+  "key": "F3.th6.0.stop1.0.ret0.75.hold12",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 24,
+   "retrace": 0.75,
+   "stop_range": 1.0,
+   "threshold": 6.0
+  },
+  "family": "F3",
+  "key": "F3.th6.0.stop1.0.ret0.75.hold24",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 12,
+   "retrace": 0.5,
+   "stop_range": 0.5,
+   "threshold": 8.0
+  },
+  "family": "F3",
+  "key": "F3.th8.0.stop0.5.ret0.5.hold12",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 24,
+   "retrace": 0.5,
+   "stop_range": 0.5,
+   "threshold": 8.0
+  },
+  "family": "F3",
+  "key": "F3.th8.0.stop0.5.ret0.5.hold24",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 12,
+   "retrace": 0.75,
+   "stop_range": 0.5,
+   "threshold": 8.0
+  },
+  "family": "F3",
+  "key": "F3.th8.0.stop0.5.ret0.75.hold12",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 24,
+   "retrace": 0.75,
+   "stop_range": 0.5,
+   "threshold": 8.0
+  },
+  "family": "F3",
+  "key": "F3.th8.0.stop0.5.ret0.75.hold24",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 12,
+   "retrace": 0.5,
+   "stop_range": 1.0,
+   "threshold": 8.0
+  },
+  "family": "F3",
+  "key": "F3.th8.0.stop1.0.ret0.5.hold12",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 24,
+   "retrace": 0.5,
+   "stop_range": 1.0,
+   "threshold": 8.0
+  },
+  "family": "F3",
+  "key": "F3.th8.0.stop1.0.ret0.5.hold24",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 12,
+   "retrace": 0.75,
+   "stop_range": 1.0,
+   "threshold": 8.0
+  },
+  "family": "F3",
+  "key": "F3.th8.0.stop1.0.ret0.75.hold12",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "max_bars": 24,
+   "retrace": 0.75,
+   "stop_range": 1.0,
+   "threshold": 8.0
+  },
+  "family": "F3",
+  "key": "F3.th8.0.stop1.0.ret0.75.hold24",
+  "pairs": [
+   "EURUSD",
+   "GBPUSD",
+   "AUDUSD",
+   "NZDUSD",
+   "USDCAD",
+   "USDCHF",
+   "USDJPY",
+   "EURJPY",
+   "GBPJPY",
+   "EURGBP"
+  ],
+  "seconds": 300
+ },
+ {
+  "args": {
+   "entry_z": 1.5,
+   "max_bars": 60,
+   "stop_z": 3.5
+  },
+  "family": "F5a",
+  "key": "F5a.z1.5.stop3.5.hold60",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 1.5,
+   "max_bars": 120,
+   "stop_z": 3.5
+  },
+  "family": "F5a",
+  "key": "F5a.z1.5.stop3.5.hold120",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 1.5,
+   "max_bars": 240,
+   "stop_z": 3.5
+  },
+  "family": "F5a",
+  "key": "F5a.z1.5.stop3.5.hold240",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 1.5,
+   "max_bars": 60,
+   "stop_z": 4.5
+  },
+  "family": "F5a",
+  "key": "F5a.z1.5.stop4.5.hold60",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 1.5,
+   "max_bars": 120,
+   "stop_z": 4.5
+  },
+  "family": "F5a",
+  "key": "F5a.z1.5.stop4.5.hold120",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 1.5,
+   "max_bars": 240,
+   "stop_z": 4.5
+  },
+  "family": "F5a",
+  "key": "F5a.z1.5.stop4.5.hold240",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.0,
+   "max_bars": 60,
+   "stop_z": 3.5
+  },
+  "family": "F5a",
+  "key": "F5a.z2.0.stop3.5.hold60",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.0,
+   "max_bars": 120,
+   "stop_z": 3.5
+  },
+  "family": "F5a",
+  "key": "F5a.z2.0.stop3.5.hold120",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.0,
+   "max_bars": 240,
+   "stop_z": 3.5
+  },
+  "family": "F5a",
+  "key": "F5a.z2.0.stop3.5.hold240",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.0,
+   "max_bars": 60,
+   "stop_z": 4.5
+  },
+  "family": "F5a",
+  "key": "F5a.z2.0.stop4.5.hold60",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.0,
+   "max_bars": 120,
+   "stop_z": 4.5
+  },
+  "family": "F5a",
+  "key": "F5a.z2.0.stop4.5.hold120",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.0,
+   "max_bars": 240,
+   "stop_z": 4.5
+  },
+  "family": "F5a",
+  "key": "F5a.z2.0.stop4.5.hold240",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.5,
+   "max_bars": 60,
+   "stop_z": 3.5
+  },
+  "family": "F5a",
+  "key": "F5a.z2.5.stop3.5.hold60",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.5,
+   "max_bars": 120,
+   "stop_z": 3.5
+  },
+  "family": "F5a",
+  "key": "F5a.z2.5.stop3.5.hold120",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.5,
+   "max_bars": 240,
+   "stop_z": 3.5
+  },
+  "family": "F5a",
+  "key": "F5a.z2.5.stop3.5.hold240",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.5,
+   "max_bars": 60,
+   "stop_z": 4.5
+  },
+  "family": "F5a",
+  "key": "F5a.z2.5.stop4.5.hold60",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.5,
+   "max_bars": 120,
+   "stop_z": 4.5
+  },
+  "family": "F5a",
+  "key": "F5a.z2.5.stop4.5.hold120",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.5,
+   "max_bars": 240,
+   "stop_z": 4.5
+  },
+  "family": "F5a",
+  "key": "F5a.z2.5.stop4.5.hold240",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 3.0,
+   "max_bars": 60,
+   "stop_z": 3.5
+  },
+  "family": "F5a",
+  "key": "F5a.z3.0.stop3.5.hold60",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 3.0,
+   "max_bars": 120,
+   "stop_z": 3.5
+  },
+  "family": "F5a",
+  "key": "F5a.z3.0.stop3.5.hold120",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 3.0,
+   "max_bars": 240,
+   "stop_z": 3.5
+  },
+  "family": "F5a",
+  "key": "F5a.z3.0.stop3.5.hold240",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 3.0,
+   "max_bars": 60,
+   "stop_z": 4.5
+  },
+  "family": "F5a",
+  "key": "F5a.z3.0.stop4.5.hold60",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 3.0,
+   "max_bars": 120,
+   "stop_z": 4.5
+  },
+  "family": "F5a",
+  "key": "F5a.z3.0.stop4.5.hold120",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 3.0,
+   "max_bars": 240,
+   "stop_z": 4.5
+  },
+  "family": "F5a",
+  "key": "F5a.z3.0.stop4.5.hold240",
+  "pairs": [
+   "EURGBP"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 1.5,
+   "max_bars": 60,
+   "stop_z": 3.5
+  },
+  "family": "F5b",
+  "key": "F5b.z1.5.stop3.5.hold60",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 1.5,
+   "max_bars": 120,
+   "stop_z": 3.5
+  },
+  "family": "F5b",
+  "key": "F5b.z1.5.stop3.5.hold120",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 1.5,
+   "max_bars": 240,
+   "stop_z": 3.5
+  },
+  "family": "F5b",
+  "key": "F5b.z1.5.stop3.5.hold240",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 1.5,
+   "max_bars": 60,
+   "stop_z": 4.5
+  },
+  "family": "F5b",
+  "key": "F5b.z1.5.stop4.5.hold60",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 1.5,
+   "max_bars": 120,
+   "stop_z": 4.5
+  },
+  "family": "F5b",
+  "key": "F5b.z1.5.stop4.5.hold120",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 1.5,
+   "max_bars": 240,
+   "stop_z": 4.5
+  },
+  "family": "F5b",
+  "key": "F5b.z1.5.stop4.5.hold240",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.0,
+   "max_bars": 60,
+   "stop_z": 3.5
+  },
+  "family": "F5b",
+  "key": "F5b.z2.0.stop3.5.hold60",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.0,
+   "max_bars": 120,
+   "stop_z": 3.5
+  },
+  "family": "F5b",
+  "key": "F5b.z2.0.stop3.5.hold120",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.0,
+   "max_bars": 240,
+   "stop_z": 3.5
+  },
+  "family": "F5b",
+  "key": "F5b.z2.0.stop3.5.hold240",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.0,
+   "max_bars": 60,
+   "stop_z": 4.5
+  },
+  "family": "F5b",
+  "key": "F5b.z2.0.stop4.5.hold60",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.0,
+   "max_bars": 120,
+   "stop_z": 4.5
+  },
+  "family": "F5b",
+  "key": "F5b.z2.0.stop4.5.hold120",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.0,
+   "max_bars": 240,
+   "stop_z": 4.5
+  },
+  "family": "F5b",
+  "key": "F5b.z2.0.stop4.5.hold240",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.5,
+   "max_bars": 60,
+   "stop_z": 3.5
+  },
+  "family": "F5b",
+  "key": "F5b.z2.5.stop3.5.hold60",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.5,
+   "max_bars": 120,
+   "stop_z": 3.5
+  },
+  "family": "F5b",
+  "key": "F5b.z2.5.stop3.5.hold120",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.5,
+   "max_bars": 240,
+   "stop_z": 3.5
+  },
+  "family": "F5b",
+  "key": "F5b.z2.5.stop3.5.hold240",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.5,
+   "max_bars": 60,
+   "stop_z": 4.5
+  },
+  "family": "F5b",
+  "key": "F5b.z2.5.stop4.5.hold60",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.5,
+   "max_bars": 120,
+   "stop_z": 4.5
+  },
+  "family": "F5b",
+  "key": "F5b.z2.5.stop4.5.hold120",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 2.5,
+   "max_bars": 240,
+   "stop_z": 4.5
+  },
+  "family": "F5b",
+  "key": "F5b.z2.5.stop4.5.hold240",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 3.0,
+   "max_bars": 60,
+   "stop_z": 3.5
+  },
+  "family": "F5b",
+  "key": "F5b.z3.0.stop3.5.hold60",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 3.0,
+   "max_bars": 120,
+   "stop_z": 3.5
+  },
+  "family": "F5b",
+  "key": "F5b.z3.0.stop3.5.hold120",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 3.0,
+   "max_bars": 240,
+   "stop_z": 3.5
+  },
+  "family": "F5b",
+  "key": "F5b.z3.0.stop3.5.hold240",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 3.0,
+   "max_bars": 60,
+   "stop_z": 4.5
+  },
+  "family": "F5b",
+  "key": "F5b.z3.0.stop4.5.hold60",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 3.0,
+   "max_bars": 120,
+   "stop_z": 4.5
+  },
+  "family": "F5b",
+  "key": "F5b.z3.0.stop4.5.hold120",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ },
+ {
+  "args": {
+   "entry_z": 3.0,
+   "max_bars": 240,
+   "stop_z": 4.5
+  },
+  "family": "F5b",
+  "key": "F5b.z3.0.stop4.5.hold240",
+  "pairs": [
+   "AUDNZD"
+  ],
+  "seconds": 3600
+ }
+]

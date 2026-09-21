@@ -56,8 +56,12 @@ M1_CONFIGS = tuple(
 )
 
 
-def load_selection(
-    panel: Path, horizon: int, feature_names: list[str]
+def load_period(
+    panel: Path,
+    horizon: int,
+    feature_names: list[str],
+    start: pd.Timestamp,
+    end: pd.Timestamp,
 ) -> tuple[np.ndarray, pd.DataFrame]:
     matrices: list[np.ndarray] = []
     metadata: list[pd.DataFrame] = []
@@ -67,7 +71,7 @@ def load_selection(
         modeling = features[feature_names]
         for side, side_name in ((1, "long"), (-1, "short")):
             base = outcomes[f"h{horizon}_{side_name}_terminal_r_base"]
-            valid = _eligible(modeling, base, CALIBRATION_END, SELECTION_END)
+            valid = _eligible(modeling, base, start, end)
             selected = modeling.loc[valid]
             matrices.append(model_matrix(selected, feature_names, pair, side))
             metadata.append(
@@ -84,6 +88,12 @@ def load_selection(
                 )
             )
     return np.concatenate(matrices), pd.concat(metadata).sort_index(kind="stable")
+
+
+def load_selection(
+    panel: Path, horizon: int, feature_names: list[str]
+) -> tuple[np.ndarray, pd.DataFrame]:
+    return load_period(panel, horizon, feature_names, CALIBRATION_END, SELECTION_END)
 
 
 def _prediction_frame(
@@ -118,6 +128,9 @@ def _fit_m1(
     matrix: np.ndarray,
     base_target: np.ndarray,
     stress_target: np.ndarray,
+    calibration: np.ndarray,
+    calibration_base: np.ndarray,
+    calibration_stress: np.ndarray,
     config: M1Config,
 ) -> tuple[xgb.XGBRegressor, xgb.XGBRegressor]:
     common = {
@@ -131,17 +144,21 @@ def _fit_m1(
         "tree_method": "hist",
         "n_jobs": 10,
         "random_state": 20260921,
+        "early_stopping_rounds": 50,
     }
     base = xgb.XGBRegressor(objective="reg:squarederror", **common)
     stress = xgb.XGBRegressor(objective="reg:squarederror", **common)
-    base.fit(matrix, base_target, verbose=False)
-    stress.fit(matrix, stress_target, verbose=False)
+    base.fit(matrix, base_target, eval_set=[(calibration, calibration_base)], verbose=False)
+    stress.fit(matrix, stress_target, eval_set=[(calibration, calibration_stress)], verbose=False)
     return base, stress
 
 
 def run_grid(panel: Path, output: Path, horizon: int, stride: int) -> dict[str, object]:
     output.mkdir(parents=True, exist_ok=True)
     training, base_target, stress_target, feature_names = load_training(panel, horizon, stride)
+    calibration, calibration_metadata = load_period(
+        panel, horizon, feature_names, TRAIN_END, CALIBRATION_END
+    )
     selection, metadata = load_selection(panel, horizon, feature_names)
     attempts: list[dict[str, object]] = []
 
@@ -162,16 +179,25 @@ def run_grid(panel: Path, output: Path, horizon: int, stride: int) -> dict[str, 
     sys.stdout.flush()
 
     for config in M1_CONFIGS:
-        base_model, stress_model = _fit_m1(training, base_target, stress_target, config)
-        attempts.append(
-            _evaluate(
-                config.identifier,
-                _prediction_frame(
-                    metadata, base_model.predict(selection), stress_model.predict(selection)
-                ),
-                horizon,
-            )
+        base_model, stress_model = _fit_m1(
+            training,
+            base_target,
+            stress_target,
+            calibration,
+            calibration_metadata["base_r"].to_numpy(),
+            calibration_metadata["stress_r"].to_numpy(),
+            config,
         )
+        attempt = _evaluate(
+            config.identifier,
+            _prediction_frame(
+                metadata, base_model.predict(selection), stress_model.predict(selection)
+            ),
+            horizon,
+        )
+        attempt["best_iteration_base"] = int(base_model.best_iteration)
+        attempt["best_iteration_stress"] = int(stress_model.best_iteration)
+        attempts.append(attempt)
         sys.stdout.write(f"h{horizon} {config.identifier} complete\n")
         sys.stdout.flush()
 
@@ -180,12 +206,15 @@ def run_grid(panel: Path, output: Path, horizon: int, stride: int) -> dict[str, 
         "kind": "exhaustive_declared_grid_diagnostic",
         "horizon_seconds": horizon,
         "training_rows": len(training),
+        "calibration_rows": len(calibration),
         "selection_rows": len(selection),
         "training_stride": stride,
         "attempts": attempts,
         "attempt_count": len(attempts) * len(EV_THRESHOLDS),
         "core_candidate_count": len(core_candidates),
-        "status": "core_candidate_requires_full_selection" if core_candidates else "no_core_candidate",
+        "status": "core_candidate_requires_full_selection"
+        if core_candidates
+        else "no_core_candidate",
         "year_2022_opened": False,
         "protected_samples_opened": False,
         "pbo_dsr": "not computed because no core candidate" if not core_candidates else "required",
@@ -206,15 +235,20 @@ def main(argv: list[str] | None = None) -> int:
     if arguments.stride < 1:
         parser.error("--stride must be positive")
     report = run_grid(arguments.panel, arguments.output, arguments.horizon, arguments.stride)
-    sys.stdout.write(json.dumps({
-        "horizon_seconds": report["horizon_seconds"],
-        "attempt_count": report["attempt_count"],
-        "core_candidate_count": report["core_candidate_count"],
-        "status": report["status"],
-    }, indent=2) + "\n")
+    sys.stdout.write(
+        json.dumps(
+            {
+                "horizon_seconds": report["horizon_seconds"],
+                "attempt_count": report["attempt_count"],
+                "core_candidate_count": report["core_candidate_count"],
+                "status": report["status"],
+            },
+            indent=2,
+        )
+        + "\n"
+    )
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

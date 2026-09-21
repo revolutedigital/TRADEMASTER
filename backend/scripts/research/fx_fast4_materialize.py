@@ -136,6 +136,78 @@ def materialize_pair(
     return report
 
 
+def materialize_pair_yearly(
+    pair: str,
+    sample: str,
+    output: Path,
+    rates: ConversionRates,
+    *,
+    unlock_protected: bool = False,
+) -> dict[str, object]:
+    """Materialize UTC-year partitions with adjacent-month context at each boundary."""
+    declared = tick_archives(pair, sample, unlock_protected=unlock_protected)
+    months = [_month_from_archive(path) for path in declared]
+    years = sorted({month[:4] for month in months})
+    output.mkdir(parents=True, exist_ok=True)
+    partition_reports: dict[str, dict[str, object]] = {}
+    total_events = 0
+    total_context_ticks = 0
+    total_valid: dict[str, int] = {}
+    for year in years:
+        target_positions = [position for position, month in enumerate(months) if month.startswith(year)]
+        first_position, last_position = target_positions[0], target_positions[-1]
+        context_start = max(0, first_position - 1)
+        context_stop = min(len(declared), last_position + 2)
+        context_paths = declared[context_start:context_stop]
+        ticks = _load_archives(context_paths)
+        instrument = Instrument.from_symbol(pair)
+        cleaned, features = build_feature_frame(ticks, instrument)
+        median_price = float(np.median(0.5 * (cleaned["bid"] + cleaned["ask"])))
+        costs = EventCosts(
+            base_commission_pips=_commission_pips(pair, median_price, rates, FUSION_ZERO),
+            stress_commission_pips=_commission_pips(pair, median_price, rates, STRESS),
+        )
+        outcomes = build_outcome_wide(cleaned, features, instrument, costs)
+        start = pd.Timestamp(f"{year}-01-01", tz="UTC")
+        end = pd.Timestamp(f"{int(year) + 1}-01-01", tz="UTC")
+        in_year = (features.index >= start) & (features.index < end)
+        features = features.loc[in_year]
+        outcomes = outcomes.loc[in_year]
+        feature_path = output / f"{pair}-{year}-features.parquet"
+        outcome_path = output / f"{pair}-{year}-outcomes.parquet"
+        _compact(features).to_parquet(feature_path, compression="zstd", index=True)
+        _compact(outcomes).to_parquet(outcome_path, compression="zstd", index=True)
+        valid = {
+            name: int(count)
+            for name, count in outcomes.filter(like="terminal_r_base").notna().sum().to_dict().items()
+        }
+        for name, count in valid.items():
+            total_valid[name] = total_valid.get(name, 0) + count
+        partition_reports[year] = {
+            "context_first_month": _month_from_archive(context_paths[0]),
+            "context_end_month": _month_from_archive(context_paths[-1]),
+            "context_ticks": len(ticks),
+            "events": len(features),
+            "valid_outcomes": valid,
+            "features_sha256": _sha256(feature_path),
+            "outcomes_sha256": _sha256(outcome_path),
+        }
+        total_events += len(features)
+        total_context_ticks += len(ticks)
+        sys.stdout.write(f"{pair} {year}: {len(features):,} events\n")
+        sys.stdout.flush()
+        del ticks, cleaned, features, outcomes
+        gc.collect()
+    return {
+        "pair": pair,
+        "partitioning": "utc_year_with_adjacent_month_context",
+        "events": total_events,
+        "context_ticks_including_overlap": total_context_ticks,
+        "valid_outcomes": total_valid,
+        "partitions": partition_reports,
+    }
+
+
 def materialize(
     sample: str,
     output: Path,
@@ -144,6 +216,7 @@ def materialize(
     unlock_protected: bool = False,
     first_month: str | None = None,
     end_month: str | None = None,
+    yearly: bool = False,
 ) -> dict[str, object]:
     if sample != "development" and (first_month is not None or end_month is not None):
         raise ValueError("protected samples cannot be sliced")
@@ -159,19 +232,27 @@ def materialize(
         report = {"sample": sample, "pairs": {}}
     rates = _median_rates()
     for pair in pairs:
-        pair_report = materialize_pair(
-            pair,
-            sample,
-            output,
-            rates,
-            unlock_protected=unlock_protected,
-            first_month=first_month,
-            end_month=end_month,
-        )
+        if yearly:
+            if first_month is not None or end_month is not None:
+                raise ValueError("yearly materialization cannot be combined with a month slice")
+            pair_report = materialize_pair_yearly(
+                pair, sample, output, rates, unlock_protected=unlock_protected
+            )
+        else:
+            pair_report = materialize_pair(
+                pair,
+                sample,
+                output,
+                rates,
+                unlock_protected=unlock_protected,
+                first_month=first_month,
+                end_month=end_month,
+            )
         report["pairs"][pair] = pair_report  # type: ignore[index]
-        sys.stdout.write(
-            f"{pair}: {pair_report['clean_ticks']:,} quotes -> {pair_report['events']:,} events\n"
-        )
+        if not yearly:
+            sys.stdout.write(
+                f"{pair}: {pair_report['clean_ticks']:,} quotes -> {pair_report['events']:,} events\n"
+            )
         sys.stdout.flush()
     manifest_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return report
@@ -185,6 +266,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--first-month")
     parser.add_argument("--end-month")
     parser.add_argument("--unlock-protected", action="store_true")
+    parser.add_argument("--yearly", action="store_true")
     arguments = parser.parse_args(argv)
     pairs = tuple(value.strip().upper() for value in arguments.pairs.split(",") if value.strip())
     output = arguments.output or DEFAULT_OUTPUT_ROOT / arguments.sample
@@ -195,6 +277,7 @@ def main(argv: list[str] | None = None) -> int:
         unlock_protected=arguments.unlock_protected,
         first_month=arguments.first_month,
         end_month=arguments.end_month,
+        yearly=arguments.yearly,
     )
     return 0
 

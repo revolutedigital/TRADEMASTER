@@ -72,3 +72,30 @@ def test_existing_manifest_is_extended_without_losing_prior_pairs(tmp_path: Path
 
     assert report["pairs"]["EURUSD"]["events"] == 12
     assert report["pairs"]["GBPUSD"]["events"] == 10
+
+
+def test_yearly_partition_keeps_only_target_utc_year(tmp_path: Path, monkeypatch) -> None:
+    paths = tuple(
+        tmp_path / f"DAT_ASCII_EURUSD_T_{month}.zip"
+        for month in ("201912", "202001", "202002", "202101")
+    )
+    for path in paths:
+        path.touch()
+    monkeypatch.setattr(materialize, "tick_archives", lambda *args, **kwargs: paths)
+
+    def ticks(path: Path, **kwargs) -> pd.DataFrame:
+        month = materialize._month_from_archive(path)
+        start = pd.Timestamp(f"{month}-02", tz="UTC")
+        index = pd.date_range(start, periods=700, freq="250ms")
+        mid = 1.10 + np.arange(len(index)) * 0.000001
+        return pd.DataFrame({"bid": mid - 0.00004, "ask": mid + 0.00004}, index=index)
+
+    monkeypatch.setattr(materialize, "read_tick_zip", ticks)
+    report = materialize.materialize_pair_yearly(
+        "EURUSD", "development", tmp_path / "output", ConversionRates({"EURUSD": 1.10})
+    )
+
+    assert set(report["partitions"]) == {"2019", "2020", "2021"}
+    frame = pd.read_parquet(tmp_path / "output" / "EURUSD-2020-features.parquet")
+    assert (frame.index >= pd.Timestamp("2020-01-01", tz="UTC")).all()
+    assert (frame.index < pd.Timestamp("2021-01-01", tz="UTC")).all()

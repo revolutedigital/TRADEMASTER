@@ -65,3 +65,17 @@ def test_stationary_bootstrap_is_deterministic() -> None:
     first = diagnostic.stationary_bootstrap_lower_bound(trades, samples=100)
     second = diagnostic.stationary_bootstrap_lower_bound(trades, samples=100)
     assert first == second
+
+
+def test_reader_combines_ordered_year_partitions(tmp_path) -> None:
+    for year in (2020, 2019):
+        index = pd.DatetimeIndex([pd.Timestamp(f"{year}-06-01", tz="UTC")])
+        pd.DataFrame({"feature": [year]}, index=index).to_parquet(
+            tmp_path / f"EURUSD-{year}-features.parquet"
+        )
+        pd.DataFrame({"outcome": [year]}, index=index).to_parquet(
+            tmp_path / f"EURUSD-{year}-outcomes.parquet"
+        )
+    features, outcomes = diagnostic.read_pair_panel(tmp_path, "EURUSD")
+    assert list(features["feature"]) == [2019, 2020]
+    assert features.index.equals(outcomes.index)

@@ -39,6 +39,8 @@ DIRECTIONAL_FEATURES = frozenset(
         "m1_body_imbalance",
         "m15_trend_atr",
         "h1_trend_atr",
+        "usd_factor_return_3",
+        "common_factor_return_3",
     }
 )
 

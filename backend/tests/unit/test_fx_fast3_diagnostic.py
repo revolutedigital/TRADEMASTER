@@ -1,0 +1,41 @@
+"""Feature orientation and portfolio-policy tests for the round-3 diagnostic."""
+
+import numpy as np
+import pandas as pd
+
+from app.fx import strategy as fx
+from scripts.research.fx_fast3_diagnostic import apply_policy, model_matrix
+
+
+def test_model_matrix_orients_returns_but_preserves_spread_and_pair_identity() -> None:
+    frame = pd.DataFrame({"return_3": [0.2], "spread_pips": [0.8]})
+
+    matrix = model_matrix(frame, ["return_3", "spread_pips"], "EURUSD", fx.SHORT)
+
+    assert matrix[0, 0] == np.float32(-0.2)
+    assert matrix[0, 1] == np.float32(0.8)
+    assert matrix[0, 2] == 1.0
+    assert matrix[0, -1] == fx.SHORT
+
+
+def test_policy_chooses_the_stronger_side_and_skips_overlapping_entries() -> None:
+    times = pd.to_datetime(
+        ["2022-01-03 10:00", "2022-01-03 10:00", "2022-01-03 10:05", "2022-01-03 11:00"],
+        utc=True,
+    )
+    predictions = pd.DataFrame(
+        {
+            "pair": ["EURUSD"] * 4,
+            "side": [fx.LONG, fx.SHORT, fx.LONG, fx.LONG],
+            "expected_r": [0.10, 0.20, 0.30, 0.11],
+            "probability": [0.60] * 4,
+            "base_r": [1.0, 2.0, 3.0, 4.0],
+            "stress_r": [0.8, 1.8, 2.8, 3.8],
+        },
+        index=times,
+    )
+
+    trades = apply_policy(predictions, 60, 0.05, 0.55)
+
+    assert trades["side"].tolist() == [fx.SHORT, fx.LONG]
+    assert trades["base_r"].tolist() == [2.0, 4.0]

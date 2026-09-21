@@ -8,6 +8,7 @@ from scripts.research.fx_fast6_model import (
     ProbabilityCalibrator,
     build_reliability_map,
     fit_probability_calibrator,
+    path_decision_indices,
     q1_absolute_floors,
     select_blend_calibration,
     strongest_direction,
@@ -81,3 +82,8 @@ def test_calibrator_rejects_unknown_kind() -> None:
         assert "unknown calibrator" in str(error)
     else:
         raise AssertionError("unknown calibrator was accepted")
+
+
+def test_path_decision_index_comes_from_year_context_entry() -> None:
+    entry = pd.Series([101.0, 205.0])
+    assert path_decision_indices(entry).tolist() == [100, 204]

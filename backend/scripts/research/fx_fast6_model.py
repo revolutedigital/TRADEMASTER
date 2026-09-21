@@ -269,6 +269,16 @@ def _scenario_target(side_name: str, scenario: str) -> str:
     return f"{side_name}_hit_{scenario}"
 
 
+def path_decision_indices(entry_index: pd.Series) -> np.ndarray:
+    values = entry_index.to_numpy(dtype=np.float64)
+    if not np.isfinite(values).all() or not np.equal(values, np.floor(values)).all():
+        raise ValueError("entry indices must be finite integers")
+    decision = values.astype(np.int64) - 1
+    if (decision < 0).any():
+        raise ValueError("entry indices must follow a decision quote")
+    return decision
+
+
 def _window_data(
     frame: pd.DataFrame,
     names: list[str],
@@ -470,6 +480,7 @@ def train_pair(
             reference_index,
             ["decision_index", "entry_index", "risk_pips", "mid_range_pips_256"],
         ].copy()
+        selected["decision_index"] = path_decision_indices(selected["entry_index"])
         selected["pair"] = pair
         selected["side"] = side
         selected["probability_base"] = scenario_predictions["base"]

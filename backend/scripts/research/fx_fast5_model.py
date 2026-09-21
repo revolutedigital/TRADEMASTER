@@ -239,6 +239,7 @@ def train_pair(
             selection_index,
             ["decision_index", "entry_index", "risk_pips", "mid_range_pips_256"],
         ].copy()
+        side_frame["decision_index"] = side_frame["entry_index"].to_numpy(dtype=np.int64) - 1
         side_frame["pair"] = pair
         side_frame["side"] = side
         side_frame["probability_base"] = scenario_probabilities["base"]

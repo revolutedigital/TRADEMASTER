@@ -92,6 +92,8 @@ class LiveProtectionReconciliationResponse(LiveProtectionReadinessResponse):
 
 
 class TestnetProtectionVerificationRequest(BaseModel):
+    __test__ = False  # Prevent pytest from treating this imported API model as a test class.
+
     confirmation_phrase: str = Field(min_length=1, max_length=100)
     symbol: str = Field(pattern=r"^[A-Z0-9]{5,20}$")
 

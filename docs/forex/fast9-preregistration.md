@@ -102,3 +102,22 @@ Uma política exige simultaneamente:
 Se mais de uma passar, vence a maior média stress, depois maior limite bootstrap e menos trades.
 Nenhuma aprovação permite ordem real: ela abre somente uma execução congelada em 2021-H2. Falhar
 em Q2 encerra esta família sem olhar H2 ou 2022.
+
+## Emenda: funil progressivo de custo
+
+Registrada em 2026-09-21 depois de concluir os labels de EURUSD e parte de GBPUSD, antes de treinar
+qualquer modelo ou observar qualquer resultado de auditoria da rodada 9. A materialização integral
+foi interrompida por custo excessivo de replay.
+
+Antes do painel global, a hipótese passa por dois pilotos de aprendibilidade sem abrir Q2:
+
+1. **P0, EURUSD:** usa somente as três partições EURUSD já concluídas e as mesmas janelas temporais.
+2. **P1, três pares:** só será materializado se P0 passar; acrescenta GBPUSD e GBPJPY.
+
+Para avançar, base e stress precisam, separadamente, ter MSE pelo menos 1% menor que o baseline da
+média, Spearman acima de 0,02, erro absoluto de média de no máximo 0,05R e decil superior realizado
+pelo menos 0,05R acima da média total. O modelo selecionado continua sendo direta versus hurdle e
+seus blends/calibradores já declarados. Falhar em qualquer cenário encerra a hipótese imediatamente.
+
+Somente P1 aprovado autoriza materializar os dez pares e executar o Top P no Q2. Os pilotos não
+selecionam threshold de operação, não simulam portfólio e não abrem amostra protegida.

@@ -64,7 +64,11 @@ def _candidate_frame(
 
 def _compact(frame: pd.DataFrame) -> pd.DataFrame:
     compact = frame.copy()
-    protected = {name for name in compact.columns if name.endswith("_index")}
+    protected = {
+        name
+        for name in compact.columns
+        if name == "decision_index" or "exit_index" in name
+    }
     for column in compact.select_dtypes(include=["float64"]).columns:
         if column not in protected:
             compact[column] = compact[column].astype("float32")
@@ -170,6 +174,7 @@ def materialize(
     else:
         manifest = {
             "kind": "round9_exact_managed_payoffs",
+            "schema_version": 2,
             "protected_samples_opened": False,
             "q2_opened": False,
             "manager": {
@@ -180,6 +185,8 @@ def materialize(
             },
             "partitions": {},
         }
+    rebuild_all = manifest.get("schema_version") != 2
+    manifest["schema_version"] = 2
     partitions = manifest["partitions"]
     if not isinstance(partitions, dict):
         raise ValueError("invalid round-9 manifest")
@@ -189,7 +196,12 @@ def materialize(
             key = f"{pair}-{year}"
             path = output / f"{key}-managed-payoffs.parquet"
             existing = partitions.get(key)
-            if isinstance(existing, dict) and path.exists() and existing.get("sha256") == _sha256(path):
+            if (
+                not rebuild_all
+                and isinstance(existing, dict)
+                and path.exists()
+                and existing.get("sha256") == _sha256(path)
+            ):
                 sys.stdout.write(f"{key}: verified existing partition\n")
                 sys.stdout.flush()
                 continue

@@ -487,11 +487,11 @@ def strongest_direction(predictions: pd.DataFrame) -> pd.DataFrame:
     if eligible.empty:
         return eligible
     return (
-        eligible.assign(decision_time=eligible.index)
+        eligible.assign(_decision_time_key=eligible.index)
         .sort_values(["trusted_score", "point_score"], kind="stable")
-        .groupby(["decision_time", "pair"], sort=False)
+        .groupby(["_decision_time_key", "pair"], sort=False)
         .tail(1)
-        .drop(columns="decision_time")
+        .drop(columns="_decision_time_key")
         .sort_index(kind="stable")
     )
 

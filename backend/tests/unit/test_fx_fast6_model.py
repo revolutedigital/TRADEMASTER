@@ -51,7 +51,8 @@ def test_blend_selection_uses_global_signal_when_local_is_uninformative() -> Non
 
 def test_strongest_direction_and_q1_floor_are_global() -> None:
     index = pd.DatetimeIndex(
-        ["2021-03-20T10:00:00Z", "2021-03-20T10:00:00Z", "2021-03-20T10:00:01Z"]
+        ["2021-03-20T10:00:00Z", "2021-03-20T10:00:00Z", "2021-03-20T10:00:01Z"],
+        name="decision_time",
     )
     frame = pd.DataFrame(
         {

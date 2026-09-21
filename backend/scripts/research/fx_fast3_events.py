@@ -333,7 +333,7 @@ def _compiled_outcome(  # noqa: PLR0913
 ):
     """Vector-width outcome kernel; rows stay aligned to the feature matrix."""
     count = base_bars.shape[0]
-    output = np.full((count, 8), np.nan)
+    output = np.full((count, 14), np.nan)
     for decision_index in range(count - horizon_bars):
         if not history_contiguous[decision_index] or not np.isfinite(atr[decision_index]):
             continue
@@ -370,40 +370,89 @@ def _compiled_outcome(  # noqa: PLR0913
         maximum_favorable = -np.inf
         maximum_adverse = -np.inf
         target_hit = np.zeros(3, dtype=np.float64)
-        target_alive = np.ones(3, dtype=np.bool_)
-        stop_price = base_entry - side * risk_price
+        base_status = np.zeros(3, dtype=np.int8)  # 0 timeout, 1 target, -1 stop
+        stress_status = np.zeros(3, dtype=np.int8)
+        base_stop_slip = np.zeros(3, dtype=np.float64)
+        stress_stop_slip = np.zeros(3, dtype=np.float64)
+        base_stop_price = base_entry - side * risk_price
+        stress_stop_price = stress_entry - side * risk_price
         for index in range(entry_index, exit_index + 1):
             if side == fx.LONG:
                 executable_high = base_bars[index, fx.BID_HIGH] - base_slippage[index]
                 executable_low = base_bars[index, fx.BID_LOW] - base_slippage[index]
+                stress_high = stress_bars[index, fx.BID_HIGH] - stress_slippage[index]
+                stress_low = stress_bars[index, fx.BID_LOW] - stress_slippage[index]
                 favorable = executable_high - base_entry
                 adverse = base_entry - executable_low
-                stopped = executable_low <= stop_price
+                base_stopped = executable_low <= base_stop_price
+                stress_stopped = stress_low <= stress_stop_price
             else:
                 executable_high = base_bars[index, fx.ASK_HIGH] + base_slippage[index]
                 executable_low = base_bars[index, fx.ASK_LOW] + base_slippage[index]
+                stress_high = stress_bars[index, fx.ASK_HIGH] + stress_slippage[index]
+                stress_low = stress_bars[index, fx.ASK_LOW] + stress_slippage[index]
                 favorable = base_entry - executable_low
                 adverse = executable_high - base_entry
-                stopped = executable_high >= stop_price
+                base_stopped = executable_high >= base_stop_price
+                stress_stopped = stress_high >= stress_stop_price
             maximum_favorable = max(maximum_favorable, favorable)
             maximum_adverse = max(maximum_adverse, adverse)
             for target_index in range(3):
-                if not target_alive[target_index]:
-                    continue
-                if stopped:
-                    target_alive[target_index] = False
-                else:
-                    target_price = base_entry + side * BARRIER_TARGETS[target_index] * risk_price
-                    reached = executable_high >= target_price if side == fx.LONG else executable_low <= target_price
-                    if reached:
+                if base_status[target_index] == 0:
+                    base_target = base_entry + side * BARRIER_TARGETS[target_index] * risk_price
+                    base_reached = (
+                        executable_high >= base_target
+                        if side == fx.LONG
+                        else executable_low <= base_target
+                    )
+                    if base_stopped:
+                        base_status[target_index] = -1
+                        base_stop_slip[target_index] = base_slippage[index]
+                    elif base_reached:
+                        base_status[target_index] = 1
                         target_hit[target_index] = 1.0
-                        target_alive[target_index] = False
+                if stress_status[target_index] == 0:
+                    stress_target = stress_entry + side * BARRIER_TARGETS[target_index] * risk_price
+                    stress_reached = (
+                        stress_high >= stress_target
+                        if side == fx.LONG
+                        else stress_low <= stress_target
+                    )
+                    if stress_stopped:
+                        stress_status[target_index] = -1
+                        stress_stop_slip[target_index] = stress_slippage[index]
+                    elif stress_reached:
+                        stress_status[target_index] = 1
         output[decision_index, 0] = risk_price
         output[decision_index, 1] = terminal_base
         output[decision_index, 2] = terminal_stress
         output[decision_index, 3] = (maximum_favorable - base_commission_pips * pip) / risk_price
         output[decision_index, 4] = (maximum_adverse + base_commission_pips * pip) / risk_price
-        output[decision_index, 5:] = target_hit
+        output[decision_index, 5:8] = target_hit
+        base_commission_r = base_commission_pips * pip / risk_price
+        stress_commission_r = stress_commission_pips * pip / risk_price
+        for target_index in range(3):
+            target_r = BARRIER_TARGETS[target_index]
+            if base_status[target_index] == 1:
+                base_barrier_r = target_r - base_commission_r
+            elif base_status[target_index] == -1:
+                base_barrier_r = (
+                    -1.0 - base_commission_r - base_stop_slip[target_index] / risk_price
+                )
+            else:
+                base_barrier_r = terminal_base
+            if stress_status[target_index] == 1:
+                stress_barrier_r = target_r - stress_commission_r
+            elif stress_status[target_index] == -1:
+                stress_barrier_r = (
+                    -1.0
+                    - stress_commission_r
+                    - stress_stop_slip[target_index] / risk_price
+                )
+            else:
+                stress_barrier_r = terminal_stress
+            output[decision_index, 8 + 2 * target_index] = base_barrier_r
+            output[decision_index, 9 + 2 * target_index] = stress_barrier_r
     return output
 
 
@@ -439,6 +488,12 @@ def build_outcome_wide(
         "target_0_5r_before_stop",
         "target_1_0r_before_stop",
         "target_2_0r_before_stop",
+        "barrier_0_5r_base",
+        "barrier_0_5r_stress",
+        "barrier_1_0r_base",
+        "barrier_1_0r_stress",
+        "barrier_2_0r_base",
+        "barrier_2_0r_stress",
     )
     columns: dict[str, np.ndarray] = {}
     for horizon_minutes in horizons:

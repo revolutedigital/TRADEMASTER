@@ -177,3 +177,20 @@ def test_compiled_wide_outcomes_match_the_auditable_long_form() -> None:
             "target_2_0r_before_stop",
         ):
             assert wide.iloc[0][f"h15_{side_name}_{field}"] == pytest.approx(expected[field])
+
+
+def test_barrier_return_charges_commission_and_stop_slippage() -> None:
+    bars = handcrafted_m5()
+    entry = bars[1, fx.ASK_OPEN]
+    bars[2, fx.BID_LOW] = entry - 0.003
+    features = outcome_features(bars)
+    slippage = CostScenario("slip", slippage_pips=0.2)
+    costs = events.EventCosts(0.5, 0.5, slippage, slippage)
+
+    wide = events.build_outcome_wide(
+        bars, features, EURUSD, costs, horizons_minutes=(15,)
+    )
+
+    risk = wide.iloc[0]["h15_long_risk_price"]
+    expected = -1.0 - (0.5 * EURUSD.pip_size) / risk - (0.2 * EURUSD.pip_size) / risk
+    assert wide.iloc[0]["h15_long_barrier_1_0r_base"] == pytest.approx(expected)

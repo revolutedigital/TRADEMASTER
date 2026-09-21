@@ -31,6 +31,7 @@ async def async_client(auth_token):
     from httpx import ASGITransport, AsyncClient
     from app.main import create_app
     from app.dependencies import require_auth
+    from app.models.base import engine
 
     app = create_app()
 
@@ -41,15 +42,19 @@ async def async_client(auth_token):
 
     transport = ASGITransport(app=app)
     csrf_token = "test-csrf-token"
-    async with AsyncClient(
-        transport=transport,
-        base_url="http://test",
-        headers={"X-CSRF-Token": csrf_token},
-        cookies={"csrf_token": csrf_token},
-    ) as client:
-        yield client
-
-    app.dependency_overrides.clear()
+    try:
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers={"X-CSRF-Token": csrf_token},
+            cookies={"csrf_token": csrf_token},
+        ) as client:
+            yield client
+    finally:
+        app.dependency_overrides.clear()
+        # pytest-asyncio gives each async test its own event loop. Connections retained by the global
+        # production pool belong to the previous loop and cannot safely be reused by the next test.
+        await engine.dispose()
 
 
 # ========================================

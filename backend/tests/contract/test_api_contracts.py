@@ -22,10 +22,13 @@ async def client():
     app.dependency_overrides[require_auth] = mock_auth
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-
-    app.dependency_overrides = {}
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
+    finally:
+        app.dependency_overrides = {}
+        from app.models.base import engine
+        await engine.dispose()
 
 
 class TestHealthContract:

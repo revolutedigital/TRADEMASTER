@@ -32,6 +32,7 @@ TEST_END = pd.Timestamp("2023-01-01", tz="UTC")
 EV_THRESHOLDS = (0.03, 0.05, 0.08, 0.12, 0.18)
 PROBABILITY_THRESHOLDS = (0.0,)
 EXCLUDED_FEATURES = frozenset({"atr_price", "history_contiguous"})
+EXIT_TEMPLATES = ("terminal_r", "barrier_0_5r", "barrier_1_0r", "barrier_2_0r")
 
 
 @dataclass(frozen=True)
@@ -73,7 +74,7 @@ def _eligible(features: pd.DataFrame, outcome: pd.Series, start: pd.Timestamp | 
 
 
 def load_training(
-    panel: Path, horizon: int, stride: int
+    panel: Path, horizon: int, stride: int, exit_template: str
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str]]:
     matrices: list[np.ndarray] = []
     base_targets: list[np.ndarray] = []
@@ -87,14 +88,14 @@ def load_training(
         outcomes = pd.read_parquet(
             panel / f"{pair}-outcomes.parquet",
             columns=[
-                f"h{horizon}_long_terminal_r_base",
-                f"h{horizon}_long_terminal_r_stress",
-                f"h{horizon}_short_terminal_r_base",
-                f"h{horizon}_short_terminal_r_stress",
+                f"h{horizon}_long_{exit_template}_base",
+                f"h{horizon}_long_{exit_template}_stress",
+                f"h{horizon}_short_{exit_template}_base",
+                f"h{horizon}_short_{exit_template}_stress",
             ],
         )
         for side, side_name in ((fx.LONG, "long"), (fx.SHORT, "short")):
-            target = outcomes[f"h{horizon}_{side_name}_terminal_r_base"]
+            target = outcomes[f"h{horizon}_{side_name}_{exit_template}_base"]
             valid = _eligible(modeling, target, None, TRAIN_END)
             positions = np.flatnonzero(valid)
             # Deterministic time/pair/side offset; selection never reads the target value.
@@ -105,7 +106,7 @@ def load_training(
             matrices.append(model_matrix(selected, names, pair, side))
             base_targets.append(y)
             stress_targets.append(
-                outcomes[f"h{horizon}_{side_name}_terminal_r_stress"].iloc[positions].to_numpy(
+                outcomes[f"h{horizon}_{side_name}_{exit_template}_stress"].iloc[positions].to_numpy(
                     dtype=np.float32
                 )
             )
@@ -157,6 +158,7 @@ def predict_period(
     feature_names: list[str],
     start: pd.Timestamp,
     end: pd.Timestamp,
+    exit_template: str,
 ) -> pd.DataFrame:
     parts: list[pd.DataFrame] = []
     for pair in ALL_PAIRS:
@@ -165,14 +167,14 @@ def predict_period(
         outcomes = pd.read_parquet(
             panel / f"{pair}-outcomes.parquet",
             columns=[
-                f"h{horizon}_long_terminal_r_base",
-                f"h{horizon}_long_terminal_r_stress",
-                f"h{horizon}_short_terminal_r_base",
-                f"h{horizon}_short_terminal_r_stress",
+                f"h{horizon}_long_{exit_template}_base",
+                f"h{horizon}_long_{exit_template}_stress",
+                f"h{horizon}_short_{exit_template}_base",
+                f"h{horizon}_short_{exit_template}_stress",
             ],
         )
         for side, side_name in ((fx.LONG, "long"), (fx.SHORT, "short")):
-            base = outcomes[f"h{horizon}_{side_name}_terminal_r_base"]
+            base = outcomes[f"h{horizon}_{side_name}_{exit_template}_base"]
             valid = _eligible(modeling, base, start, end)
             selected = modeling.loc[valid]
             matrix = model_matrix(selected, feature_names, pair, side)
@@ -189,7 +191,7 @@ def predict_period(
                         "raw_probability": classifier.predict_proba(matrix)[:, 1],
                         "base_r": base.loc[valid].to_numpy(),
                         "stress_r": outcomes.loc[
-                            valid, f"h{horizon}_{side_name}_terminal_r_stress"
+                            valid, f"h{horizon}_{side_name}_{exit_template}_stress"
                         ].to_numpy(),
                     },
                     index=selected.index,
@@ -269,10 +271,12 @@ def select_thresholds(
     return max(eligible, key=lambda item: (item[2].mean_stress_r, item[2].mean_base_r))
 
 
-def run_diagnostic(panel: Path, output: Path, horizon: int, stride: int) -> dict[str, object]:
+def run_diagnostic(
+    panel: Path, output: Path, horizon: int, stride: int, exit_template: str
+) -> dict[str, object]:
     output.mkdir(parents=True, exist_ok=True)
     matrix, base_target, stress_target, classification_target, names = load_training(
-        panel, horizon, stride
+        panel, horizon, stride, exit_template
     )
     base_regressor, stress_regressor, classifier = fit_models(
         matrix, base_target, stress_target, classification_target
@@ -286,6 +290,7 @@ def run_diagnostic(panel: Path, output: Path, horizon: int, stride: int) -> dict
         names,
         TRAIN_END,
         SELECTION_END,
+        exit_template,
     )
     calibration = validation.index < CALIBRATION_END
     calibrator = IsotonicRegression(out_of_bounds="clip")
@@ -302,6 +307,7 @@ def run_diagnostic(panel: Path, output: Path, horizon: int, stride: int) -> dict
     report: dict[str, object] = {
         "kind": "development_diagnostic_not_candidate_selection",
         "horizon_minutes": horizon,
+        "exit_template": exit_template,
         "training_stride": stride,
         "training_rows": len(matrix),
         "selection_score_quantiles": {
@@ -340,6 +346,7 @@ def run_diagnostic(panel: Path, output: Path, horizon: int, stride: int) -> dict
             names,
             SELECTION_END,
             TEST_END,
+            exit_template,
         )
         test["probability"] = calibrator.predict(test["raw_probability"])
         test_trades = apply_policy(test, horizon, ev_threshold, probability_threshold)
@@ -350,10 +357,11 @@ def run_diagnostic(panel: Path, output: Path, horizon: int, stride: int) -> dict
         }
         report["selection_2021_h2"] = asdict(selection_metrics)
         report["test_2022"] = asdict(metrics(test_trades))
-    base_regressor.save_model(output / f"h{horizon}-base-regressor.json")
-    stress_regressor.save_model(output / f"h{horizon}-stress-regressor.json")
-    classifier.save_model(output / f"h{horizon}-classifier.json")
-    (output / f"h{horizon}-report.json").write_text(
+    artifact = f"h{horizon}-{exit_template}"
+    base_regressor.save_model(output / f"{artifact}-base-regressor.json")
+    stress_regressor.save_model(output / f"{artifact}-stress-regressor.json")
+    classifier.save_model(output / f"{artifact}-classifier.json")
+    (output / f"{artifact}-report.json").write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     return report
@@ -364,11 +372,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--panel", type=Path, default=DEFAULT_PANEL)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--horizon", type=int, choices=(15, 60, 180, 360), default=60)
+    parser.add_argument("--exit-template", choices=EXIT_TEMPLATES, default="terminal_r")
     parser.add_argument("--stride", type=int, default=8)
     arguments = parser.parse_args(argv)
     if arguments.stride < 1:
         parser.error("--stride must be positive")
-    report = run_diagnostic(arguments.panel, arguments.output, arguments.horizon, arguments.stride)
+    report = run_diagnostic(
+        arguments.panel,
+        arguments.output,
+        arguments.horizon,
+        arguments.stride,
+        arguments.exit_template,
+    )
     sys.stdout.write(json.dumps(report, indent=2, sort_keys=True) + "\n")
     return 0
 

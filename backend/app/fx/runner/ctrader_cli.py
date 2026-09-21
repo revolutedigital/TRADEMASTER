@@ -31,7 +31,33 @@ ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 PROMPT = re.compile(r">\s*$")
 PASSWORD_PROMPT = re.compile(r"Password:\s*$")
 TERMINATE_GRACE_SECONDS = 3.0
+QUIET_SECONDS = 1.0  # a prompt with no JSON before it and this much silence is the whole answer (an error text)
 RECENT_DEALS = 30  # how many of the latest deals are searched for the one that closed a position
+
+
+def has_complete_json(text: str) -> bool:
+    """True once `text` holds a whole JSON object (balanced braces, strings respected)."""
+    start = text.find("{")
+    if start < 0:
+        return False
+    depth, in_string, escaped = 0, False, False
+    for character in text[start:]:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+        elif character == '"':
+            in_string = True
+        elif character == "{":
+            depth += 1
+        elif character == "}":
+            depth -= 1
+            if depth == 0:
+                return True
+    return False
 
 
 class Transport(Protocol):
@@ -61,21 +87,26 @@ class PtySession:
             os.write(self._fd, (self._password + "\r").encode())
         self._read_until_prompt(self._login_timeout)
 
-    def _read_until_prompt(self, timeout: float, prompt: re.Pattern[str] = PROMPT) -> str:
+    def _read_until_prompt(self, timeout: float, prompt: re.Pattern[str] = PROMPT, want_json: bool = False) -> str:
+        """Read until the CLI shows its prompt. The echo of a command and the prompt it redraws arrive before
+        the answer, so when an answer is expected (`want_json`) a prompt only counts once a whole JSON object
+        is there, or once the CLI has been silent for `QUIET_SECONDS` (an error text has no JSON)."""
         buffer, deadline = b"", time.monotonic() + timeout
+        last_data = time.monotonic()
         while time.monotonic() < deadline:
             ready, _, _ = select.select([self._fd], [], [], 0.05)
-            if not ready:
-                continue
-            try:
-                chunk = os.read(self._fd, 65536)
-            except OSError as error:
-                raise VenueUnavailable("the CLI session ended") from error
-            if not chunk:
-                raise VenueUnavailable("the CLI session ended")
-            buffer += chunk
+            if ready:
+                try:
+                    chunk = os.read(self._fd, 65536)
+                except OSError as error:
+                    raise VenueUnavailable("the CLI session ended") from error
+                if not chunk:
+                    raise VenueUnavailable("the CLI session ended")
+                buffer += chunk
+                last_data = time.monotonic()
             text = ANSI.sub("", buffer.decode(errors="replace"))
-            if prompt.search(text):
+            if prompt.search(text) and (not want_json or has_complete_json(text)
+                                        or time.monotonic() - last_data >= QUIET_SECONDS):
                 return text
         raise VenueUnavailable(f"the CLI did not answer within {timeout:.0f}s")
 
@@ -85,7 +116,7 @@ class PtySession:
                 os.write(self._fd, (command + "\r").encode())
             except OSError as error:
                 raise VenueUnavailable("the CLI session is closed") from error
-            return self._read_until_prompt(timeout)
+            return self._read_until_prompt(timeout, want_json=True)
 
     def close(self) -> None:
         try:

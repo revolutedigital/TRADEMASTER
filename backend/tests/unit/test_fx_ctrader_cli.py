@@ -80,6 +80,52 @@ def test_the_password_is_typed_at_the_prompt_and_never_given_in_the_arguments(mo
     assert not any("s3cret#" in part for part in argv)
 
 
+RACY_CLI = r"""
+import json, sys, time
+sys.stdout.write("> "); sys.stdout.flush()
+for line in sys.stdin:
+    command = line.strip()
+    if command == "quit":
+        break
+    sys.stdout.write(command + "\r\n> "); sys.stdout.flush()  # the echo and a redrawn prompt arrive first...
+    time.sleep(0.25)
+    if command.startswith("bad"):
+        sys.stdout.write("\r\nError: unknown command\r\n> "); sys.stdout.flush()
+    else:
+        sys.stdout.write("\r\n" + json.dumps({"answer": command}, indent=2) + "\r\n> "); sys.stdout.flush()
+"""
+
+
+def test_an_answer_that_comes_after_a_redrawn_prompt_is_not_cut_short_or_shifted_to_the_next_command() -> None:
+    racy = PtySession([sys.executable, "-c", RACY_CLI], login_timeout=10)
+    racy.start()
+    try:
+        answers = [json_of(racy.send(command, timeout=5)) for command in ("price EURUSD", "positions", "account 1")]
+    finally:
+        racy.close()
+
+    assert answers == [{"answer": "price EURUSD"}, {"answer": "positions"}, {"answer": "account 1"}]
+
+
+def test_an_error_text_without_json_comes_back_after_a_short_silence_with_the_cli_words(monkeypatch) -> None:
+    monkeypatch.setattr("app.fx.runner.ctrader_cli.QUIET_SECONDS", 0.5)
+    racy = PtySession([sys.executable, "-c", RACY_CLI], login_timeout=10)
+    racy.start()
+    try:
+        with pytest.raises(OrderRejected, match="unknown command"):
+            json_of(racy.send("bad thing", timeout=5))
+    finally:
+        racy.close()
+
+
+def test_a_complete_json_object_is_recognised_with_braces_inside_strings() -> None:
+    from app.fx.runner.ctrader_cli import has_complete_json
+
+    assert not has_complete_json("> price\n{\n  \"a\": 1")
+    assert has_complete_json("noise {\"a\": {\"b\": \"}{\"}} > ")
+    assert not has_complete_json("no json here >")
+
+
 STUBBORN_CLI = r"""
 import signal, sys, time
 signal.signal(signal.SIGTERM, signal.SIG_IGN)  # like the docker client, which catches SIGTERM

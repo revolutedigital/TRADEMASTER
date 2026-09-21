@@ -411,3 +411,128 @@ def simulate_trailing_outcome(
         best_r=float(result[4]),
         holding_seconds=float(result[5]),
     )
+
+
+@njit(cache=True)
+def _trailing_batch_kernel(  # noqa: PLR0913
+    timestamps,
+    bid,
+    ask,
+    block_id,
+    decision_indices,
+    sides,
+    risk_pips,
+    recent_ranges,
+    pip,
+    commission_pips,
+    fixed_slippage_pips,
+    slippage_range_fraction,
+    spread_multiplier,
+    activation_r,
+    trail_distance_r,
+    activation_milliseconds,
+    max_hold_milliseconds,
+):
+    output = np.full((len(decision_indices), 6), np.nan)
+    for position in range(len(decision_indices)):
+        decision_index = decision_indices[position]
+        entry_index = decision_index + 1
+        if entry_index >= len(timestamps):
+            continue
+        slip_pips = fixed_slippage_pips + slippage_range_fraction * recent_ranges[position]
+        entry = _entry_price(
+            sides[position],
+            entry_index,
+            bid,
+            ask,
+            pip,
+            slip_pips,
+            spread_multiplier,
+        )
+        result = _simulate_trailing(
+            timestamps,
+            bid,
+            ask,
+            block_id,
+            decision_index,
+            sides[position],
+            pip,
+            entry,
+            risk_pips[position],
+            commission_pips,
+            slip_pips,
+            spread_multiplier,
+            activation_r,
+            trail_distance_r,
+            activation_milliseconds,
+            max_hold_milliseconds,
+        )
+        output[position, 0] = result[0]
+        output[position, 1] = result[1]
+        output[position, 2] = result[2]
+        output[position, 3] = result[3]
+        output[position, 4] = result[4]
+        output[position, 5] = result[5]
+    return output
+
+
+def simulate_trailing_batch(
+    cleaned_ticks: pd.DataFrame,
+    candidates: pd.DataFrame,
+    instrument: Instrument,
+    costs: EventCosts,
+    *,
+    scenario: str,
+    trail_distance_r: float,
+    activation_r: float = ACTIVATION_R,
+    activation_seconds: int = ACTIVATION_SECONDS,
+    max_hold_seconds: int = MAX_HOLD_SECONDS,
+) -> pd.DataFrame:
+    """Simulate exact quote paths for a candidate frame under one cost scenario."""
+    required = {"decision_index", "side", "risk_pips", "mid_range_pips_256"}
+    missing = required - set(candidates.columns)
+    if missing:
+        raise ValueError(f"candidate columns missing: {sorted(missing)}")
+    if scenario == "base":
+        cost_scenario = costs.base
+        commission = costs.base_commission_pips
+    elif scenario == "stress":
+        cost_scenario = costs.stress
+        commission = costs.stress_commission_pips
+    else:
+        raise ValueError("scenario must be base or stress")
+    if trail_distance_r <= 0:
+        raise ValueError("trailing distance must be positive")
+    timestamps, bid, ask = _tick_arrays(cleaned_ticks)
+    _, block_id = _event_indices(timestamps)
+    values = _trailing_batch_kernel(
+        timestamps,
+        bid,
+        ask,
+        block_id,
+        candidates["decision_index"].to_numpy(dtype=np.int64),
+        candidates["side"].to_numpy(dtype=np.int8),
+        candidates["risk_pips"].to_numpy(dtype=np.float64),
+        candidates["mid_range_pips_256"].to_numpy(dtype=np.float64),
+        instrument.pip_size,
+        commission,
+        cost_scenario.slippage_pips,
+        cost_scenario.slippage_range_fraction,
+        cost_scenario.spread_multiplier,
+        activation_r,
+        trail_distance_r,
+        activation_seconds * 1_000,
+        max_hold_seconds * 1_000,
+    )
+    return pd.DataFrame(
+        values,
+        columns=(
+            "result_r",
+            "activated",
+            "exit_index",
+            "exit_reason",
+            "best_r",
+            "holding_seconds",
+        ),
+        index=candidates.index,
+    )

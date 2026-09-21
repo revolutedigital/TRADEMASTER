@@ -11,6 +11,7 @@ from scripts.research.fx_fast5_events import (
     EXIT_PRE_ACTIVATION_TIMEOUT,
     EXIT_TRAILING_STOP,
     build_entry_labels,
+    simulate_trailing_batch,
     simulate_trailing_outcome,
 )
 
@@ -115,3 +116,38 @@ def test_breakeven_is_net_of_commission() -> None:
     assert result.activated
     assert result.exit_reason == EXIT_TRAILING_STOP
     assert np.isclose(result.result_r, 0.0)
+
+
+def test_batch_matches_single_path() -> None:
+    frame = ticks([1.0, 1.0, 1.00005, 1.00010, 1.00020, 1.00016, 1.00014])
+    candidates = pd.DataFrame(
+        {
+            "decision_index": [0],
+            "side": [1],
+            "risk_pips": [1.0],
+            "mid_range_pips_256": [1.0],
+        },
+        index=pd.DatetimeIndex([frame.index[0]]),
+    )
+    batch = simulate_trailing_batch(
+        frame,
+        candidates,
+        EURUSD,
+        COSTS,
+        scenario="base",
+        trail_distance_r=0.5,
+        activation_seconds=3,
+        max_hold_seconds=10,
+    )
+    single = simulate_trailing_outcome(
+        frame,
+        decision_index=0,
+        side=1,
+        instrument=EURUSD,
+        risk_pips=1.0,
+        activation_seconds=3,
+        max_hold_seconds=10,
+        trail_distance_r=0.5,
+    )
+    assert np.isclose(batch.iloc[0]["result_r"], single.result_r)
+    assert int(batch.iloc[0]["exit_reason"]) == single.exit_reason

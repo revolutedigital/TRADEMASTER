@@ -234,7 +234,8 @@ def train_pair(
         if selection_index is None:
             raise ValueError(f"no selection rows for {pair} {side_name}")
         side_frame = frame.loc[
-            selection_index, ["decision_index", "entry_index", "risk_pips"]
+            selection_index,
+            ["decision_index", "entry_index", "risk_pips", "mid_range_pips_256"],
         ].copy()
         side_frame["pair"] = pair
         side_frame["side"] = side

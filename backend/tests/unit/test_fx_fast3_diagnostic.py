@@ -55,3 +55,20 @@ def test_no_eligible_threshold_is_a_recorded_no_trade_not_an_error() -> None:
     )
 
     assert select_thresholds(predictions, 60) is None
+
+
+def test_trade_count_alone_cannot_select_a_losing_policy() -> None:
+    times = pd.date_range("2021-07-01", periods=400, freq="h", tz="UTC")
+    predictions = pd.DataFrame(
+        {
+            "pair": ["EURUSD"] * len(times),
+            "side": [fx.LONG] * len(times),
+            "expected_r": [0.2] * len(times),
+            "probability": [0.8] * len(times),
+            "base_r": [-0.2] * len(times),
+            "stress_r": [-0.4] * len(times),
+        },
+        index=times,
+    )
+
+    assert select_thresholds(predictions, 15) is None

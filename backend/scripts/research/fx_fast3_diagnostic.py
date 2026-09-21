@@ -231,7 +231,15 @@ def threshold_grid(predictions: pd.DataFrame, horizon: int) -> list[tuple[float,
 def select_thresholds(
     predictions: pd.DataFrame, horizon: int
 ) -> tuple[float, float, PolicyMetrics] | None:
-    eligible = [candidate for candidate in threshold_grid(predictions, horizon) if candidate[2].trades >= 300]
+    eligible = [
+        candidate
+        for candidate in threshold_grid(predictions, horizon)
+        if candidate[2].trades >= 300
+        and candidate[2].mean_base_r > 0
+        and candidate[2].mean_stress_r > 0
+        and candidate[2].positive_pairs >= 6
+        and candidate[2].positive_month_fraction >= 0.6
+    ]
     if not eligible:
         return None
     return max(eligible, key=lambda item: (item[2].mean_stress_r, item[2].mean_base_r))

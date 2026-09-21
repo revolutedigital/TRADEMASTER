@@ -206,13 +206,18 @@ def run_sample(matrices, windows, universe, rates, configs, coins=None) -> Sampl
             if len(minutes) < 2:
                 continue
             price = float(np.median(0.5 * (minutes[:, fx.BID_CLOSE] + minutes[:, fx.ASK_CLOSE])))
+            aggregated: dict[int, np.ndarray] = {}  # bars and prepared runs are shared by every configuration of a timeframe
+            prepared: dict[tuple[int, str], tuple[np.ndarray, np.ndarray]] = {}
             for key, config in configs.items():
                 if pair not in config.pairs:
                     continue
-                bars = aggregate_minutes(minutes, config.seconds)
                 params = config.params(pair)
                 for scenario in (FUSION_ZERO, STRESS):
-                    scenario_bars, slippage = prepare_run(bars, instrument, scenario)
+                    if (config.seconds, scenario.name) not in prepared:
+                        if config.seconds not in aggregated:
+                            aggregated[config.seconds] = aggregate_minutes(minutes, config.seconds)
+                        prepared[(config.seconds, scenario.name)] = prepare_run(aggregated[config.seconds], instrument, scenario)
+                    scenario_bars, slippage = prepared[(config.seconds, scenario.name)]
                     if pair == SYNTHETIC:  # both legs slip
                         slippage = 2.0 * slippage
                     result = core.run_simulation(config.step, config.init, params, config.state_size,
@@ -263,10 +268,10 @@ def _assemble(keys, universe, days, values, config_ids, pairs_of, fits, stress_s
 
 
 def evaluate(result: SampleResult, configs, null_t: np.ndarray, *, draws: int, min_trades: int,
-             allow_inconclusive: bool) -> pd.DataFrame:
+             allow_inconclusive: bool, bootstrap_seed: int = 20260920) -> pd.DataFrame:
     """One row per configuration with both p-values, the numbers behind them and the verdict."""
     mean, error, t = stats.cluster_t(result.sums, result.counts)
-    _, p_a = stats.bootstrap_adjusted_p_values(result.sums, result.counts, draws=draws)
+    _, p_a = stats.bootstrap_adjusted_p_values(result.sums, result.counts, draws=draws, seed=bootstrap_seed)
     null_best = np.where(np.isfinite(null_t), null_t, -np.inf).max(axis=1)
     p_b = stats.placebo_p_value(t, null_best)
     mde = stats.minimum_detectable_effect(error)
@@ -291,13 +296,13 @@ def null_t_matrix(results: list[SampleResult]) -> np.ndarray:
     return np.stack([stats.cluster_t(r.sums, r.counts)[2] for r in results])
 
 
-def false_approval_rate(results: list[SampleResult], configs, draws: int) -> float:
+def false_approval_rate(results: list[SampleResult], configs, draws: int, bootstrap_seed: int = 20260920) -> float:
     """Share of placebo datasets in which the whole criterion would approve some configuration."""
     null_t = null_t_matrix(results)
     approved = 0
     for i, result in enumerate(results):
         table = evaluate(result, configs, np.delete(null_t, i, axis=0), draws=draws,
-                         min_trades=stats.MIN_TRADES_DISCOVERY, allow_inconclusive=False)
+                         min_trades=stats.MIN_TRADES_DISCOVERY, allow_inconclusive=False, bootstrap_seed=bootstrap_seed)
         approved += bool(table["approved"].any())
     return approved / len(results)
 

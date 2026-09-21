@@ -22,11 +22,10 @@ from sklearn.linear_model import Ridge
 from sklearn.preprocessing import RobustScaler, StandardScaler
 from sklearn.tree import DecisionTreeRegressor
 
-from scripts.research.fx_fast4_diagnostic import _fx_day, model_feature_names, model_matrix
-from scripts.research.fx_fast4_events import DIRECTIONAL_FEATURES
+from scripts.research.fx_fast4_diagnostic import _fx_day, model_feature_names
 from scripts.research.fx_fast4_materialize import _sha256
 from scripts.research.fx_fast5_materialize import DEFAULT_FEATURE_PANEL
-from scripts.research.fx_fast5_model import _read_features
+from scripts.research.fx_fast5_model import _read_features, model_matrix
 from scripts.research.fx_fast9_materialize import DEFAULT_OUTPUT as PAYOFF_ROOT
 
 REPO_ROOT = Path(__file__).resolve().parents[3]

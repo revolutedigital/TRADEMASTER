@@ -43,6 +43,40 @@ def test_in_the_weeks_where_the_calendars_disagree_the_european_rule_is_followed
     assert utc("2024-10-24 09:00:00") == pd.Timestamp("2024-10-24 13:00", tz="UTC")
 
 
+def test_the_older_source_follows_the_us_calendar_where_the_two_calendars_disagree() -> None:
+    clock = pd.Series(pd.to_datetime(["2017-03-20 12:00:00", "2017-01-16 12:00:00", "2017-11-01 12:00:00"]))
+
+    us = hd.clock_to_utc(clock, rule="us")
+    europe = hd.clock_to_utc(clock, rule="europe")
+
+    # 20 March: the US is on summer time since the 12th, Europe until the 26th. 1 November: the reverse in autumn.
+    assert list(us) == [pd.Timestamp("2017-03-20 16:00", tz="UTC"), pd.Timestamp("2017-01-16 17:00", tz="UTC"),
+                        pd.Timestamp("2017-11-01 16:00", tz="UTC")]
+    assert europe[0] == pd.Timestamp("2017-03-20 17:00", tz="UTC") and europe[2] == pd.Timestamp("2017-11-01 17:00", tz="UTC")
+
+
+def test_a_tick_in_the_hour_a_us_switch_skips_is_dropped_not_guessed() -> None:
+    lines = pd.DataFrame({"ts": ["20170312 023000000", "20170312 180000000"], "bid": [1.1, 1.1],
+                          "ask": [1.1001, 1.1001], "volume": [0, 0]})
+
+    ticks = hd.parse_ticks(lines, rule="us")
+
+    assert len(ticks) == 1 and ticks.index[0] == pd.Timestamp("2017-03-12 22:00", tz="UTC")
+
+
+def test_the_legacy_feed_is_judged_at_half_a_pip_because_it_is_another_quote_feed() -> None:
+    oracle, m1 = _oracle_and_m1()
+    off_by_a_fifth_of_a_pip = m1.copy()
+    for column in ("bid_close", "ask_close", "bid_open", "ask_open"):
+        off_by_a_fifth_of_a_pip[column] = off_by_a_fifth_of_a_pip[column] + 0.00002
+
+    strict = hd.validate_against_hourly(off_by_a_fifth_of_a_pip, oracle, EURUSD.pip_size)
+    legacy = hd.validate_against_hourly(off_by_a_fifth_of_a_pip, oracle, EURUSD.pip_size,
+                                        hd.LEGACY_TOLERANCE_PIPS, hd.LEGACY_MIN_HOURLY_MATCH)
+
+    assert not strict.passes and legacy.passes
+
+
 def test_an_empty_clock_series_gives_an_empty_index() -> None:
     assert len(hd.clock_to_utc(pd.Series([], dtype="datetime64[ns]"))) == 0
 

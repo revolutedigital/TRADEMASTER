@@ -32,8 +32,15 @@ from scripts.research.fx_dataset import ALL_PAIRS, FxInstrument
 
 SUMMER_OFFSET = pd.Timedelta(hours=4)
 WINTER_OFFSET = pd.Timedelta(hours=5)
+NEW_YORK = "America/New_York"
 MATCH_TOLERANCE_PIPS = 0.05
 MIN_HOURLY_MATCH = 0.99
+# Until 2018-11 the source is another quote feed, not the Dukascopy mirror of later years: its clock follows the
+# US switch dates (checked against the oracle: 94% to 97% of hours within 0.5 pip, 53% to 89% with the European
+# rule), and hourly closes differ from the oracle by about 0.1 pip at the median, so the bar is wider.
+LEGACY_END = (2018, 11)
+LEGACY_TOLERANCE_PIPS = 0.5
+LEGACY_MIN_HOURLY_MATCH = 0.90
 
 
 def last_sunday(year: int, month: int) -> datetime:
@@ -48,10 +55,15 @@ def european_summer_bounds(year: int) -> tuple[pd.Timestamp, pd.Timestamp]:
     return pd.Timestamp(last_sunday(year, 3)), pd.Timestamp(last_sunday(year, 10))
 
 
-def clock_to_utc(clock: pd.Series) -> pd.DatetimeIndex:
-    """Convert HistData wall-clock timestamps to UTC using the European switch dates."""
+def clock_to_utc(clock: pd.Series, rule: str = "europe") -> pd.DatetimeIndex:
+    """Convert HistData wall-clock timestamps to UTC using the European switch dates (`rule="europe"`, the
+    mirror since 2018-12-16) or the US ones (`rule="us"`, the older source). A tick in the hour that a US switch
+    skips or repeats (a Sunday morning, market closed) has no single UTC time and comes back as NaT."""
     if clock.empty:
         return pd.DatetimeIndex([], tz="UTC")
+    if rule == "us":
+        local = clock.dt.tz_localize(NEW_YORK, ambiguous="NaT", nonexistent="NaT")
+        return pd.DatetimeIndex(local.dt.tz_convert("UTC"))
     summer_guess = (clock + SUMMER_OFFSET).dt.tz_localize("UTC")
     in_summer = pd.Series(False, index=clock.index)
     for year in sorted(set(clock.dt.year) | set((clock + SUMMER_OFFSET).dt.year)):
@@ -61,19 +73,19 @@ def clock_to_utc(clock: pd.Series) -> pd.DatetimeIndex:
     return pd.DatetimeIndex(summer_guess.where(in_summer, winter))
 
 
-def parse_ticks(lines: pd.DataFrame) -> pd.DataFrame:
+def parse_ticks(lines: pd.DataFrame, rule: str = "europe") -> pd.DataFrame:
     """Turn raw `ts,bid,ask,volume` rows into a UTC-indexed frame ordered by time."""
     stamp = lines["ts"].astype(str)
     stamp = stamp.where(stamp.str.len() != 15, stamp + "000")  # no milliseconds since 2026-06-28
     clock = pd.to_datetime(stamp, format="%Y%m%d %H%M%S%f")
     frame = pd.DataFrame(
         {"bid": lines["bid"].to_numpy(dtype=float), "ask": lines["ask"].to_numpy(dtype=float)},
-        index=clock_to_utc(clock.reset_index(drop=True)),
+        index=clock_to_utc(clock.reset_index(drop=True), rule),
     )
-    return frame.sort_index(kind="stable")
+    return frame[frame.index.notna()].sort_index(kind="stable")
 
 
-def read_tick_zip(path: Path) -> pd.DataFrame:
+def read_tick_zip(path: Path, rule: str = "europe") -> pd.DataFrame:
     """Read one monthly HistData tick archive."""
     with zipfile.ZipFile(path) as archive:
         name = next(entry for entry in archive.namelist() if entry.endswith(".csv"))
@@ -81,7 +93,7 @@ def read_tick_zip(path: Path) -> pd.DataFrame:
             raw = pd.read_csv(
                 handle, header=None, names=["ts", "bid", "ask", "volume"], dtype={"ts": str}
             )
-    return parse_ticks(raw)
+    return parse_ticks(raw, rule)
 
 
 def ticks_to_m1(ticks: pd.DataFrame, instrument: FxInstrument) -> pd.DataFrame:
@@ -111,18 +123,20 @@ class HourlyValidation:
     ask_match: float
     oracle_hours_without_data: float
     crossed_minutes: int
+    min_match: float = MIN_HOURLY_MATCH
 
     @property
     def passes(self) -> bool:
         return (
             self.hours_compared > 0
-            and min(self.bid_match, self.ask_match) >= MIN_HOURLY_MATCH
+            and min(self.bid_match, self.ask_match) >= self.min_match
             and self.crossed_minutes == 0
         )
 
 
 def validate_against_hourly(
-    m1: pd.DataFrame, oracle: pd.DataFrame, pip_size: float
+    m1: pd.DataFrame, oracle: pd.DataFrame, pip_size: float,
+    tolerance_pips: float = MATCH_TOLERANCE_PIPS, min_match: float = MIN_HOURLY_MATCH,
 ) -> HourlyValidation:
     """Compare the last M1 close of each hour with the oracle's hourly bid and ask close."""
     if m1.empty:
@@ -140,7 +154,7 @@ def validate_against_hourly(
 
     def matches(oracle_column: str, histdata_column: str) -> float:
         error = ((joined[histdata_column] - joined[oracle_column]).abs() / pip_size).to_numpy()
-        return float((error <= MATCH_TOLERANCE_PIPS).mean())
+        return float((error <= tolerance_pips).mean())
 
     return HourlyValidation(
         hours_compared=len(joined),
@@ -148,6 +162,7 @@ def validate_against_hourly(
         ask_match=matches("ask_close", "ask"),
         oracle_hours_without_data=float(1 - len(joined) / max(len(window), 1)),
         crossed_minutes=int((m1["ask_open"] < m1["bid_open"]).sum()),
+        min_match=min_match,
     )
 
 
@@ -218,10 +233,12 @@ def build_pair(
     def process(item: tuple[int, int]) -> tuple[pd.DataFrame, dict[str, object]]:
         year, month = item
         archive = download_month(pair, year, month, zip_dir)
-        m1 = ticks_to_m1(read_tick_zip(archive), instrument)
+        legacy = (year, month) <= LEGACY_END
+        m1 = ticks_to_m1(read_tick_zip(archive, "us" if legacy else "europe"), instrument)
         row: dict[str, object] = {"pair": pair, "month": f"{year}-{month:02d}", "minutes": len(m1)}
         if oracle is not None:
-            check = validate_against_hourly(m1, oracle, instrument.pip_size)
+            check = (validate_against_hourly(m1, oracle, instrument.pip_size, LEGACY_TOLERANCE_PIPS, LEGACY_MIN_HOURLY_MATCH)
+                     if legacy else validate_against_hourly(m1, oracle, instrument.pip_size))
             row |= {
                 "hours_compared": check.hours_compared,
                 "bid_match": round(check.bid_match, 4),

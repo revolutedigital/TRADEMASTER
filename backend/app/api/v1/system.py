@@ -169,6 +169,7 @@ async def system_status(_user: dict = Depends(require_auth)):
     from app.services.trading_engine import trading_engine
 
     return {
+        "status": "running" if trading_engine._running else "stopped",
         "trading_symbols": settings.symbols_list,
         "risk_limits": {
             "max_risk_per_trade": settings.trading_max_risk_per_trade,

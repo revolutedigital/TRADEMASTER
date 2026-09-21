@@ -81,18 +81,24 @@ def _outcome_columns(horizon: int) -> list[str]:
     ]
 
 
-def read_pair_panel(panel: Path, pair: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+def read_pair_panel(
+    panel: Path, pair: str, outcome_columns: list[str] | None = None
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Read either one whole-pair file or ordered UTC-year partitions."""
     feature_path = panel / f"{pair}-features.parquet"
     outcome_path = panel / f"{pair}-outcomes.parquet"
     if feature_path.exists() and outcome_path.exists():
-        return pd.read_parquet(feature_path), pd.read_parquet(outcome_path)
+        return pd.read_parquet(feature_path), pd.read_parquet(
+            outcome_path, columns=outcome_columns
+        )
     feature_paths = sorted(panel.glob(f"{pair}-????-features.parquet"))
     outcome_paths = sorted(panel.glob(f"{pair}-????-outcomes.parquet"))
     if not feature_paths or len(feature_paths) != len(outcome_paths):
         raise FileNotFoundError(f"incomplete panel partitions for {pair} in {panel}")
     features = pd.concat(pd.read_parquet(path) for path in feature_paths).sort_index()
-    outcomes = pd.concat(pd.read_parquet(path) for path in outcome_paths).sort_index()
+    outcomes = pd.concat(
+        pd.read_parquet(path, columns=outcome_columns) for path in outcome_paths
+    ).sort_index()
     if not features.index.equals(outcomes.index):
         raise ValueError(f"feature/outcome indexes differ for {pair}")
     return features, outcomes
@@ -106,10 +112,11 @@ def load_training(
     stress_targets: list[np.ndarray] = []
     names: list[str] | None = None
     for pair_index, pair in enumerate(ALL_PAIRS):
-        features, all_outcomes = read_pair_panel(panel, pair)
+        columns = _outcome_columns(horizon)
+        features, all_outcomes = read_pair_panel(panel, pair, columns)
         names = names or model_feature_names(features)
         modeling = features[names]
-        outcomes = all_outcomes[_outcome_columns(horizon)]
+        outcomes = all_outcomes[columns]
         for side, side_name in ((1, "long"), (-1, "short")):
             base = outcomes[f"h{horizon}_{side_name}_terminal_r_base"]
             valid = _eligible(modeling, base, None, TRAIN_END)
@@ -162,9 +169,10 @@ def predict_period(
 ) -> pd.DataFrame:
     parts: list[pd.DataFrame] = []
     for pair in ALL_PAIRS:
-        features, all_outcomes = read_pair_panel(panel, pair)
+        columns = _outcome_columns(horizon)
+        features, all_outcomes = read_pair_panel(panel, pair, columns)
         modeling = features[feature_names]
-        outcomes = all_outcomes[_outcome_columns(horizon)]
+        outcomes = all_outcomes[columns]
         for side, side_name in ((1, "long"), (-1, "short")):
             base = outcomes[f"h{horizon}_{side_name}_terminal_r_base"]
             valid = _eligible(modeling, base, start, end)

@@ -44,6 +44,11 @@ SAMPLES = {  # stage: (months, directory of the matrices, data manifest)
     "replication": (lab.DISCOVERY, lab.LAB_DIR, lab.DEFAULT_MANIFEST),
     "confirmation": (lab.CONFIRMATION, lab.LAB_DIR, lab.DEFAULT_MANIFEST),
 }
+STAGE_TITLES = {
+    "discovery": f"Descoberta da rodada 2 (S0: {SAMPLES['discovery'][0][0]} a {SAMPLES['discovery'][0][1]})",
+    "replication": f"Réplica da rodada 2 (S1: {SAMPLES['replication'][0][0]} a {SAMPLES['replication'][0][1]})",
+    "confirmation": f"Confirmação da rodada 2 (S2: {SAMPLES['confirmation'][0][0]} a {SAMPLES['confirmation'][0][1]})",
+}
 NULL_T_FILE = PRE_2019_LAB / "null_t_discovery.npy"
 PLACEBO_RESULTS_FILE = PRE_2019_LAB / "placebo_results.pkl"  # the daily tables of every placebo replicate, for the power check
 CALIBRATION_LOCK = PRE_2019_LAB / "calibrate.lock"
@@ -151,7 +156,7 @@ def discover() -> int:
     commit = lab.code_commit()
     keys = list(configurations())
     table = _run_stage("discovery", keys, np.load(NULL_T_FILE), "fast2-discovery-report.md",
-                       "Descoberta da rodada 2 (S0: 2011-01 a 2018-11)", allow_inconclusive=True, commit=commit)
+                       STAGE_TITLES["discovery"], allow_inconclusive=True, commit=commit)
     approved = table.loc[table["approved"], "config"].tolist()
     registry.append_event({"event": "discovery_report", "approved": approved, "report": "fast2-discovery-report.md"})
     sys.stdout.write(f"approved in discovery: {len(approved)} {approved}\n")
@@ -168,9 +173,7 @@ def _later_stage(stage: str, replicates: int, workers: int) -> int:
     commit = lab.code_commit()
     null_t = lab.null_t_matrix(run_placebos(stage, previous, replicates, workers))
     name = f"fast2-{stage}-report.md"
-    title = {"replication": "Réplica da rodada 2 (S1: 2019-01 a 2024-08)",
-             "confirmation": "Confirmação da rodada 2 (S2: 2024-09 a 2026-08)"}[stage]
-    table = _run_stage(stage, previous, null_t, name, title, allow_inconclusive=False, commit=commit)
+    table = _run_stage(stage, previous, null_t, name, STAGE_TITLES[stage], allow_inconclusive=False, commit=commit)
     approved = table.loc[table["approved"], "config"].tolist()
     if stage == "replication":
         registry.append_event({"event": "replication_report", "approved": approved, "report": name})

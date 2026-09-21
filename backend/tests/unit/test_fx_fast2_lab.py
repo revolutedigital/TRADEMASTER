@@ -27,6 +27,10 @@ def test_the_three_samples_are_ordered_and_only_the_discovery_uses_the_older_dat
     assert months[1] == lab.DISCOVERY and months[2] == lab.CONFIRMATION  # round 1's samples, unchanged
 
 
+def test_the_discovery_report_title_names_the_amended_sample() -> None:
+    assert lab2.STAGE_TITLES["discovery"] == "Descoberta da rodada 2 (S0: 2014-11 a 2018-11)"
+
+
 def test_the_cost_calendar_covers_the_older_discovery_sample() -> None:
     entry = np.array([pd.Timestamp("2014-11-03 12:00", tz="UTC").timestamp()])
     exit_ = np.array([pd.Timestamp("2014-11-04 12:00", tz="UTC").timestamp()])

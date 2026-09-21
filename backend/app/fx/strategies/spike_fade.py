@@ -111,14 +111,14 @@ def spike_fade_step(params, state, bar, position):
         if ring_count(state, _RANGES) == LOOKBACK:
             entry_time = float(local_time_of_day(bar[BAR_TIME] + params[_BAR_SECONDS], NEW_YORK))
             blacked_out = params[_BLACKOUT_START] <= entry_time < params[_BLACKOUT_END]
-            typical_range = ring_median(state, _RANGES)
-            typical_spread = ring_median(state, _SPREADS)
-            is_spike = (
-                bar_range > 0.0
-                and bar_range >= params[_THRESHOLD] * typical_range
-                and abs(body) >= params[_BODY_FRACTION] * bar_range
-                and closing_spread <= params[_SPREAD_MULTIPLE] * typical_spread
-            )
+            # The same four conditions as always, cheapest first: a median sorts the ring, and most bars fail
+            # the body test, so most bars never pay for one.
+            is_spike = False
+            if bar_range > 0.0 and abs(body) >= params[_BODY_FRACTION] * bar_range:
+                is_spike = (
+                    bar_range >= params[_THRESHOLD] * ring_median(state, _RANGES)
+                    and closing_spread <= params[_SPREAD_MULTIPLE] * ring_median(state, _SPREADS)
+                )
             if is_spike and not blacked_out:
                 if body > 0.0:
                     stop_distance = mid_high + params[_STOP_RANGE] * bar_range - mid_close

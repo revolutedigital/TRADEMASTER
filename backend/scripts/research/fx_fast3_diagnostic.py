@@ -72,9 +72,12 @@ def _eligible(features: pd.DataFrame, outcome: pd.Series, start: pd.Timestamp | 
     return valid
 
 
-def load_training(panel: Path, horizon: int, stride: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[str]]:
+def load_training(
+    panel: Path, horizon: int, stride: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str]]:
     matrices: list[np.ndarray] = []
-    regression_targets: list[np.ndarray] = []
+    base_targets: list[np.ndarray] = []
+    stress_targets: list[np.ndarray] = []
     classification_targets: list[np.ndarray] = []
     names: list[str] | None = None
     for pair_index, pair in enumerate(ALL_PAIRS):
@@ -83,7 +86,12 @@ def load_training(panel: Path, horizon: int, stride: int) -> tuple[np.ndarray, n
         modeling = features[names]
         outcomes = pd.read_parquet(
             panel / f"{pair}-outcomes.parquet",
-            columns=[f"h{horizon}_long_terminal_r_base", f"h{horizon}_short_terminal_r_base"],
+            columns=[
+                f"h{horizon}_long_terminal_r_base",
+                f"h{horizon}_long_terminal_r_stress",
+                f"h{horizon}_short_terminal_r_base",
+                f"h{horizon}_short_terminal_r_stress",
+            ],
         )
         for side, side_name in ((fx.LONG, "long"), (fx.SHORT, "short")):
             target = outcomes[f"h{horizon}_{side_name}_terminal_r_base"]
@@ -95,21 +103,30 @@ def load_training(panel: Path, horizon: int, stride: int) -> tuple[np.ndarray, n
             selected = modeling.iloc[positions]
             y = target.iloc[positions].to_numpy(dtype=np.float32)
             matrices.append(model_matrix(selected, names, pair, side))
-            regression_targets.append(y)
+            base_targets.append(y)
+            stress_targets.append(
+                outcomes[f"h{horizon}_{side_name}_terminal_r_stress"].iloc[positions].to_numpy(
+                    dtype=np.float32
+                )
+            )
             classification_targets.append((y > 0).astype(np.int8))
     if names is None:
         raise ValueError("the panel contains no pairs")
     return (
         np.concatenate(matrices),
-        np.concatenate(regression_targets),
+        np.concatenate(base_targets),
+        np.concatenate(stress_targets),
         np.concatenate(classification_targets),
         names,
     )
 
 
 def fit_models(
-    matrix: np.ndarray, regression_target: np.ndarray, classification_target: np.ndarray
-) -> tuple[xgb.XGBRegressor, xgb.XGBClassifier]:
+    matrix: np.ndarray,
+    base_target: np.ndarray,
+    stress_target: np.ndarray,
+    classification_target: np.ndarray,
+) -> tuple[xgb.XGBRegressor, xgb.XGBRegressor, xgb.XGBClassifier]:
     common = {
         "n_estimators": 500,
         "max_depth": 3,
@@ -122,17 +139,20 @@ def fit_models(
         "n_jobs": 10,
         "random_state": 20260921,
     }
-    regressor = xgb.XGBRegressor(objective="reg:squarederror", **common)
+    base_regressor = xgb.XGBRegressor(objective="reg:squarederror", **common)
+    stress_regressor = xgb.XGBRegressor(objective="reg:squarederror", **common)
     classifier = xgb.XGBClassifier(objective="binary:logistic", eval_metric="logloss", **common)
-    regressor.fit(matrix, regression_target, verbose=False)
+    base_regressor.fit(matrix, base_target, verbose=False)
+    stress_regressor.fit(matrix, stress_target, verbose=False)
     classifier.fit(matrix, classification_target, verbose=False)
-    return regressor, classifier
+    return base_regressor, stress_regressor, classifier
 
 
 def predict_period(
     panel: Path,
     horizon: int,
-    regressor: xgb.XGBRegressor,
+    base_regressor: xgb.XGBRegressor,
+    stress_regressor: xgb.XGBRegressor,
     classifier: xgb.XGBClassifier,
     feature_names: list[str],
     start: pd.Timestamp,
@@ -156,12 +176,16 @@ def predict_period(
             valid = _eligible(modeling, base, start, end)
             selected = modeling.loc[valid]
             matrix = model_matrix(selected, feature_names, pair, side)
+            expected_base = base_regressor.predict(matrix)
+            expected_stress = stress_regressor.predict(matrix)
             parts.append(
                 pd.DataFrame(
                     {
                         "pair": pair,
                         "side": side,
-                        "expected_r": regressor.predict(matrix),
+                        "expected_r": np.minimum(expected_base, expected_stress),
+                        "expected_r_base": expected_base,
+                        "expected_r_stress": expected_stress,
                         "raw_probability": classifier.predict_proba(matrix)[:, 1],
                         "base_r": base.loc[valid].to_numpy(),
                         "stress_r": outcomes.loc[
@@ -247,10 +271,21 @@ def select_thresholds(
 
 def run_diagnostic(panel: Path, output: Path, horizon: int, stride: int) -> dict[str, object]:
     output.mkdir(parents=True, exist_ok=True)
-    matrix, regression_target, classification_target, names = load_training(panel, horizon, stride)
-    regressor, classifier = fit_models(matrix, regression_target, classification_target)
+    matrix, base_target, stress_target, classification_target, names = load_training(
+        panel, horizon, stride
+    )
+    base_regressor, stress_regressor, classifier = fit_models(
+        matrix, base_target, stress_target, classification_target
+    )
     validation = predict_period(
-        panel, horizon, regressor, classifier, names, TRAIN_END, SELECTION_END
+        panel,
+        horizon,
+        base_regressor,
+        stress_regressor,
+        classifier,
+        names,
+        TRAIN_END,
+        SELECTION_END,
     )
     calibration = validation.index < CALIBRATION_END
     calibrator = IsotonicRegression(out_of_bounds="clip")
@@ -260,7 +295,7 @@ def run_diagnostic(panel: Path, output: Path, horizon: int, stride: int) -> dict
     grid = threshold_grid(selection, horizon)
     chosen = select_thresholds(selection, horizon)
     importance = sorted(
-        zip(expanded_feature_names(names), regressor.feature_importances_, strict=True),
+        zip(expanded_feature_names(names), stress_regressor.feature_importances_, strict=True),
         key=lambda item: item[1],
         reverse=True,
     )[:20]
@@ -296,7 +331,16 @@ def run_diagnostic(panel: Path, output: Path, horizon: int, stride: int) -> dict
         report["test_2022"] = "not_opened"
     else:
         ev_threshold, probability_threshold, selection_metrics = chosen
-        test = predict_period(panel, horizon, regressor, classifier, names, SELECTION_END, TEST_END)
+        test = predict_period(
+            panel,
+            horizon,
+            base_regressor,
+            stress_regressor,
+            classifier,
+            names,
+            SELECTION_END,
+            TEST_END,
+        )
         test["probability"] = calibrator.predict(test["raw_probability"])
         test_trades = apply_policy(test, horizon, ev_threshold, probability_threshold)
         report["status"] = "policy_selected"
@@ -306,7 +350,8 @@ def run_diagnostic(panel: Path, output: Path, horizon: int, stride: int) -> dict
         }
         report["selection_2021_h2"] = asdict(selection_metrics)
         report["test_2022"] = asdict(metrics(test_trades))
-    regressor.save_model(output / f"h{horizon}-regressor.json")
+    base_regressor.save_model(output / f"h{horizon}-base-regressor.json")
+    stress_regressor.save_model(output / f"h{horizon}-stress-regressor.json")
     classifier.save_model(output / f"h{horizon}-classifier.json")
     (output / f"h{horizon}-report.json").write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"

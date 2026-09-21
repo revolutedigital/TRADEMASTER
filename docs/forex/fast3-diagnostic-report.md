@@ -83,3 +83,14 @@ O próximo salto precisa acrescentar informação, não parâmetros: eventos de 
 de estado, com histórico que permita replay. A arquitetura causal, labels, custos, guardas e
 execução desta rodada são reutilizáveis. Trailing só será treinado depois que uma entrada tiver EV
 positivo fora da amostra.
+
+### Dado local disponível para a próxima rodada
+
+O checkout já contém 18 GB em 1.880 arquivos mensais de ticks HistData dos dez pares, de 2010 a
+2026. Cada linha preserva timestamp, bid e ask, chegando a múltiplas atualizações por segundo. O
+campo `volume`, porém, é sempre zero nos meses inspecionados (2017-01, 2021-01 e 2026-01).
+
+Logo, a próxima rodada pode medir **microestrutura de cotações** — intensidade e tempo entre
+updates, direção separada de bid/ask, persistência, spread, corridas e resposta a saltos — mas não
+pode alegar agressão compradora/vendedora, absorção, volume negociado ou desequilíbrio de book.
+Esses últimos exigem histórico L2/trades de uma venue centralizada que ainda não existe no projeto.

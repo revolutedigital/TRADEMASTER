@@ -106,6 +106,12 @@ def _candidate_index(frame: pd.DataFrame) -> pd.MultiIndex:
     )
 
 
+def as_candidate_multiindex(frame: pd.DataFrame) -> pd.DataFrame:
+    indexed = frame.copy()
+    indexed.index = _candidate_index(indexed)
+    return indexed.drop(columns="pair")
+
+
 def simulate_candidate_pool(
     predictions: pd.DataFrame,
     pool: pd.DataFrame,
@@ -121,8 +127,7 @@ def simulate_candidate_pool(
         costs = _costs(pair, cleaned, rates)
         for trail in TRAILING_DISTANCES_R:
             outcomes = _add_outcomes(pair_pool, cleaned, instrument, costs, trail)
-            outcomes.index = _candidate_index(outcomes)
-            by_trail[trail].append(outcomes)
+            by_trail[trail].append(as_candidate_multiindex(outcomes))
         del cleaned
         gc.collect()
     return {

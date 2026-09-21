@@ -4,11 +4,23 @@ import pandas as pd
 import pytest
 
 from scripts.research.fx_fast6_policy import (
+    as_candidate_multiindex,
     causal_daily_cutoffs,
     enforce_global_portfolio,
     global_policy_metrics,
     qualifying_candidates,
 )
+
+
+def test_candidate_multiindex_keeps_pair_only_as_index_level() -> None:
+    timestamp = pd.Timestamp("2021-04-01T10:00:00Z")
+    frame = pd.DataFrame(
+        {"pair": ["EURUSD"], "trusted_score": [0.4]},
+        index=pd.DatetimeIndex([timestamp], name="decision_time"),
+    )
+    indexed = as_candidate_multiindex(frame)
+    assert indexed.index.tolist() == [(timestamp, "EURUSD")]
+    assert "pair" not in indexed.columns
 
 
 def test_daily_cutoff_uses_only_prior_fx_days() -> None:

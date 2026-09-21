@@ -70,6 +70,8 @@ def test_changing_the_future_cannot_change_a_past_feature_row() -> None:
 
     _, second = events.build_feature_frame(changed, EURUSD)
 
+    assert np.isfinite(first.loc[decision_time, "return_72"])
+    assert np.isfinite(first.loc[decision_time, "h1_trend_atr"])
     pd.testing.assert_series_equal(first.loc[decision_time], second.loc[decision_time])
 
 
@@ -149,3 +151,29 @@ def test_directional_features_flip_signed_context_but_not_costs() -> None:
     assert short.loc[0, "return_3"] == -0.2
     assert short.loc[0, "spread_pips"] == 0.8
     assert short.loc[0, "side"] == fx.SHORT
+
+
+def test_compiled_wide_outcomes_match_the_auditable_long_form() -> None:
+    bars = handcrafted_m5()
+    features = outcome_features(bars)
+    costs = events.EventCosts(0.0, 0.0, ZERO_COST, ZERO_COST)
+    long_form = events.build_outcome_frame(
+        bars, features, EURUSD, costs, horizons_minutes=(15,)
+    )
+    wide = events.build_outcome_wide(bars, features, EURUSD, costs, horizons_minutes=(15,))
+
+    for side, side_name in ((fx.LONG, "long"), (fx.SHORT, "short")):
+        expected = long_form[
+            (long_form["decision_index"] == 0) & (long_form["side"] == side)
+        ].iloc[0]
+        for field in (
+            "risk_price",
+            "terminal_r_base",
+            "terminal_r_stress",
+            "mfe_r_base",
+            "mae_r_base",
+            "target_0_5r_before_stop",
+            "target_1_0r_before_stop",
+            "target_2_0r_before_stop",
+        ):
+            assert wide.iloc[0][f"h15_{side_name}_{field}"] == pytest.approx(expected[field])

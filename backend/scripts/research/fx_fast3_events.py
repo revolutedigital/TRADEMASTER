@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+from numba import njit
 
 from app.fx import strategy as fx
 from app.fx.bars import aggregate_minutes
@@ -208,7 +209,12 @@ def build_feature_frame(minutes: np.ndarray, instrument: Instrument) -> tuple[np
     feature["london_session"] = ((london.hour >= 8) & (london.hour < 17)).astype(np.int8)
     feature["new_york_session"] = ((new_york.hour >= 8) & (new_york.hour < 17)).astype(np.int8)
 
-    frame = pd.DataFrame(feature, index=pd.DatetimeIndex(timestamps, name="decision_time"))
+    # Series carry a RangeIndex. Convert positionally before assigning the DatetimeIndex, otherwise
+    # pandas aligns unlike labels and silently turns every Series-backed feature into NaN.
+    positional_feature = {name: np.asarray(values) for name, values in feature.items()}
+    frame = pd.DataFrame(
+        positional_feature, index=pd.DatetimeIndex(timestamps, name="decision_time")
+    )
     frame.replace([np.inf, -np.inf], np.nan, inplace=True)
     contiguous = pd.Series(m5[:, fx.BAR_TIME]).diff().eq(M5_SECONDS)
     frame["history_contiguous"] = (
@@ -307,6 +313,150 @@ def build_outcome_frame(
                 )
                 rows.append(row)
     return pd.DataFrame(rows)
+
+
+@njit(cache=True)
+def _compiled_outcome(  # noqa: PLR0913
+    base_bars,
+    base_slippage,
+    stress_bars,
+    stress_slippage,
+    atr,
+    history_contiguous,
+    horizon_bars,
+    side,
+    pip,
+    base_commission_pips,
+    stress_commission_pips,
+):
+    """Vector-width outcome kernel; rows stay aligned to the feature matrix."""
+    count = base_bars.shape[0]
+    output = np.full((count, 8), np.nan)
+    for decision_index in range(count - horizon_bars):
+        if not history_contiguous[decision_index] or not np.isfinite(atr[decision_index]):
+            continue
+        entry_index = decision_index + 1
+        exit_index = decision_index + horizon_bars
+        continuous = True
+        for index in range(decision_index, exit_index):
+            if base_bars[index + 1, fx.BAR_TIME] - base_bars[index, fx.BAR_TIME] != M5_SECONDS:
+                continuous = False
+                break
+        if not continuous:
+            continue
+        if side == fx.LONG:
+            base_entry = base_bars[entry_index, fx.ASK_OPEN] + base_slippage[entry_index]
+            stress_entry = stress_bars[entry_index, fx.ASK_OPEN] + stress_slippage[entry_index]
+            base_exit = base_bars[exit_index, fx.BID_CLOSE] - base_slippage[exit_index]
+            stress_exit = stress_bars[exit_index, fx.BID_CLOSE] - stress_slippage[exit_index]
+        else:
+            base_entry = base_bars[entry_index, fx.BID_OPEN] - base_slippage[entry_index]
+            stress_entry = stress_bars[entry_index, fx.BID_OPEN] - stress_slippage[entry_index]
+            base_exit = base_bars[exit_index, fx.ASK_CLOSE] + base_slippage[exit_index]
+            stress_exit = stress_bars[exit_index, fx.ASK_CLOSE] + stress_slippage[exit_index]
+        observed_spread_pips = (
+            base_bars[entry_index, fx.ASK_OPEN] - base_bars[entry_index, fx.BID_OPEN]
+        ) / pip
+        floor_pips = 4.0 * (
+            observed_spread_pips + 2.0 * base_slippage[entry_index] / pip + base_commission_pips
+        )
+        risk_price = max(atr[decision_index], floor_pips * pip)
+        terminal_base = ((base_exit - base_entry) * side / pip - base_commission_pips) * pip / risk_price
+        terminal_stress = (
+            ((stress_exit - stress_entry) * side / pip - stress_commission_pips) * pip / risk_price
+        )
+        maximum_favorable = -np.inf
+        maximum_adverse = -np.inf
+        target_hit = np.zeros(3, dtype=np.float64)
+        target_alive = np.ones(3, dtype=np.bool_)
+        stop_price = base_entry - side * risk_price
+        for index in range(entry_index, exit_index + 1):
+            if side == fx.LONG:
+                executable_high = base_bars[index, fx.BID_HIGH] - base_slippage[index]
+                executable_low = base_bars[index, fx.BID_LOW] - base_slippage[index]
+                favorable = executable_high - base_entry
+                adverse = base_entry - executable_low
+                stopped = executable_low <= stop_price
+            else:
+                executable_high = base_bars[index, fx.ASK_HIGH] + base_slippage[index]
+                executable_low = base_bars[index, fx.ASK_LOW] + base_slippage[index]
+                favorable = base_entry - executable_low
+                adverse = executable_high - base_entry
+                stopped = executable_high >= stop_price
+            maximum_favorable = max(maximum_favorable, favorable)
+            maximum_adverse = max(maximum_adverse, adverse)
+            for target_index in range(3):
+                if not target_alive[target_index]:
+                    continue
+                if stopped:
+                    target_alive[target_index] = False
+                else:
+                    target_price = base_entry + side * BARRIER_TARGETS[target_index] * risk_price
+                    reached = executable_high >= target_price if side == fx.LONG else executable_low <= target_price
+                    if reached:
+                        target_hit[target_index] = 1.0
+                        target_alive[target_index] = False
+        output[decision_index, 0] = risk_price
+        output[decision_index, 1] = terminal_base
+        output[decision_index, 2] = terminal_stress
+        output[decision_index, 3] = (maximum_favorable - base_commission_pips * pip) / risk_price
+        output[decision_index, 4] = (maximum_adverse + base_commission_pips * pip) / risk_price
+        output[decision_index, 5:] = target_hit
+    return output
+
+
+def build_outcome_wide(
+    m5: np.ndarray,
+    features: pd.DataFrame,
+    instrument: Instrument,
+    costs: EventCosts,
+    *,
+    horizons_minutes: Iterable[int] = HORIZONS_MINUTES,
+) -> pd.DataFrame:
+    """Build the same outcomes as `build_outcome_frame` without duplicating feature rows.
+
+    The compiled, wide representation is used for full-history materialization. Each column name
+    encodes horizon and side; invalid rows remain NaN so alignment with causal features is exact.
+    """
+    bars = _validate_bars(m5)
+    if len(features) != len(bars):
+        raise ValueError("features and M5 bars must have equal length")
+    horizons = tuple(int(value) for value in horizons_minutes)
+    if not horizons or any(value <= 0 or value % 5 for value in horizons):
+        raise ValueError("horizons must be positive whole multiples of five minutes")
+    base_bars, base_slippage = prepare_run(bars, instrument, costs.base)
+    stress_bars, stress_slippage = prepare_run(bars, instrument, costs.stress)
+    atr = features["atr_price"].to_numpy(dtype=np.float64)
+    contiguous = features["history_contiguous"].fillna(False).to_numpy(dtype=bool)
+    names = (
+        "risk_price",
+        "terminal_r_base",
+        "terminal_r_stress",
+        "mfe_r_base",
+        "mae_r_base",
+        "target_0_5r_before_stop",
+        "target_1_0r_before_stop",
+        "target_2_0r_before_stop",
+    )
+    columns: dict[str, np.ndarray] = {}
+    for horizon_minutes in horizons:
+        for side, side_name in ((fx.LONG, "long"), (fx.SHORT, "short")):
+            values = _compiled_outcome(
+                base_bars,
+                base_slippage,
+                stress_bars,
+                stress_slippage,
+                atr,
+                contiguous,
+                horizon_minutes // 5,
+                side,
+                instrument.pip_size,
+                costs.base_commission_pips,
+                costs.stress_commission_pips,
+            )
+            for position, name in enumerate(names):
+                columns[f"h{horizon_minutes}_{side_name}_{name}"] = values[:, position]
+    return pd.DataFrame(columns, index=features.index)
 
 
 def _outcome_row(  # noqa: PLR0913

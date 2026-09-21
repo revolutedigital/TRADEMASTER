@@ -148,8 +148,14 @@ def materialize(
     unknown = set(pairs) - set(ALL_PAIRS)
     if unknown:
         raise ValueError(f"pairs outside the declared universe: {sorted(unknown)}")
+    manifest_path = output / "manifest.json"
+    if manifest_path.exists():
+        report = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if report.get("sample") != sample or not isinstance(report.get("pairs"), dict):
+            raise ValueError(f"existing manifest {manifest_path} belongs to another run")
+    else:
+        report = {"sample": sample, "pairs": {}}
     rates = _median_rates()
-    report: dict[str, object] = {"sample": sample, "pairs": {}}
     for pair in pairs:
         pair_report = materialize_pair(
             pair,
@@ -165,7 +171,6 @@ def materialize(
             f"{pair}: {pair_report['clean_ticks']:,} quotes -> {pair_report['events']:,} events\n"
         )
         sys.stdout.flush()
-    manifest_path = output / "manifest.json"
     manifest_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return report
 
@@ -194,4 +199,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

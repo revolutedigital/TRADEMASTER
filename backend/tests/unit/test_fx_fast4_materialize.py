@@ -51,3 +51,22 @@ def test_protected_sample_cannot_be_sliced(tmp_path: Path) -> None:
         materialize.materialize(
             "holdout", tmp_path, pairs=("EURUSD",), first_month="2023-01"
         )
+
+
+def test_existing_manifest_is_extended_without_losing_prior_pairs(tmp_path: Path, monkeypatch) -> None:
+    output = tmp_path / "output"
+    output.mkdir()
+    (output / "manifest.json").write_text(
+        '{"sample":"development","pairs":{"EURUSD":{"events":12}}}\n', encoding="utf-8"
+    )
+    monkeypatch.setattr(materialize, "_median_rates", lambda: ConversionRates({"EURUSD": 1.10}))
+    monkeypatch.setattr(
+        materialize,
+        "materialize_pair",
+        lambda pair, *args, **kwargs: {"pair": pair, "clean_ticks": 100, "events": 10},
+    )
+
+    report = materialize.materialize("development", output, pairs=("GBPUSD",))
+
+    assert report["pairs"]["EURUSD"]["events"] == 12
+    assert report["pairs"]["GBPUSD"]["events"] == 10

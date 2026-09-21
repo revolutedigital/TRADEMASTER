@@ -35,6 +35,8 @@ def test_materialize_pair_writes_hashed_aligned_partitions(tmp_path: Path, monke
     assert features.index.equals(outcomes.index)
     assert report["features_sha256"] != report["outcomes_sha256"]
     assert report["valid_outcomes"]["h30_long_terminal_r_base"] > 0
+    assert outcomes["h30_entry_index"].dtype == np.dtype("float64")
+    assert outcomes["h30_exit_index"].dtype == np.dtype("float64")
 
 
 def test_month_slice_is_half_open() -> None:

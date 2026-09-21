@@ -54,6 +54,8 @@ def _commission_pips(pair: str, price: float, rates: ConversionRates, scenario=F
 def _compact(frame: pd.DataFrame) -> pd.DataFrame:
     compact = frame.copy()
     for column in compact.select_dtypes(include=["float64"]).columns:
+        if column.endswith(("entry_index", "exit_index")):
+            continue
         compact[column] = compact[column].astype("float32")
     return compact
 

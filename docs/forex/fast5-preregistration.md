@@ -114,3 +114,13 @@ Em 2022, os mesmos gates se repetem com mínimo de 500 trades. Falha encerra a r
 5. Rodar 2021-H2 uma vez.
 6. Abrir 2022 somente se os gates passarem.
 7. D4, S3, semana da corretora e qualquer canário permanecem fechados até suas portas específicas.
+
+## Emenda operacional 1 — agenda comum entre cenários
+
+Registrada antes de calcular qualquer resultado de trailing em 2021-Q2. O pré-registro exige uma
+posição por par, mas não explicitava como manter a mesma amostra quando custo base e estresse geram
+horários de saída diferentes. Para impedir que o cenário escolha trades diferentes, cada candidato
+só é elegível se tiver trajetória válida nos dois cenários; depois de entrar, o próximo sinal só
+pode ser considerado após o **maior** dos dois tempos de saída. Assim base e estresse avaliam as
+mesmas entradas e nenhuma delas contém sobreposição. É uma decisão conservadora e não altera
+thresholds, distâncias, gates ou quantidade de tentativas.

@@ -1,1 +1,2 @@
 {"date": "2026-09-21", "event": "registry_created", "preregistration_sha256": "e755dc374d9bd0d1f6a7461d4dae837db66938ac42fedcc5c79352571e65fe48"}
+{"date": "2026-09-21", "event": "amendment", "preregistration_sha256": "76f889cb0def37037fbb69af5f37196b48074d261998b6d2738eb137862ea450", "reason": "Replace per-pair ranking with causal global Top P, local-global calibrated probabilities, and a no-trade absolute floor before any trailing result"}

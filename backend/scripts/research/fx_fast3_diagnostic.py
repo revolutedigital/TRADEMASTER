@@ -207,7 +207,8 @@ def metrics(trades: pd.DataFrame) -> PolicyMetrics:
     if trades.empty:
         return PolicyMetrics(0, float("nan"), float("nan"), 0, 0.0)
     pair_means = trades.groupby("pair")["base_r"].mean()
-    month_means = trades.groupby(trades.index.to_period("M"))["base_r"].mean()
+    month = trades.index.tz_localize(None).to_period("M")
+    month_means = trades.groupby(month)["base_r"].mean()
     return PolicyMetrics(
         trades=len(trades),
         mean_base_r=float(trades["base_r"].mean()),
@@ -217,16 +218,23 @@ def metrics(trades: pd.DataFrame) -> PolicyMetrics:
     )
 
 
-def select_thresholds(predictions: pd.DataFrame, horizon: int) -> tuple[float, float, PolicyMetrics]:
+def threshold_grid(predictions: pd.DataFrame, horizon: int) -> list[tuple[float, float, PolicyMetrics]]:
+    """Evaluate the declared grid, including cells with too few trades for selection."""
     candidates: list[tuple[float, float, PolicyMetrics]] = []
     for ev_threshold in EV_THRESHOLDS:
         for probability_threshold in PROBABILITY_THRESHOLDS:
             result = metrics(apply_policy(predictions, horizon, ev_threshold, probability_threshold))
-            if result.trades >= 300:
-                candidates.append((ev_threshold, probability_threshold, result))
-    if not candidates:
-        raise ValueError("no threshold combination produced at least 300 validation trades")
-    return max(candidates, key=lambda item: (item[2].mean_stress_r, item[2].mean_base_r))
+            candidates.append((ev_threshold, probability_threshold, result))
+    return candidates
+
+
+def select_thresholds(
+    predictions: pd.DataFrame, horizon: int
+) -> tuple[float, float, PolicyMetrics] | None:
+    eligible = [candidate for candidate in threshold_grid(predictions, horizon) if candidate[2].trades >= 300]
+    if not eligible:
+        return None
+    return max(eligible, key=lambda item: (item[2].mean_stress_r, item[2].mean_base_r))
 
 
 def run_diagnostic(panel: Path, output: Path, horizon: int, stride: int) -> dict[str, object]:
@@ -241,11 +249,8 @@ def run_diagnostic(panel: Path, output: Path, horizon: int, stride: int) -> dict
     calibrator.fit(validation.loc[calibration, "raw_probability"], (validation.loc[calibration, "base_r"] > 0).astype(int))
     validation["probability"] = calibrator.predict(validation["raw_probability"])
     selection = validation.loc[~calibration]
-    ev_threshold, probability_threshold, selection_metrics = select_thresholds(selection, horizon)
-    test = predict_period(panel, horizon, regressor, classifier, names, SELECTION_END, TEST_END)
-    test["probability"] = calibrator.predict(test["raw_probability"])
-    test_trades = apply_policy(test, horizon, ev_threshold, probability_threshold)
-    test_metrics = metrics(test_trades)
+    grid = threshold_grid(selection, horizon)
+    chosen = select_thresholds(selection, horizon)
     importance = sorted(
         zip(expanded_feature_names(names), regressor.feature_importances_, strict=True),
         key=lambda item: item[1],
@@ -256,11 +261,43 @@ def run_diagnostic(panel: Path, output: Path, horizon: int, stride: int) -> dict
         "horizon_minutes": horizon,
         "training_stride": stride,
         "training_rows": len(matrix),
-        "thresholds": {"expected_r": ev_threshold, "probability": probability_threshold},
-        "selection_2021_h2": asdict(selection_metrics),
-        "test_2022": asdict(test_metrics),
+        "selection_score_quantiles": {
+            "expected_r": {
+                str(quantile): float(selection["expected_r"].quantile(quantile))
+                for quantile in (0.5, 0.9, 0.99, 0.999, 1.0)
+            },
+            "probability": {
+                str(quantile): float(selection["probability"].quantile(quantile))
+                for quantile in (0.5, 0.9, 0.99, 0.999, 1.0)
+            },
+        },
+        "threshold_grid": [
+            {
+                "expected_r": ev,
+                "probability": probability,
+                **asdict(grid_metrics),
+            }
+            for ev, probability, grid_metrics in grid
+        ],
         "top_regression_features": [{"feature": name, "gain": float(gain)} for name, gain in importance],
     }
+    if chosen is None:
+        report["status"] = "no_policy_with_300_validation_trades"
+        report["thresholds"] = None
+        report["selection_2021_h2"] = None
+        report["test_2022"] = "not_opened"
+    else:
+        ev_threshold, probability_threshold, selection_metrics = chosen
+        test = predict_period(panel, horizon, regressor, classifier, names, SELECTION_END, TEST_END)
+        test["probability"] = calibrator.predict(test["raw_probability"])
+        test_trades = apply_policy(test, horizon, ev_threshold, probability_threshold)
+        report["status"] = "policy_selected"
+        report["thresholds"] = {
+            "expected_r": ev_threshold,
+            "probability": probability_threshold,
+        }
+        report["selection_2021_h2"] = asdict(selection_metrics)
+        report["test_2022"] = asdict(metrics(test_trades))
     regressor.save_model(output / f"h{horizon}-regressor.json")
     classifier.save_model(output / f"h{horizon}-classifier.json")
     (output / f"h{horizon}-report.json").write_text(

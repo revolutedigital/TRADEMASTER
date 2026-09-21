@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from app.fx import strategy as fx
-from scripts.research.fx_fast3_diagnostic import apply_policy, model_matrix
+from scripts.research.fx_fast3_diagnostic import apply_policy, model_matrix, select_thresholds
 
 
 def test_model_matrix_orients_returns_but_preserves_spread_and_pair_identity() -> None:
@@ -39,3 +39,19 @@ def test_policy_chooses_the_stronger_side_and_skips_overlapping_entries() -> Non
 
     assert trades["side"].tolist() == [fx.SHORT, fx.LONG]
     assert trades["base_r"].tolist() == [2.0, 4.0]
+
+
+def test_no_eligible_threshold_is_a_recorded_no_trade_not_an_error() -> None:
+    predictions = pd.DataFrame(
+        {
+            "pair": ["EURUSD"],
+            "side": [fx.LONG],
+            "expected_r": [-0.1],
+            "probability": [0.4],
+            "base_r": [1.0],
+            "stress_r": [0.8],
+        },
+        index=pd.to_datetime(["2021-08-02"], utc=True),
+    )
+
+    assert select_thresholds(predictions, 60) is None

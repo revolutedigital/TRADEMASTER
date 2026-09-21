@@ -28,15 +28,18 @@ def test_all_calibrators_return_ordered_bounded_probabilities() -> None:
 def test_wilson_and_reliability_are_conservative() -> None:
     assert 0 < wilson_lower(70, 100) < 0.70
     probability = np.concatenate(
-        (np.full(MIN_RELIABILITY_ROWS, 0.60), np.full(MIN_RELIABILITY_ROWS - 1, 0.75))
+        (
+            np.linspace(0.55, 0.599, MIN_RELIABILITY_ROWS),
+            np.full(MIN_RELIABILITY_ROWS - 1, 0.75),
+        )
     )
     target = np.concatenate(
         (np.array([1] * 15 + [0] * (MIN_RELIABILITY_ROWS - 15)), np.ones(MIN_RELIABILITY_ROWS - 1))
     )
     reliability = build_reliability_map(probability, target)
-    trusted = reliability.trusted(np.array([0.60, 0.75]))
-    assert 0 < trusted[0] < 0.60
-    assert trusted[1] == 0.0
+    trusted = reliability.trusted(np.array([0.56, 0.59, 0.75]))
+    assert 0 < trusted[0] < trusted[1] < 0.59
+    assert trusted[2] == 0.0
 
 
 def test_blend_selection_uses_global_signal_when_local_is_uninformative() -> None:

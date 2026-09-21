@@ -99,13 +99,14 @@ class ProbabilityCalibrator:
 @dataclass(frozen=True)
 class ReliabilityMap:
     lower_bounds: tuple[float, ...]
+    adjustment_factors: tuple[float, ...]
     counts: tuple[int, ...]
 
     def trusted(self, probability: np.ndarray) -> np.ndarray:
         values = np.clip(np.asarray(probability, dtype=np.float64), 0.0, 1.0)
         bins = np.minimum((values * RELIABILITY_BINS).astype(np.int64), RELIABILITY_BINS - 1)
-        lower = np.asarray(self.lower_bounds)[bins]
-        return np.minimum(values, lower)
+        factors = np.asarray(self.adjustment_factors)[bins]
+        return values * factors
 
 
 @dataclass(frozen=True)
@@ -172,15 +173,18 @@ def build_reliability_map(probability: np.ndarray, target: np.ndarray) -> Reliab
     values = np.clip(np.asarray(probability), 0.0, 1.0)
     bins = np.minimum((values * RELIABILITY_BINS).astype(np.int64), RELIABILITY_BINS - 1)
     lower: list[float] = []
+    factors: list[float] = []
     counts: list[int] = []
     for bin_index in range(RELIABILITY_BINS):
-        selected = target[bins == bin_index]
+        selected_mask = bins == bin_index
+        selected = target[selected_mask]
         rows = len(selected)
         counts.append(rows)
-        lower.append(
-            wilson_lower(int(selected.sum()), rows) if rows >= MIN_RELIABILITY_ROWS else 0.0
-        )
-    return ReliabilityMap(tuple(lower), tuple(counts))
+        bound = wilson_lower(int(selected.sum()), rows) if rows >= MIN_RELIABILITY_ROWS else 0.0
+        lower.append(bound)
+        mean_probability = float(values[selected_mask].mean()) if rows else 0.0
+        factors.append(min(1.0, bound / mean_probability) if mean_probability > 0 else 0.0)
+    return ReliabilityMap(tuple(lower), tuple(factors), tuple(counts))
 
 
 def select_blend_calibration(

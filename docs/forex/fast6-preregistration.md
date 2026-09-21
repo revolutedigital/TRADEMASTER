@@ -44,7 +44,9 @@ Platt, isotônica e beta calibration são ajustadas no bloco de calibração. O 
 blend local/global em `{0; 0,25; 0,5; 0,75; 1}` são escolhidos exclusivamente pela menor Brier
 score na auditoria, com log loss como desempate. A probabilidade conservadora é
 `min(P_base, P_stress)`. A auditoria também produz bins de confiabilidade e um limite inferior de
-Wilson de 95%; o `trusted_score` é o menor entre a probabilidade pontual e esse limite. O modelo não
+Wilson de 95%. Para não destruir a ordenação dentro de uma faixa, cada bin gera um fator
+`min(1, Wilson_inferior / probabilidade_média_prevista)` e o `trusted_score` multiplica a
+probabilidade pontual por esse fator. Bin com menos de 30 exemplos recebe fator zero. O modelo não
 é elegível se não melhorar o Brier da taxa-base na auditoria.
 
 ## O que significa Top P

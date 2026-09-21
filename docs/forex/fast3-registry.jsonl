@@ -8,3 +8,4 @@
 {"code_commit": "5897e04", "date": "2026-09-21", "event": "development_run"}
 {"date": "2026-09-21", "event": "amendment", "preregistration_sha256": "3521ba93c9e483190e693a9863003d23ab067423d7d853a0f161e07688030b71", "reason": "diagnostic implementation opened its 2022 development split on H180 after checking only trade count; add the already preregistered positivity, breadth, and time-stability gates before any later split may open; D3 and S2 remained locked"}
 {"code_commit": "649cd7d", "date": "2026-09-21", "event": "development_run"}
+{"code_commit": "d2651bb", "date": "2026-09-21", "event": "development_run"}

@@ -7,6 +7,7 @@ discovery on S0, then replication on S1, then confirmation on S2) and a configur
 the stage before.
 
     python -m scripts.research.fx_fast2_registry --create     # the first line, once
+    python -m scripts.research.fx_fast2_registry --amend "why" # after a documented change, before any result
     python -m scripts.research.fx_fast2_registry              # check the registry
 
 Nothing here touches the trading engine, the database, or an exchange.
@@ -170,7 +171,11 @@ def append_event(event: Event, *, registry: Path = DEFAULT_REGISTRY, preregistra
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--create", action="store_true", help="write the registry_created line")
+    parser.add_argument("--amend", metavar="REASON", help="record the current hashes of the document and the grid, with the reason")
     arguments = parser.parse_args(argv)
+    if arguments.amend:
+        append_event({"event": "amendment", "reason": arguments.amend, "preregistration_sha256": sha256_of(DEFAULT_PREREGISTRATION),
+                      "grid_sha256": sha256_of(DEFAULT_GRID)})
     if arguments.create:
         append_event({"event": "registry_created", "preregistration_sha256": sha256_of(DEFAULT_PREREGISTRATION),
                       "grid_sha256": sha256_of(DEFAULT_GRID)})

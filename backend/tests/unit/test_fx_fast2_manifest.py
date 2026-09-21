@@ -36,3 +36,7 @@ def test_a_partial_sunday_at_the_utc_month_boundary_is_not_mistaken_for_the_week
     )
 
     assert manifest.weekly_open_ok(frame)
+
+
+def test_a_late_first_quote_on_a_holiday_sunday_is_not_a_clock_error() -> None:
+    assert manifest.weekly_open_ok(_week_opening_at("2016-12-25 22:30"))  # 17:30 New York: thin market, same hour

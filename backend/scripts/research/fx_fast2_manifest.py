@@ -29,11 +29,12 @@ from scripts.research.fx_histdata_ticks import LEGACY_MIN_HOURLY_MATCH, LEGACY_T
 DEFAULT_MANIFEST = Path(__file__).resolve().parents[3] / "docs" / "forex" / "fast2-data-manifest.csv"
 MAX_MEDIAN_SPREAD_PIPS = 3.0
 ORACLE_START = "2016-09"  # the Dukascopy hourly bars the project holds start here
-OPEN_EARLIEST, OPEN_LATEST = pd.Timedelta(hours=17), pd.Timedelta(hours=17, minutes=15)
+S0_FIRST_MONTH = "2014-11"  # the feed quotes fixed round-number spreads before it (see the amendment of the pre-registration)
+OPEN_EARLIEST, OPEN_LATEST = pd.Timedelta(hours=17), pd.Timedelta(hours=17, minutes=59, seconds=59)
 
 
 def weekly_open_ok(frame: pd.DataFrame) -> bool:
-    """True if in every Sunday of the frame the first bar, in New York time, opens between 17:00 and 17:15.
+    """True if in every Sunday of the frame the first bar, in New York time, opens in the hour that starts at 17:00.
 
     A clock that is an hour off (the wrong daylight-saving calendar, a fixed offset) opens the week at 16:00
     or 18:00, so this needs no oracle. A frame without a Sunday says nothing and passes.
@@ -81,6 +82,7 @@ def build_manifest(data_dir: Path, oracle_dirs: list[Path]) -> pd.DataFrame:
             oracle = pd.concat(
                 [pd.read_parquet(d / f"{pair}_H1.parquet")[["bid_close", "ask_close"]] for d in oracle_dirs]
             ).sort_index()
+        frame = frame[frame.index >= pd.Timestamp(f"{S0_FIRST_MONTH}-01", tz="UTC")]
         months = month_key(frame.index)
         minutes = frame.groupby(months).size()
         holes = flag_holes(minutes)

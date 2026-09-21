@@ -1,6 +1,7 @@
 """Round 2 of the lab: the three samples keep their roles and the grid runs through round 1's machinery."""
 
 import numpy as np
+import pandas as pd
 
 from scripts.research import fx_fast2_grid as grid
 from scripts.research import fx_fast2_lab as lab2
@@ -24,6 +25,13 @@ def test_the_three_samples_are_ordered_and_only_the_discovery_uses_the_older_dat
     assert months[0][1] < months[1][0] and months[1][1] < months[2][0]
     assert directories[0] != directories[1] and directories[1] == directories[2]
     assert months[1] == lab.DISCOVERY and months[2] == lab.CONFIRMATION  # round 1's samples, unchanged
+
+
+def test_the_cost_calendar_covers_the_older_discovery_sample() -> None:
+    entry = np.array([pd.Timestamp("2014-11-03 12:00", tz="UTC").timestamp()])
+    exit_ = np.array([pd.Timestamp("2014-11-04 12:00", tz="UTC").timestamp()])
+
+    assert lab.CALENDAR.charged_days(entry, exit_).shape == (1,)
 
 
 def test_the_lab_runs_exactly_the_committed_grid() -> None:

@@ -28,6 +28,7 @@ from scripts.research import fx_fast_lab as lab
 from scripts.research import fx_fast_placebo as placebo
 from scripts.research import fx_fast_stats as stats
 from scripts.research.fx_dataset import ALL_PAIRS
+from scripts.research.fx_fast_manifest import load_m1
 
 PRE_2019_DATA = Path("data/raw/fx_m1_hd_pre")
 PRE_2019_LAB = Path("data/lab_pre")
@@ -37,7 +38,7 @@ BOOTSTRAP_SEED = 20260922
 MIN_TRADES = {"discovery": stats.MIN_TRADES_DISCOVERY, "replication": stats.MIN_TRADES_DISCOVERY,
               "confirmation": stats.MIN_TRADES_CONFIRMATION}
 SAMPLES = {  # stage: (months, directory of the matrices, data manifest)
-    "discovery": (("2011-01", "2018-11"), PRE_2019_LAB, manifest2.DEFAULT_MANIFEST),
+    "discovery": ((manifest2.S0_FIRST_MONTH, "2018-11"), PRE_2019_LAB, manifest2.DEFAULT_MANIFEST),
     "replication": (lab.DISCOVERY, lab.LAB_DIR, lab.DEFAULT_MANIFEST),
     "confirmation": (lab.CONFIRMATION, lab.LAB_DIR, lab.DEFAULT_MANIFEST),
 }
@@ -79,7 +80,12 @@ def _report(name: str, title: str, table: pd.DataFrame, extra: str = "") -> Path
 
 
 def prepare() -> int:
-    lab.prepare_matrices(PRE_2019_DATA, PRE_2019_LAB)
+    """The M1 matrices of S0 only: the months before it are reserved and stay out of the lab."""
+    PRE_2019_LAB.mkdir(parents=True, exist_ok=True)
+    start = pd.Timestamp(f"{manifest2.S0_FIRST_MONTH}-01", tz="UTC")
+    for pair in ALL_PAIRS:
+        frame = load_m1(pair, PRE_2019_DATA)
+        np.save(PRE_2019_LAB / f"{pair}.npy", fx.bars_to_matrix(frame[frame.index >= start]))
     return 0
 
 

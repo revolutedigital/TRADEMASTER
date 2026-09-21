@@ -43,7 +43,7 @@ PLACEBO_REPLICATES = 300
 PLACEBO_SEED = 20260921
 FALSE_APPROVAL_LIMIT = 0.08
 MIN_LOT_STOP_PIPS = {"JPY": 18.75, "other": 12.5}
-CALENDAR = RolloverCalendar()
+CALENDAR = RolloverCalendar(first_year=2014)
 LAB_DIR = Path("data/lab")
 REPORT_DIR = DEFAULT_MANIFEST.parent
 

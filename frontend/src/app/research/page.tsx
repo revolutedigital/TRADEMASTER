@@ -55,6 +55,7 @@ interface TestnetEligibility {
   experiment_status: ExperimentStatus;
   eligible: boolean;
   reasons: string[];
+  book_evidence_eligible: boolean;
   book_evidence_contiguous_days: number;
   prospective_shadow_days: number;
   prospective_shadow_outcome_days: number;
@@ -78,6 +79,7 @@ interface ExperimentReport {
   decision_reasons: string[];
   metrics: {
     book_evidence?: {
+      eligible?: boolean;
       longest_complete_streak_days?: number;
       complete_days?: number;
       status_reasons?: string[];
@@ -293,12 +295,13 @@ function ExperimentReportPanel({
 }) {
   const shadow = report?.metrics.shadow;
   const book = report?.metrics.book_evidence;
+  const reportReady = book?.eligible === true && shadow?.positive === true;
   const hypothesisLedger = report?.metrics.hypothesis_ledger;
   const visibleAttempts = hypothesisLedger?.attempts?.slice(0, 3) ?? [];
   const visibleReason = error ?? (hasExperiments ? null : "nenhum_experimento_registrado");
 
   return (
-    <Card className={shadow?.positive ? "border-emerald-500/30" : "border-slate-700/50"}>
+    <Card className={reportReady ? "border-emerald-500/30" : "border-slate-700/50"}>
       <CardContent>
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div className="flex gap-3">
@@ -306,8 +309,8 @@ function ExperimentReportPanel({
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="font-semibold text-[var(--color-text)]">Relatório do experimento</h2>
-                <Badge variant={shadow?.positive ? "success" : "default"}>
-                  {shadow?.positive ? "Shadow positivo" : "Auditável"}
+                <Badge variant={reportReady ? "success" : "default"}>
+                  {reportReady ? "Auditável" : "Incompleto"}
                 </Badge>
               </div>
               <p className="mt-1 text-sm text-[var(--color-text-muted)]">
@@ -322,6 +325,7 @@ function ExperimentReportPanel({
 
           <div className="grid min-w-72 grid-cols-2 gap-3 text-sm md:grid-cols-4">
             <GateMetric label="Book streak" value={`${book?.longest_complete_streak_days ?? 0}/60`} />
+            <GateMetric label="Book gate" value={book?.eligible ? "ok" : "travado"} />
             <GateMetric label="Shadow" value={`${shadow?.outcome_signal_count ?? 0}/${shadow?.signal_count ?? 0}`} />
             <GateMetric label="Expected" value={formatBps(shadow?.expected_mean_bps)} />
             <GateMetric label="Stress" value={formatBps(shadow?.stress_mean_bps)} />
@@ -354,6 +358,7 @@ function TestnetEligibilityPanel({
   hasExperiments: boolean;
 }) {
   const checklistReady = status?.eligible === true;
+  const bookGateReady = status?.book_evidence_eligible === true;
   const visibleReason = error ?? status?.reasons[0] ?? (hasExperiments ? null : "nenhum_experimento_registrado");
   const badgeLabel = checklistReady
     ? "Release registrado"
@@ -375,7 +380,7 @@ function TestnetEligibilityPanel({
                 </Badge>
               </div>
               <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                Cruza experimento, 60 dias de book e 20–30 dias de shadow com outcomes positivos.
+                Cruza experimento aprovado, gate book/spot WAL elegível, 60 dias de book e 20–30 dias de shadow com outcomes positivos.
                 Mesmo com release registrado, este painel continua sem autorização de execução e sem botão de ordem.
               </p>
               {visibleReason ? (
@@ -385,6 +390,7 @@ function TestnetEligibilityPanel({
           </div>
 
           <div className="grid min-w-72 grid-cols-2 gap-3 text-sm md:grid-cols-4">
+            <GateMetric label="Book gate" value={bookGateReady ? "ok" : "travado"} />
             <GateMetric label="Book" value={`${status?.book_evidence_contiguous_days ?? 0}/60`} />
             <GateMetric label="Shadow" value={`${status?.prospective_shadow_days ?? 0}/20`} />
             <GateMetric
@@ -429,7 +435,7 @@ function EvidenceGatePanel({
                 <Badge variant={badgeVariant}>{gateReady ? "Elegível" : "Travado"}</Badge>
               </div>
               <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                Exige 60 dias UTC completos e consecutivos de book antes de qualquer canário Testnet.
+                Exige 60 dias UTC completos e consecutivos de trade, spot_trade, depth e mark_price antes de qualquer canário Testnet.
                 O painel só lê artefato offline; não escaneia dados brutos nem possui botão de execução.
               </p>
               {visibleReason ? (

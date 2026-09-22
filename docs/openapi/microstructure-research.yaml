@@ -266,6 +266,7 @@ components:
         - min_expected_cost_lcb_bps
         - min_stress_cost_mean_bps
         - max_probability_backtest_overfitting
+        - book_evidence_min_complete_days
         - prospective_shadow_min_days
         - prospective_shadow_max_days
         - top_p_tails_pct
@@ -277,6 +278,10 @@ components:
         min_expected_cost_lcb_bps: { type: number, exclusiveMinimum: 0 }
         min_stress_cost_mean_bps: { type: number, exclusiveMinimum: 0 }
         max_probability_backtest_overfitting: { type: number, const: 0.2 }
+        book_evidence_min_complete_days:
+          type: integer
+          const: 60
+          description: Must be a contiguous sequence of complete UTC WAL-audited book days.
         prospective_shadow_min_days: { type: integer, const: 20 }
         prospective_shadow_max_days: { type: integer, const: 30 }
         top_p_tails_pct:

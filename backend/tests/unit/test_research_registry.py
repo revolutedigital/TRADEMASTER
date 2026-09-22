@@ -119,6 +119,16 @@ async def test_freeze_is_deterministic_and_definition_becomes_immutable(database
 
 
 @pytest.mark.asyncio
+async def test_create_draft_requires_book_evidence_gate(database) -> None:
+    registry = ResearchRegistry()
+    definition = _definition()
+    definition.approval_gate.pop("book_evidence_min_complete_days")
+
+    with pytest.raises(ValueError, match="book_evidence_min_complete_days"):
+        await registry.create_draft(database, definition)
+
+
+@pytest.mark.asyncio
 async def test_opened_audit_partition_is_burned_globally(database) -> None:
     registry = ResearchRegistry()
     burned_hash = _hash("b")

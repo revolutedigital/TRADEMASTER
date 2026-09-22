@@ -53,6 +53,7 @@ V1_GATE = {
     "min_oos_utc_days": 20,
     "adjusted_one_sided_confidence": 0.95,
     "max_probability_backtest_overfitting": 0.2,
+    "book_evidence_min_complete_days": 60,
     "prospective_shadow_min_days": 20,
     "prospective_shadow_max_days": 30,
     "top_p_tails_pct": [1, 2, 5, 10],

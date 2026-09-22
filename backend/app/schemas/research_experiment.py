@@ -60,6 +60,7 @@ class ApprovalGate(BaseModel):
     min_expected_cost_lcb_bps: float = Field(gt=0)
     min_stress_cost_mean_bps: float = Field(gt=0)
     max_probability_backtest_overfitting: Literal[0.2]
+    book_evidence_min_complete_days: Literal[60]
     prospective_shadow_min_days: Literal[20]
     prospective_shadow_max_days: Literal[30]
     top_p_tails_pct: tuple[int, int, int, int]

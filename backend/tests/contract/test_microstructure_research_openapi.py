@@ -62,6 +62,7 @@ def test_microstructure_spec_publishes_the_approval_gate() -> None:
     assert gate["min_oos_utc_days"]["const"] == 20
     assert gate["adjusted_one_sided_confidence"]["const"] == 0.95
     assert gate["max_probability_backtest_overfitting"]["const"] == 0.2
+    assert gate["book_evidence_min_complete_days"]["const"] == 60
     assert gate["prospective_shadow_min_days"]["const"] == 20
     assert gate["prospective_shadow_max_days"]["const"] == 30
     assert gate["top_p_tails_pct"]["const"] == [1, 2, 5, 10]

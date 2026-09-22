@@ -436,6 +436,7 @@ class _StreamAuditState:
     reasons: list[str] = field(default_factory=list)
     _previous_sequence_end: int | None = None
     _previous_receive_time: datetime | None = None
+    _previous_depth_row_was_snapshot: bool = False
 
     def observe(self, line: str) -> None:
         stripped = line.strip()
@@ -473,9 +474,20 @@ class _StreamAuditState:
         if receive_time is not None:
             self._previous_receive_time = receive_time
 
+        payload = row.get("payload") or {}
+        is_depth_snapshot = (
+            self.event_type == MarketEventType.DEPTH
+            and isinstance(payload, dict)
+            and payload.get("kind") == "depth_snapshot"
+        )
         sequence_start = _optional_int(row.get("first_sequence_id") or row.get("sequence_id"))
         sequence_end = _optional_int(row.get("last_sequence_id") or row.get("sequence_id"))
         if sequence_end is None:
+            return
+
+        if is_depth_snapshot:
+            self._previous_sequence_end = sequence_end
+            self._previous_depth_row_was_snapshot = True
             return
 
         if self._previous_sequence_end is not None:
@@ -484,14 +496,21 @@ class _StreamAuditState:
             elif sequence_end < self._previous_sequence_end:
                 self.sequence_regression_count += 1
             elif self.event_type in CONTIGUOUS_SEQUENCE_TYPES:
-                if self.event_type == MarketEventType.DEPTH:
+                if self.event_type == MarketEventType.DEPTH and self._previous_depth_row_was_snapshot:
+                    if not (
+                        sequence_start is not None
+                        and sequence_start <= self._previous_sequence_end <= sequence_end
+                    ):
+                        self.sequence_gap_count += 1
+                elif self.event_type == MarketEventType.DEPTH:
                     previous_final_update_id = _optional_int(
-                        (row.get("payload") or {}).get("previous_final_update_id")
+                        payload.get("previous_final_update_id")
                     )
                     if previous_final_update_id != self._previous_sequence_end:
                         self.sequence_gap_count += 1
                 elif sequence_start is not None and sequence_start != self._previous_sequence_end + 1:
                     self.sequence_gap_count += 1
+        self._previous_depth_row_was_snapshot = False
         self._previous_sequence_end = max(sequence_end, self._previous_sequence_end or sequence_end)
 
 

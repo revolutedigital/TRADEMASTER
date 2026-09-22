@@ -166,6 +166,67 @@ def test_audit_detects_depth_sequence_gap(tmp_path: Path) -> None:
     assert any("DEPTH: 1 sequence gaps" in reason for reason in audit.reasons)
 
 
+def test_audit_accepts_depth_resync_when_snapshot_bridges_next_update(tmp_path: Path) -> None:
+    utc_date = date(2026, 1, 1)
+    start = datetime(2026, 1, 1, 0, 1, tzinfo=UTC)
+    middle = datetime(2026, 1, 1, 12, tzinfo=UTC)
+    end = datetime(2026, 1, 1, 23, 59, tzinfo=UTC)
+    _write_events(
+        tmp_path,
+        [
+            _event(MarketEventType.TRADE, start, sequence_id=1),
+            _event(MarketEventType.TRADE, end, sequence_id=2),
+            _event(MarketEventType.TRADE, start, sequence_id=99, product="spot"),
+            _event(MarketEventType.TRADE, end, sequence_id=100, product="spot"),
+            _event(MarketEventType.MARK_PRICE, start),
+            _event(MarketEventType.MARK_PRICE, end),
+            _event(
+                MarketEventType.DEPTH,
+                start,
+                first_sequence_id=100,
+                last_sequence_id=100,
+                payload={"previous_final_update_id": 99},
+            ),
+            _event(
+                MarketEventType.DEPTH,
+                middle,
+                first_sequence_id=500,
+                last_sequence_id=500,
+                payload={
+                    "kind": "depth_snapshot",
+                    "source": "rest_depth",
+                    "last_update_id": 500,
+                    "bids": [["99", "2"]],
+                    "asks": [["101", "3"]],
+                },
+            ),
+            _event(
+                MarketEventType.DEPTH,
+                end,
+                first_sequence_id=490,
+                last_sequence_id=510,
+                payload={"previous_final_update_id": 489},
+            ),
+        ],
+    )
+
+    audit = ProspectiveWalAuditor(
+        tmp_path,
+        policy=DailyCompletenessPolicy(
+            min_rows_by_type={
+                MarketEventType.TRADE: 1,
+                MarketEventType.DEPTH: 1,
+                MarketEventType.MARK_PRICE: 1,
+            },
+            max_receive_gap_seconds_by_type={},
+        ),
+    ).audit_date(utc_date)
+
+    depth_audit = next(stream for stream in audit.streams if stream.stream_name == "DEPTH")
+    assert depth_audit.sequence_gap_count == 0
+    assert audit.status == "VALID"
+
+
 def test_audit_marks_boundary_shortfall_as_partial(tmp_path: Path) -> None:
     utc_date = date(2026, 1, 1)
     middle = datetime(2026, 1, 1, 12, tzinfo=UTC)

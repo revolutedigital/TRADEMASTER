@@ -211,6 +211,7 @@ class MicrostructureRecorder:
                     continue
             snapshot = await snapshot_task
             self._book.initialize(snapshot)
+            await self._queue.put(_depth_snapshot_event(snapshot, self._symbol))
             for message in buffered_messages:
                 await self._handle_message(message)
             self.reconnect_count = 0
@@ -508,6 +509,35 @@ def _event_directory(event: MicrostructureEvent) -> str:
     if not product or not product.replace("_", "").isalnum():
         raise ValueError(f"Unsafe event product for WAL directory: {event.product}")
     return f"{product}_{event_type}"
+
+
+def _depth_snapshot_event(snapshot: dict[str, Any], symbol: str) -> MicrostructureEvent:
+    """Persist an immutable resync boundary for depth sequence audits."""
+    book = OrderBookRebuilder()
+    book.initialize(snapshot)
+    top = book.top()
+    receive_time = datetime.now(UTC)
+    return MicrostructureEvent(
+        product="usdm_perpetual",
+        symbol=symbol.upper(),
+        event_type=MarketEventType.DEPTH,
+        event_time=receive_time,
+        receive_time=receive_time,
+        sequence_id=top.update_id,
+        first_sequence_id=top.update_id,
+        last_sequence_id=top.update_id,
+        bid_price=float(top.bid_price),
+        bid_quantity=float(top.bid_quantity),
+        ask_price=float(top.ask_price),
+        ask_quantity=float(top.ask_quantity),
+        payload={
+            "kind": "depth_snapshot",
+            "source": "rest_depth",
+            "last_update_id": top.update_id,
+            "bids": snapshot["bids"],
+            "asks": snapshot["asks"],
+        },
+    )
 
 
 def _event_time(payload: dict[str, Any]) -> datetime:

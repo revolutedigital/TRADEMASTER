@@ -77,6 +77,15 @@ stream had a probe gap before the fallback was restored. The first possible
 eligible day is therefore the first full UTC day after the stable four-stream
 deployment, subject to the daily audit passing without gaps.
 
+Recorder reconnects are not allowed to silently stitch two unrelated order-book
+sequences together. From the next deployment onward, each futures depth resync
+writes an immutable `DEPTH` snapshot boundary (`payload.kind=depth_snapshot`)
+with the REST `lastUpdateId`, top-of-book, and snapshot levels before subsequent
+depth deltas are accepted. The WAL audit treats the next delta as continuous only
+when it bridges that snapshot `lastUpdateId`; an unmarked sequence discontinuity
+still invalidates the day. This keeps normal resyncs auditable without weakening
+the gap detector.
+
 A repeatable WAL audit was added at
 `backend/scripts/research/audit_microstructure_wal.py`. It verifies, per UTC day,
 that the required `trade`, `spot_trade`, `depth`, and `mark_price` gzip JSONL

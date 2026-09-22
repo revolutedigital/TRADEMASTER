@@ -1,6 +1,8 @@
 """Market stream parsing and WAL persistence preserve causal event facts."""
 
+import asyncio
 import gzip
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -22,6 +24,27 @@ class InMemorySink:
 
     async def append_batch(self, events: list[MicrostructureEvent]) -> None:
         self.events = events
+
+
+class FakeWebSocketConnection:
+    def __init__(self, messages: list[dict], stop_event: asyncio.Event) -> None:
+        self._messages = list(messages)
+        self._stop_event = stop_event
+
+    async def __aenter__(self) -> "FakeWebSocketConnection":
+        return self
+
+    async def __aexit__(self, *_args: object) -> None:
+        return None
+
+    async def recv(self) -> str:
+        if not self._messages:
+            self._stop_event.set()
+            raise TimeoutError
+        message = self._messages.pop(0)
+        if not self._messages:
+            self._stop_event.set()
+        return json.dumps(message)
 
 
 def test_parse_aggregate_trade_keeps_aggressor_and_sequence() -> None:
@@ -329,3 +352,58 @@ def test_recorder_spot_stream_url_is_opt_in() -> None:
         "btcusdt@depth@100ms/btcusdt@markPrice@1s/btcusdt@forceOrder"
     )
     assert recorder.spot_stream_url == "wss://spot.test/stream?streams=btcusdt@trade"
+
+
+@pytest.mark.asyncio
+async def test_recorder_persists_depth_snapshot_boundary_before_depth_updates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stop_event = asyncio.Event()
+    depth_update = {
+        "stream": "btcusdt@depth@100ms",
+        "data": {
+            "e": "depthUpdate",
+            "E": 1_767_225_600_100,
+            "T": 1_767_225_600_100,
+            "U": 100,
+            "u": 101,
+            "pu": 99,
+            "b": [["99", "1.5"]],
+            "a": [["101", "2.5"]],
+        },
+    }
+
+    def fake_connect(*_args: object, **_kwargs: object) -> FakeWebSocketConnection:
+        return FakeWebSocketConnection([depth_update], stop_event)
+
+    async def fake_snapshot() -> dict:
+        return {
+            "lastUpdateId": 100,
+            "bids": [["99", "2"]],
+            "asks": [["101", "3"]],
+        }
+
+    monkeypatch.setattr(
+        "app.services.market.microstructure_recorder.websockets.connect",
+        fake_connect,
+    )
+    recorder = MicrostructureRecorder(
+        sink=InMemorySink(),
+        snapshot_fetcher=fake_snapshot,
+    )
+
+    await recorder._run_connection(stop_event)
+
+    queued_events = [recorder._queue.get_nowait(), recorder._queue.get_nowait()]
+    assert queued_events[0].event_type == MarketEventType.DEPTH
+    assert queued_events[0].sequence_id == 100
+    assert queued_events[0].payload == {
+        "kind": "depth_snapshot",
+        "source": "rest_depth",
+        "last_update_id": 100,
+        "bids": [["99", "2"]],
+        "asks": [["101", "3"]],
+    }
+    assert queued_events[1].event_type == MarketEventType.DEPTH
+    assert queued_events[1].sequence_id == 101
+    assert recorder._queue.empty()

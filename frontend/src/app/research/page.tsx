@@ -110,6 +110,12 @@ interface ExperimentReport {
       order_submission_allowed: false;
       execution_authorization: "none";
     };
+    experiment_event_chain?: {
+      event_count?: number;
+      verified?: boolean;
+      latest_event_sha256?: string | null;
+      reasons?: string[];
+    };
   };
   artifact_sha256: string | null;
   generated_at: string;
@@ -299,10 +305,12 @@ function ExperimentReportPanel({
   const shadow = report?.metrics.shadow;
   const book = report?.metrics.book_evidence;
   const testnetBoundary = report?.metrics.testnet_boundary;
+  const eventChain = report?.metrics.experiment_event_chain;
   const reportReady = (
     book?.eligible === true
     && shadow?.positive === true
     && testnetBoundary?.approved_statistical_gate_verified === true
+    && eventChain?.verified === true
   );
   const hypothesisLedger = report?.metrics.hypothesis_ledger;
   const visibleAttempts = hypothesisLedger?.attempts?.slice(0, 3) ?? [];
@@ -312,6 +320,7 @@ function ExperimentReportPanel({
     report?.decision_reasons,
     book?.status_reasons,
     book?.gate_reasons,
+    eventChain?.reasons,
   );
 
   return (
@@ -335,10 +344,13 @@ function ExperimentReportPanel({
             </div>
           </div>
 
-          <div className="grid min-w-72 grid-cols-2 gap-3 text-sm md:grid-cols-4">
+          <div className="grid min-w-72 grid-cols-2 gap-3 text-sm md:grid-cols-5">
             <GateMetric label="Book streak" value={`${book?.longest_complete_streak_days ?? 0}/60`} />
             <GateMetric label="Book gate" value={book?.eligible ? "ok" : "travado"} />
             <GateMetric label="Stat gate" value={testnetBoundary?.approved_statistical_gate_verified ? "ok" : "sem hash"} />
+            <GateMetric label="Ledger imutável" value={eventChain?.verified ? "ok" : "quebrado"} />
+            <GateMetric label="Eventos ledger" value={eventChain?.event_count ?? 0} />
+            <GateMetric label="Último evento" value={shortHash(eventChain?.latest_event_sha256)} />
             <GateMetric label="Shadow" value={`${shadow?.outcome_signal_count ?? 0}/${shadow?.signal_count ?? 0}`} />
             <GateMetric label="Expected" value={formatBps(shadow?.expected_mean_bps)} />
             <GateMetric label="Stress" value={formatBps(shadow?.stress_mean_bps)} />

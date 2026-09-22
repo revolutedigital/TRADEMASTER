@@ -84,7 +84,7 @@ const testnetEligibility = {
   prospective_shadow_expected_mean_bps: 3.2,
   prospective_shadow_stress_mean_bps: 1.1,
   prospective_shadow_positive: true,
-  approved_statistical_gate_verified: true,
+  approved_statistical_gate_verified: false,
   unresolved_failures: 0,
   explicit_testnet_release: false,
   release_request_required: true,
@@ -130,9 +130,15 @@ const experimentReport = {
       ],
     },
     testnet_boundary: {
-      approved_statistical_gate_verified: true,
+      approved_statistical_gate_verified: false,
       order_submission_allowed: false,
       execution_authorization: "none",
+    },
+    experiment_event_chain: {
+      event_count: 4,
+      verified: false,
+      latest_event_sha256: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+      reasons: ["event_2_hash_mismatch"],
     },
   },
   artifact_sha256: "report123456789",
@@ -170,6 +176,10 @@ describe("ResearchPage", () => {
     expect(screen.getByText(/approved_statistical_gate_evidence_missing/)).toBeInTheDocument();
     expect(screen.getByText(/prospective_shadow_signal_outcomes_incomplete/)).toBeInTheDocument();
     expect(screen.getByText(/statistical_gate_decision_counts_do_not_match_results/)).toBeInTheDocument();
+    expect(screen.getByText(/event_2_hash_mismatch/)).toBeInTheDocument();
+    expect(screen.getByText("Ledger imutável")).toBeInTheDocument();
+    expect(screen.getByText("Eventos ledger")).toBeInTheDocument();
+    expect(screen.getByText("abcdef1234…")).toBeInTheDocument();
     expect(screen.getByText("Sem release")).toBeInTheDocument();
     expect(screen.getByText("Incompleto")).toBeInTheDocument();
     expect(screen.getAllByText("Book gate")).toHaveLength(2);

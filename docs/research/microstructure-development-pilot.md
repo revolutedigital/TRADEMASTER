@@ -56,6 +56,27 @@ durability evidence only; it is not an eligible four-stream evidence window. The
 four required streams and daily audits validate complete UTC days. Starting or
 restarting the recorder does not approve a model or activate Testnet.
 
+On 2026-09-22, production deployment
+`970ae4de-6ebe-4088-a2e0-08d8c11eb855` restored the REST premium-index
+`mark_price` fallback while keeping the attempted WebSocket subscription and the
+mandatory `--include-spot-trades` flag. A live volume check confirmed all four
+required WAL streams existed and were still growing:
+
+| Stream | First read | Second read |
+| --- | ---: | ---: |
+| spot_trade | 296,403 bytes | 300,038 bytes |
+| mark_price | 2,916,188 bytes | 2,917,842 bytes |
+| depth | 71,905,892 bytes | 71,942,208 bytes |
+| trade | 11,457,551 bytes | 11,463,703 bytes |
+
+The same production check later observed the latest `mark_price` row coming from
+`rest_premium_index`, confirming the fallback is active. The 2026-09-22 UTC day
+remains intentionally ineligible because collection started after midnight UTC,
+`spot_trade` started only after the four-stream redeploy, and the mark-price
+stream had a probe gap before the fallback was restored. The first possible
+eligible day is therefore the first full UTC day after the stable four-stream
+deployment, subject to the daily audit passing without gaps.
+
 A repeatable WAL audit was added at
 `backend/scripts/research/audit_microstructure_wal.py`. It verifies, per UTC day,
 that the required `trade`, `spot_trade`, `depth`, and `mark_price` gzip JSONL

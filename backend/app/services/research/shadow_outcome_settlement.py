@@ -99,6 +99,28 @@ async def settle_pending_shadow_outcomes(
     recorder: ResearchShadowRecorder = research_shadow_recorder,
 ) -> tuple[ShadowOutcomeSettlement, ...]:
     """Record replay outcomes for mature pending shadow signals only."""
+    mature_signals = await list_mature_pending_shadow_signals(
+        db,
+        experiment_id=experiment_id,
+        now=now,
+        limit=limit,
+    )
+    settlements: list[ShadowOutcomeSettlement] = []
+    for signal in mature_signals:
+        settlement = settle_shadow_signal(signal, simulator=simulator, policy=policy)
+        await recorder.record_outcome(db, **settlement.to_recorder_kwargs())
+        settlements.append(settlement)
+    return tuple(settlements)
+
+
+async def list_mature_pending_shadow_signals(
+    db: AsyncSession,
+    *,
+    experiment_id: str,
+    now: datetime | None = None,
+    limit: int = 1_000,
+) -> tuple[ResearchShadowSignal, ...]:
+    """Return pending shadow signals whose full replay horizon has elapsed."""
     if limit <= 0:
         raise ValueError("settlement limit must be positive")
     settlement_time = _normalize_utc(now or datetime.now(UTC))
@@ -111,14 +133,9 @@ async def settle_pending_shadow_outcomes(
         .order_by(ResearchShadowSignal.decision_time, ResearchShadowSignal.id)
         .limit(limit)
     )
-    settlements: list[ShadowOutcomeSettlement] = []
-    for signal in result.scalars().all():
-        if not _is_mature(signal, settlement_time):
-            continue
-        settlement = settle_shadow_signal(signal, simulator=simulator, policy=policy)
-        await recorder.record_outcome(db, **settlement.to_recorder_kwargs())
-        settlements.append(settlement)
-    return tuple(settlements)
+    return tuple(
+        signal for signal in result.scalars().all() if _is_mature(signal, settlement_time)
+    )
 
 
 def _no_entry_settlement(

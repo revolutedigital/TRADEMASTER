@@ -305,3 +305,18 @@ bookkeeping, use `settle_pending_shadow_outcomes(...)`: it selects only pending
 signals whose full horizon has matured, records one immutable replay outcome per
 signal, and leaves immature signals untouched. It does not call an exchange and
 does not create orders.
+
+The matching batch CLI is also dry-run by default:
+
+```bash
+cd backend
+./.venv/bin/python scripts/research/settle_shadow_outcomes.py \
+  --experiment-id EXPERIMENT_ID \
+  --trade-root data/microstructure_v1/normalized/aggTrades \
+  --policy-name wide
+```
+
+Re-run with `--commit` only to append immutable replay outcomes for already
+matured shadow signals. The policy name is explicit because changing trailing
+management changes P&L; the command refuses unknown policies and still has no
+exchange, Testnet, LIVE, credential, or order-submission path.

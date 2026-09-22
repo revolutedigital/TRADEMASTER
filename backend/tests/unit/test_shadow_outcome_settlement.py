@@ -13,6 +13,7 @@ from app.models.base import Base
 from app.models.research_experiment import ResearchExperiment, ResearchShadowSignal
 from app.services.backtest.trailing_portfolio import HistoricalTrailingSimulator, TrailingPolicy
 from app.services.research.shadow_outcome_settlement import (
+    list_mature_pending_shadow_signals,
     settle_pending_shadow_outcomes,
     settle_shadow_signal,
     settle_shadow_signals,
@@ -155,6 +156,48 @@ async def test_settle_pending_shadow_outcomes_records_only_mature_signals(
     assert outcome["research_only"] is True
     assert outcome["order_submission_allowed"] is False
     assert "order_id" not in outcome
+
+
+@pytest.mark.asyncio
+async def test_list_mature_pending_shadow_signals_excludes_immature_and_settled(
+    db: AsyncSession,
+) -> None:
+    now = datetime(2026, 1, 1, 0, 5, tzinfo=UTC)
+    mature = _signal(
+        signal_id=None,
+        decision_time=now - timedelta(seconds=180),
+        horizon_seconds=120,
+        probability=0.9,
+        threshold=0.7,
+        would_enter=True,
+    )
+    immature = _signal(
+        signal_id=None,
+        decision_time=now - timedelta(seconds=60),
+        horizon_seconds=300,
+        probability=0.9,
+        threshold=0.7,
+        would_enter=True,
+    )
+    settled = _signal(
+        signal_id=None,
+        decision_time=now - timedelta(seconds=240),
+        horizon_seconds=120,
+        probability=0.9,
+        threshold=0.7,
+        would_enter=True,
+    )
+    settled.outcome_json = json.dumps({"expected_net_bps": 1.0, "stress_net_bps": 1.0})
+    db.add_all([mature, immature, settled])
+    await db.flush()
+
+    pending = await list_mature_pending_shadow_signals(
+        db,
+        experiment_id="experiment",
+        now=now,
+    )
+
+    assert [signal.id for signal in pending] == [mature.id]
 
 
 def _signal(

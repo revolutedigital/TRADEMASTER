@@ -55,9 +55,9 @@ const evidenceGate = {
     longest_complete_streak_days: 60,
     streak_start: "2026-01-01",
     streak_end: "2026-03-01",
-    reasons: ["spot_trade_missing_from_evidence_gate"],
+    reasons: ["spot_trade_missing_from_evidence_gate", "mark_price_gap_detected"],
   },
-  status_reasons: ["spot_trade_missing_from_evidence_gate"],
+  status_reasons: ["spot_trade_missing_from_evidence_gate", "mark_price_gap_detected"],
   safety: {
     research_only: true,
     order_submission_allowed: false,
@@ -70,7 +70,11 @@ const testnetEligibility = {
   experiment_id: "exp_microstructure_v1",
   experiment_status: "APPROVED",
   eligible: false,
-  reasons: ["book_evidence_gate_not_eligible"],
+  reasons: [
+    "book_evidence_gate_not_eligible",
+    "approved_statistical_gate_evidence_missing",
+    "prospective_shadow_signal_outcomes_incomplete",
+  ],
   book_evidence_eligible: false,
   book_evidence_contiguous_days: 60,
   prospective_shadow_days: 20,
@@ -93,13 +97,16 @@ const testnetEligibility = {
 const experimentReport = {
   experiment_id: "exp_microstructure_v1",
   status: "APPROVED",
-  decision_reasons: ["book_evidence_gate_not_eligible"],
+  decision_reasons: [
+    "book_evidence_gate_not_eligible",
+    "statistical_gate_decision_counts_do_not_match_results",
+  ],
   metrics: {
     book_evidence: {
       eligible: false,
       longest_complete_streak_days: 60,
       complete_days: 60,
-      status_reasons: [],
+      status_reasons: ["mark_price_gap_detected"],
       gate_reasons: ["spot_trade_missing_from_evidence_gate"],
     },
     shadow: {
@@ -157,8 +164,12 @@ describe("ResearchPage", () => {
 
     expect(await screen.findByText("Microstructure WAL v1")).toBeInTheDocument();
     expect(screen.getByText(/trade, depth, mark_price, spot_trade/)).toBeInTheDocument();
-    expect(screen.getByText("book_evidence_gate_not_eligible")).toBeInTheDocument();
-    expect(screen.getByText("spot_trade_missing_from_evidence_gate")).toBeInTheDocument();
+    expect(screen.getAllByText(/book_evidence_gate_not_eligible/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/spot_trade_missing_from_evidence_gate/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/mark_price_gap_detected/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/approved_statistical_gate_evidence_missing/)).toBeInTheDocument();
+    expect(screen.getByText(/prospective_shadow_signal_outcomes_incomplete/)).toBeInTheDocument();
+    expect(screen.getByText(/statistical_gate_decision_counts_do_not_match_results/)).toBeInTheDocument();
     expect(screen.getByText("Sem release")).toBeInTheDocument();
     expect(screen.getByText("Incompleto")).toBeInTheDocument();
     expect(screen.getAllByText("Book gate")).toHaveLength(2);

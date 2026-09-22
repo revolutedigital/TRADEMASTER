@@ -306,7 +306,13 @@ function ExperimentReportPanel({
   );
   const hypothesisLedger = report?.metrics.hypothesis_ledger;
   const visibleAttempts = hypothesisLedger?.attempts?.slice(0, 3) ?? [];
-  const visibleReason = error ?? (hasExperiments ? null : "nenhum_experimento_registrado");
+  const visibleReasons = collectReasons(
+    error,
+    hasExperiments ? null : "nenhum_experimento_registrado",
+    report?.decision_reasons,
+    book?.status_reasons,
+    book?.gate_reasons,
+  );
 
   return (
     <Card className={reportReady ? "border-emerald-500/30" : "border-slate-700/50"}>
@@ -325,9 +331,7 @@ function ExperimentReportPanel({
                 Métricas consolidadas do primeiro experimento listado. Report hash:{" "}
                 <span className="font-mono text-xs">{shortHash(report?.artifact_sha256)}</span>
               </p>
-              {visibleReason ? (
-                <p className="mt-2 font-mono text-xs text-amber-300">{visibleReason}</p>
-              ) : null}
+              <GateReasonList title="Razões do relatório" reasons={visibleReasons} tone="warning" />
             </div>
           </div>
 
@@ -369,7 +373,11 @@ function TestnetEligibilityPanel({
   const checklistReady = status?.eligible === true;
   const bookGateReady = status?.book_evidence_eligible === true;
   const statGateReady = status?.approved_statistical_gate_verified === true;
-  const visibleReason = error ?? status?.reasons[0] ?? (hasExperiments ? null : "nenhum_experimento_registrado");
+  const visibleReasons = collectReasons(
+    error,
+    status?.reasons,
+    hasExperiments ? null : "nenhum_experimento_registrado",
+  );
   const badgeLabel = checklistReady
     ? "Release registrado"
     : status?.explicit_testnet_release
@@ -393,9 +401,7 @@ function TestnetEligibilityPanel({
                 Cruza experimento aprovado, gate book/spot WAL elegível, 60 dias de book e 20–30 dias de shadow com outcomes positivos.
                 Mesmo com release registrado, este painel continua sem autorização de execução e sem botão de ordem.
               </p>
-              {visibleReason ? (
-                <p className="mt-2 font-mono text-xs text-red-300">{visibleReason}</p>
-              ) : null}
+              <GateReasonList title="Razões do checklist Testnet" reasons={visibleReasons} tone="danger" />
             </div>
           </div>
 
@@ -429,7 +435,7 @@ function EvidenceGatePanel({
   const gateReady = gate?.eligible === true;
   const requiredStreams = formatRequiredStreams(gate?.required_streams);
   const badgeVariant = gateReady ? "success" : "warning";
-  const visibleReason = error ?? status?.status_reasons[0] ?? gate?.reasons[0] ?? null;
+  const visibleReasons = collectReasons(error, status?.status_reasons, gate?.reasons);
 
   return (
     <Card className={gateReady ? "border-emerald-500/30" : "border-amber-500/30"}>
@@ -450,9 +456,7 @@ function EvidenceGatePanel({
                 Exige 60 dias UTC completos e consecutivos de {requiredStreams} antes de qualquer canário Testnet.
                 O painel só lê artefato offline; não escaneia dados brutos nem possui botão de execução.
               </p>
-              {visibleReason ? (
-                <p className="mt-2 font-mono text-xs text-amber-300">{visibleReason}</p>
-              ) : null}
+              <GateReasonList title="Razões do gate book/WAL" reasons={visibleReasons} tone="warning" />
             </div>
           </div>
 
@@ -464,6 +468,29 @@ function EvidenceGatePanel({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function GateReasonList({
+  title,
+  reasons,
+  tone,
+}: {
+  title: string;
+  reasons: string[];
+  tone: "danger" | "warning";
+}) {
+  if (reasons.length === 0) return null;
+  const textColor = tone === "danger" ? "text-red-300" : "text-amber-300";
+  return (
+    <div className={`mt-2 font-mono text-xs ${textColor}`}>
+      <p className="sr-only">{title}</p>
+      <ul aria-label={title} className="space-y-1">
+        {reasons.map((reason) => (
+          <li key={reason}>• {reason}</li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -499,4 +526,22 @@ function formatRequiredStreams(streams: string[] | undefined): string {
     ? streams
     : ["TRADE", "DEPTH", "MARK_PRICE", "SPOT_TRADE"];
   return requiredStreams.map((stream) => stream.toLowerCase()).join(", ");
+}
+
+function collectReasons(
+  ...sources: Array<string | string[] | null | undefined>
+): string[] {
+  const seen = new Set<string>();
+  const reasons: string[] = [];
+  for (const source of sources) {
+    const values = Array.isArray(source) ? source : [source];
+    for (const value of values) {
+      const reason = value?.trim();
+      if (reason && !seen.has(reason)) {
+        seen.add(reason);
+        reasons.push(reason);
+      }
+    }
+  }
+  return reasons;
 }

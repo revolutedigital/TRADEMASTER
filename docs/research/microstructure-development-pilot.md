@@ -59,11 +59,20 @@ zero forced-order events. The audit output carries a deterministic manifest hash
 and repeats the safety boundary: research only, no order submission, no execution
 authorization.
 
+The same CLI now also emits a book-evidence gate. That gate requires a contiguous
+60-complete-day window before any book-dependent audit can be considered eligible.
+Non-contiguous complete days do not pass the gate, and this eligibility remains
+metadata only: it does not approve Testnet, does not activate a strategy, and does
+not authorize order submission.
+
 A first audit copy was taken from the Railway volume on 2026-09-22 while the day
 was still in progress. The result was correctly `PARTIAL`: 75,850 trades, 12,096
 depth updates, and 1,128 mark-price rows from approximately `03:09:51Z` through
 `03:30:34Z`, with zero JSON errors, zero duplicate sequences, and zero sequence
-gaps. Manifest hash: `44945a8793ab35114937c3d6be300cd386054e2fcec248464b8324fc2d333863`.
+gaps. The book-evidence gate was therefore false, with zero complete days and
+zero contiguous complete days. Daily manifest hash:
+`44945a8793ab35114937c3d6be300cd386054e2fcec248464b8324fc2d333863`. Book-gate
+manifest hash: `72f0a4b739735b9d5cc1f359f594c69515bc4d95dfe2fb4a788d0ffd2c5aef7e`.
 
 ## Economic feasibility
 
@@ -147,6 +156,9 @@ shadow signal, Testnet, or LIVE candidate.
 The research program itself continues with the prospectively recorded information
 that historical aggregate trades do not contain: spread, depth imbalance,
 microprice, replenishment, cancellation, sweeps, liquidation flow, and measured
-receive latency. A book-dependent model needs 60 complete days before audit. Any
-new model or management rule is a new counted hypothesis and may not reuse an
-opened audit/prospective block as fresh confirmation.
+receive latency. A book-dependent model needs 60 contiguous complete days before
+audit, and Testnet metadata eligibility now also requires that contiguous
+book-evidence window plus a positive 20-to-30-day prospective shadow block,
+unresolved failure count of zero, and a later explicit Testnet release. Any new
+model or management rule is a new counted hypothesis and may not reuse an opened
+audit/prospective block as fresh confirmation.

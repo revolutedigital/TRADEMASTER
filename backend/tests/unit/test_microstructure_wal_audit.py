@@ -12,6 +12,7 @@ from app.services.market.microstructure_wal_audit import (
     DailyCompletenessPolicy,
     ProspectiveWalAuditor,
     count_complete_days,
+    evaluate_book_evidence_gate,
 )
 
 
@@ -154,6 +155,90 @@ def test_audit_marks_boundary_shortfall_as_partial(tmp_path: Path) -> None:
     assert audit.status == "PARTIAL"
     assert audit.complete_day is False
     assert any(reason.startswith("TRADE: coverage starts") for reason in audit.reasons)
+
+
+def test_book_evidence_gate_requires_contiguous_complete_days(tmp_path: Path) -> None:
+    policy = DailyCompletenessPolicy(
+        min_rows_by_type={
+            MarketEventType.TRADE: 1,
+            MarketEventType.DEPTH: 1,
+            MarketEventType.MARK_PRICE: 1,
+        },
+        max_receive_gap_seconds_by_type={},
+    )
+    for day_offset in (0, 1, 3):
+        current_date = date(2026, 1, 1) + timedelta(days=day_offset)
+        start = datetime.combine(current_date, datetime.min.time(), tzinfo=UTC) + timedelta(
+            minutes=1
+        )
+        end = datetime.combine(current_date, datetime.min.time(), tzinfo=UTC) + timedelta(
+            hours=23,
+            minutes=59,
+        )
+        _write_events(
+            tmp_path,
+            [
+                _event(MarketEventType.TRADE, start),
+                _event(MarketEventType.TRADE, end),
+                _event(MarketEventType.DEPTH, start),
+                _event(MarketEventType.DEPTH, end),
+                _event(MarketEventType.MARK_PRICE, start),
+                _event(MarketEventType.MARK_PRICE, end),
+            ],
+        )
+    auditor = ProspectiveWalAuditor(tmp_path, policy=policy)
+    audits = auditor.audit_range(date(2026, 1, 1), date(2026, 1, 4))
+
+    gate = evaluate_book_evidence_gate(audits, required_complete_days=3)
+
+    assert gate.eligible is False
+    assert gate.complete_days == 3
+    assert gate.longest_complete_streak_days == 2
+    assert gate.incomplete_days == ("2026-01-03",)
+    assert "no_contiguous_3_day_complete_book_evidence_window" in gate.reasons
+
+
+def test_book_evidence_gate_approves_only_complete_contiguous_window(tmp_path: Path) -> None:
+    policy = DailyCompletenessPolicy(
+        min_rows_by_type={
+            MarketEventType.TRADE: 1,
+            MarketEventType.DEPTH: 1,
+            MarketEventType.MARK_PRICE: 1,
+        },
+        max_receive_gap_seconds_by_type={},
+    )
+    for day_offset in range(3):
+        current_date = date(2026, 1, 1) + timedelta(days=day_offset)
+        start = datetime.combine(current_date, datetime.min.time(), tzinfo=UTC) + timedelta(
+            minutes=1
+        )
+        end = datetime.combine(current_date, datetime.min.time(), tzinfo=UTC) + timedelta(
+            hours=23,
+            minutes=59,
+        )
+        _write_events(
+            tmp_path,
+            [
+                _event(MarketEventType.TRADE, start),
+                _event(MarketEventType.TRADE, end),
+                _event(MarketEventType.DEPTH, start),
+                _event(MarketEventType.DEPTH, end),
+                _event(MarketEventType.MARK_PRICE, start),
+                _event(MarketEventType.MARK_PRICE, end),
+            ],
+        )
+    audits = ProspectiveWalAuditor(tmp_path, policy=policy).audit_range(
+        date(2026, 1, 1),
+        date(2026, 1, 3),
+    )
+
+    gate = evaluate_book_evidence_gate(audits, required_complete_days=3)
+
+    assert gate.eligible is True
+    assert gate.longest_complete_streak_days == 3
+    assert gate.streak_start == date(2026, 1, 1)
+    assert gate.streak_end == date(2026, 1, 3)
+    assert len(gate.manifest_sha256) == 64
 
 
 def _event(

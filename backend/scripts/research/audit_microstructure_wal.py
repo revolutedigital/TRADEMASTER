@@ -13,10 +13,11 @@ BACKEND_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = BACKEND_ROOT.parent
 sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.services.market.microstructure_wal_audit import DailyWalAudit
+from app.services.market.microstructure_wal_audit import BookEvidenceGate, DailyWalAudit
 from app.services.market.microstructure_wal_audit import (
     ProspectiveWalAuditor,
     count_complete_days,
+    evaluate_book_evidence_gate,
 )
 
 
@@ -31,16 +32,30 @@ def main() -> int:
     parser.add_argument("--end-date", type=_parse_date)
     parser.add_argument("--format", choices=("text", "json"), default="text")
     parser.add_argument("--fail-on-incomplete", action="store_true")
+    parser.add_argument("--required-complete-days", type=int, default=60)
     arguments = parser.parse_args()
 
     start_date, end_date = _resolve_range(arguments.date, arguments.start_date, arguments.end_date)
     auditor = ProspectiveWalAuditor(arguments.root)
     audits = auditor.audit_range(start_date, end_date)
+    gate = evaluate_book_evidence_gate(
+        audits,
+        required_complete_days=arguments.required_complete_days,
+    )
     if arguments.format == "json":
-        _write_stdout(json.dumps([audit.to_dict() for audit in audits], indent=2, sort_keys=True))
+        _write_stdout(
+            json.dumps(
+                {
+                    "book_evidence_gate": gate.to_dict(),
+                    "daily_audits": [audit.to_dict() for audit in audits],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
     else:
-        _print_text(audits)
-    if arguments.fail_on_incomplete and any(not audit.complete_day for audit in audits):
+        _print_text(audits, gate=gate)
+    if arguments.fail_on_incomplete and not gate.eligible:
         return 2
     return 0
 
@@ -69,13 +84,22 @@ def _parse_date(raw: str) -> date:
         raise argparse.ArgumentTypeError("date must use YYYY-MM-DD") from error
 
 
-def _print_text(audits: Sequence[DailyWalAudit]) -> None:
+def _print_text(audits: Sequence[DailyWalAudit], *, gate: BookEvidenceGate) -> None:
     complete_days = count_complete_days(audits)
     _write_stdout(
         "Microstructure WAL audit: "
         f"{complete_days}/{len(audits)} complete UTC days; "
         "research_only=true order_submission_allowed=false execution_authorization=none"
     )
+    _write_stdout(
+        "Book evidence gate: "
+        f"eligible={str(gate.eligible).lower()} "
+        f"longest_complete_streak_days={gate.longest_complete_streak_days} "
+        f"required_complete_days={gate.required_complete_days} "
+        f"manifest={gate.manifest_sha256}"
+    )
+    for reason in gate.reasons:
+        _write_stdout(f"  - {reason}")
     for audit in audits:
         _write_stdout(f"{audit.utc_date.isoformat()} {audit.status} {audit.manifest_sha256}")
         if audit.reasons:

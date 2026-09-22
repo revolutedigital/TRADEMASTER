@@ -15,6 +15,7 @@ from app.schemas.microstructure import MarketEventType
 
 
 WalAuditStatus = Literal["VALID", "PARTIAL", "MISSING", "INVALID"]
+MIN_BOOK_EVIDENCE_DAYS = 60
 
 
 DEFAULT_REQUIRED_EVENT_TYPES = (
@@ -116,6 +117,39 @@ class DailyWalAudit:
             "complete_day": self.complete_day,
             "manifest_sha256": self.manifest_sha256,
             "streams": [stream.to_dict() for stream in self.streams],
+            "reasons": list(self.reasons),
+            "safety": {
+                "research_only": True,
+                "order_submission_allowed": False,
+                "execution_authorization": "none",
+            },
+        }
+
+
+@dataclass(frozen=True)
+class BookEvidenceGate:
+    eligible: bool
+    required_complete_days: int
+    audited_days: int
+    complete_days: int
+    longest_complete_streak_days: int
+    streak_start: date | None
+    streak_end: date | None
+    incomplete_days: tuple[str, ...]
+    manifest_sha256: str
+    reasons: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "eligible": self.eligible,
+            "required_complete_days": self.required_complete_days,
+            "audited_days": self.audited_days,
+            "complete_days": self.complete_days,
+            "longest_complete_streak_days": self.longest_complete_streak_days,
+            "streak_start": self.streak_start.isoformat() if self.streak_start else None,
+            "streak_end": self.streak_end.isoformat() if self.streak_end else None,
+            "incomplete_days": list(self.incomplete_days),
+            "manifest_sha256": self.manifest_sha256,
             "reasons": list(self.reasons),
             "safety": {
                 "research_only": True,
@@ -447,3 +481,86 @@ def _stable_sha256(payload: Mapping[str, Any]) -> str:
 
 def count_complete_days(audits: Iterable[DailyWalAudit]) -> int:
     return sum(1 for audit in audits if audit.complete_day)
+
+
+def evaluate_book_evidence_gate(
+    audits: Iterable[DailyWalAudit],
+    *,
+    required_complete_days: int = MIN_BOOK_EVIDENCE_DAYS,
+) -> BookEvidenceGate:
+    """Require a contiguous run of complete UTC days before book-dependent audit."""
+    if required_complete_days <= 0:
+        raise ValueError("required_complete_days must be positive")
+    ordered = sorted(audits, key=lambda audit: audit.utc_date)
+    incomplete_days = tuple(
+        audit.utc_date.isoformat() for audit in ordered if not audit.complete_day
+    )
+    complete_days = count_complete_days(ordered)
+    streak_days, streak_start, streak_end = _longest_complete_streak(ordered)
+    reasons: list[str] = []
+    if not ordered:
+        reasons.append("no_wal_audits_supplied")
+    if complete_days < required_complete_days:
+        reasons.append(f"fewer_than_{required_complete_days}_complete_book_evidence_days")
+    if streak_days < required_complete_days:
+        reasons.append(
+            f"no_contiguous_{required_complete_days}_day_complete_book_evidence_window"
+        )
+    manifest_sha256 = _stable_sha256(
+        {
+            "required_complete_days": required_complete_days,
+            "daily_manifests": [
+                {
+                    "utc_date": audit.utc_date.isoformat(),
+                    "complete_day": audit.complete_day,
+                    "manifest_sha256": audit.manifest_sha256,
+                }
+                for audit in ordered
+            ],
+        }
+    )
+    return BookEvidenceGate(
+        eligible=not reasons,
+        required_complete_days=required_complete_days,
+        audited_days=len(ordered),
+        complete_days=complete_days,
+        longest_complete_streak_days=streak_days,
+        streak_start=streak_start,
+        streak_end=streak_end,
+        incomplete_days=incomplete_days,
+        manifest_sha256=manifest_sha256,
+        reasons=tuple(reasons),
+    )
+
+
+def _longest_complete_streak(
+    audits: Iterable[DailyWalAudit],
+) -> tuple[int, date | None, date | None]:
+    best_length = 0
+    best_start: date | None = None
+    best_end: date | None = None
+    current_length = 0
+    current_start: date | None = None
+    previous_date: date | None = None
+
+    for audit in sorted(audits, key=lambda item: item.utc_date):
+        is_consecutive = previous_date is not None and audit.utc_date == previous_date + timedelta(
+            days=1
+        )
+        if audit.complete_day and (current_length == 0 or is_consecutive):
+            current_start = current_start or audit.utc_date
+            current_length += 1
+        elif audit.complete_day:
+            current_start = audit.utc_date
+            current_length = 1
+        else:
+            current_start = None
+            current_length = 0
+
+        if current_length > best_length:
+            best_length = current_length
+            best_start = current_start
+            best_end = audit.utc_date
+        previous_date = audit.utc_date
+
+    return best_length, best_start, best_end

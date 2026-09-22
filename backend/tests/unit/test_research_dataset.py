@@ -289,6 +289,7 @@ def test_load_trade_interval_reads_prospective_wal_jsonl(tmp_path: Path) -> None
             json.dumps(
                 {
                     "event_time": event_time.isoformat(),
+                    "product": "spot",
                     "sequence_id": 42,
                     "price": 100.0,
                     "quantity": 2.0,
@@ -302,11 +303,40 @@ def test_load_trade_interval_reads_prospective_wal_jsonl(tmp_path: Path) -> None
         tmp_path,
         datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
         datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        expected_product="spot",
     )
 
     assert frame["event_time_ms"].tolist() == [int(event_time.timestamp() * 1000)]
     assert frame["sequence_id"].tolist() == [42]
     assert frame["is_buyer_maker"].tolist() == [False]
+
+
+def test_load_trade_interval_rejects_wrong_product_for_spot_source(tmp_path: Path) -> None:
+    event_time = datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC)
+    partition = tmp_path / "date=2026-01-01"
+    partition.mkdir(parents=True)
+    with gzip.open(partition / "events.jsonl.gz", "wt", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps(
+                {
+                    "event_time": event_time.isoformat(),
+                    "product": "usdm_perpetual",
+                    "sequence_id": 42,
+                    "price": 100.0,
+                    "quantity": 2.0,
+                    "is_buyer_maker": "false",
+                }
+            )
+            + "\n"
+        )
+
+    with pytest.raises(ValueError, match="expected product 'spot'"):
+        load_trade_interval(
+            tmp_path,
+            datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+            datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+            expected_product="spot",
+        )
 
 
 def test_load_trade_interval_converts_event_time_to_epoch_ms(tmp_path: Path) -> None:
@@ -390,6 +420,7 @@ def test_build_research_partition_manifest_records_input_lineage(tmp_path: Path)
                 "is_buyer_maker": False,
             }
         ],
+        product="spot",
     )
     _write_parquet_partition(
         book_root,
@@ -481,8 +512,17 @@ def _trade_frame() -> pd.DataFrame:
     )
 
 
-def _write_trade_partition(root: Path, utc_date: str, rows: list[dict[str, object]]) -> None:
-    _write_parquet_partition(root, utc_date, pd.DataFrame(rows))
+def _write_trade_partition(
+    root: Path,
+    utc_date: str,
+    rows: list[dict[str, object]],
+    *,
+    product: str = "usdm_perpetual",
+) -> None:
+    frame = pd.DataFrame(rows)
+    if "product" not in frame.columns:
+        frame["product"] = product
+    _write_parquet_partition(root, utc_date, frame)
 
 
 def _write_parquet_partition(root: Path, utc_date: str, frame: pd.DataFrame) -> None:

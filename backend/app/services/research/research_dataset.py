@@ -197,7 +197,12 @@ def build_research_partition(
     day_end = day_start + timedelta(days=1)
     history_start = day_start - timedelta(seconds=max(dataset_config.feature_windows_seconds))
     label_end = day_end + timedelta(seconds=max(dataset_config.horizons_seconds))
-    trades = load_trade_interval(source_root, history_start, label_end)
+    trades = load_trade_interval(
+        source_root,
+        history_start,
+        label_end,
+        expected_product="usdm_perpetual",
+    )
     stride_ms = dataset_config.decision_stride_seconds * 1000
     decisions = np.arange(
         int(day_start.timestamp() * 1000),
@@ -222,7 +227,12 @@ def build_research_partition(
         else None
     )
     spot_trade_events = (
-        load_trade_interval(spot_source_root, history_start, day_end)
+        load_trade_interval(
+            spot_source_root,
+            history_start,
+            day_end,
+            expected_product="spot",
+        )
         if spot_source_root is not None
         else None
     )
@@ -316,7 +326,11 @@ def build_research_partition(
 
 
 def load_trade_interval(
-    source_root: Path, interval_start: datetime, interval_end: datetime
+    source_root: Path,
+    interval_start: datetime,
+    interval_end: datetime,
+    *,
+    expected_product: str | None = None,
 ) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     cursor = interval_start.date()
@@ -325,15 +339,23 @@ def load_trade_interval(
         parquet_path = partition_dir / "events.parquet"
         jsonl_path = partition_dir / "events.jsonl.gz"
         if parquet_path.exists():
+            columns = [
+                "event_time",
+                "sequence_id",
+                "price",
+                "quantity",
+                "is_buyer_maker",
+            ]
+            if expected_product is not None:
+                parquet_columns = set(pq.read_schema(parquet_path).names)
+                if "product" not in parquet_columns:
+                    raise ValueError(
+                        f"trade partition {parquet_path} is missing product column"
+                    )
+                columns.append("product")
             table = pq.read_table(
                 parquet_path,
-                columns=[
-                    "event_time",
-                    "sequence_id",
-                    "price",
-                    "quantity",
-                    "is_buyer_maker",
-                ],
+                columns=columns,
             )
             frame = table.to_pandas()
         elif jsonl_path.exists():
@@ -341,7 +363,12 @@ def load_trade_interval(
         else:
             cursor += timedelta(days=1)
             continue
-        frame = _prepare_trade_frame(frame, interval_start, interval_end)
+        frame = _prepare_trade_frame(
+            frame,
+            interval_start,
+            interval_end,
+            expected_product=expected_product,
+        )
         if not frame.empty:
             frames.append(frame)
         cursor += timedelta(days=1)
@@ -460,6 +487,7 @@ def _read_trade_wal_jsonl(path: Path) -> pd.DataFrame:
             rows.append(
                 {
                     "event_time": payload.get("event_time"),
+                    "product": payload.get("product"),
                     "sequence_id": payload.get("sequence_id"),
                     "price": payload.get("price"),
                     "quantity": payload.get("quantity"),
@@ -531,6 +559,8 @@ def _prepare_trade_frame(
     frame: pd.DataFrame,
     interval_start: datetime,
     interval_end: datetime,
+    *,
+    expected_product: str | None = None,
 ) -> pd.DataFrame:
     if frame.empty:
         return pd.DataFrame(
@@ -544,6 +574,15 @@ def _prepare_trade_frame(
     prepared = prepared[
         (prepared["event_time_ms"] >= start_ms) & (prepared["event_time_ms"] <= end_ms)
     ]
+    if expected_product is not None and not prepared.empty:
+        if "product" not in prepared.columns:
+            raise ValueError("trade frame is missing product column")
+        observed_products = set(prepared["product"].astype(str))
+        if observed_products != {expected_product}:
+            raise ValueError(
+                f"trade frame expected product {expected_product!r}, "
+                f"found {sorted(observed_products)!r}"
+            )
     if "sequence_id" in prepared.columns:
         prepared["sequence_id"] = pd.to_numeric(prepared["sequence_id"], errors="coerce").fillna(0)
     else:

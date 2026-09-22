@@ -254,11 +254,14 @@ calibration passed:
 cd backend
 ./.venv/bin/python scripts/research/evaluate_statistical_gate.py \
   --portfolio-root data/microstructure_v1/reports/trailing-pilot-stress-target \
-  --top-p-report data/microstructure_v1/reports/top-p-pilot-stress.json
+  --top-p-report data/microstructure_v1/reports/top-p-pilot-stress.json \
+  --prospective-shadow-report data/microstructure_v1/reports/prospective-shadow-settlement.json
 ```
 
 If the top-p report is missing or any result lacks a positive monotonicity check,
-the gate records the concrete reason and fails closed.
+or if the prospective shadow report is missing, dry-run, incomplete, or
+non-positive under stress costs, the gate records the concrete reason and fails
+closed.
 
 ## Decision and next evidence gate
 

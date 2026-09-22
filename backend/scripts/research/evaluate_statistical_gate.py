@@ -35,11 +35,22 @@ def main() -> int:
         type=Path,
         help="JSON report emitted by run_top_p_pilot.py; required to prove top-p monotonicity.",
     )
+    parser.add_argument(
+        "--prospective-shadow-report",
+        type=Path,
+        help=(
+            "Committed JSON report emitted by settle_shadow_outcomes.py; required to prove "
+            "prospective shadow positivity."
+        ),
+    )
     arguments = parser.parse_args()
     paths = sorted(arguments.portfolio_root.glob("policy=*.parquet"))
     if not paths:
         parser.error("no portfolio trade files found")
     top_p_monotonic, top_p_reasons = _read_top_p_monotonicity(arguments.top_p_report)
+    prospective_positive, prospective_reasons = _read_prospective_shadow_positive(
+        arguments.prospective_shadow_report
+    )
     daily_series = {}
     trades_by_strategy = {}
     for path in paths:
@@ -59,7 +70,7 @@ def main() -> int:
             attempted_hypotheses=arguments.attempted_hypotheses,
             temporal_fold_count=3,
             top_p_monotonic=top_p_monotonic,
-            prospective_positive=False,
+            prospective_positive=prospective_positive,
             pbo=pbo,
         )
         results.append({"strategy": strategy, **gate.to_dict()})
@@ -69,6 +80,8 @@ def main() -> int:
         "attempted_hypotheses": arguments.attempted_hypotheses,
         "top_p_monotonic": top_p_monotonic,
         "top_p_monotonic_reasons": top_p_reasons,
+        "prospective_shadow_positive": prospective_positive,
+        "prospective_shadow_reasons": prospective_reasons,
         "decision_counts": pd.Series([row["decision"] for row in results]).value_counts().to_dict(),
         "results": results,
     }
@@ -103,6 +116,33 @@ def _read_top_p_monotonicity(path: Path | None) -> tuple[bool, list[str]]:
                 reasons.extend(str(reason) for reason in monotonicity["reasons"])
             else:
                 reasons.append(f"result_{index}_top_p_monotonicity_missing")
+    return not reasons, reasons
+
+
+def _read_prospective_shadow_positive(path: Path | None) -> tuple[bool, list[str]]:
+    if path is None:
+        return False, ["prospective_shadow_report_missing"]
+    if not path.exists():
+        return False, [f"prospective_shadow_report_missing:{path}"]
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    reasons: list[str] = []
+    if payload.get("research_only") is not True:
+        reasons.append("prospective_shadow_report_not_research_only")
+    if payload.get("order_submission_allowed") is not False:
+        reasons.append("prospective_shadow_report_allows_order_submission")
+    if payload.get("execution_authorization") != "none":
+        reasons.append("prospective_shadow_report_has_execution_authorization")
+    if payload.get("committed") is not True:
+        reasons.append("prospective_shadow_report_not_committed")
+    signal_count = int(payload.get("signal_count") or 0)
+    expected_mean = payload.get("expected_mean_bps")
+    stress_mean = payload.get("stress_mean_bps")
+    if signal_count <= 0:
+        reasons.append("prospective_shadow_report_has_no_signals")
+    if expected_mean is None or float(expected_mean) <= 0:
+        reasons.append("prospective_shadow_expected_mean_not_positive")
+    if stress_mean is None or float(stress_mean) <= 0:
+        reasons.append("prospective_shadow_stress_mean_not_positive")
     return not reasons, reasons
 
 

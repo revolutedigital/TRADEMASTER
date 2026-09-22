@@ -250,12 +250,52 @@ def build_research_partition(
     os.replace(temporary_path, output_path)
     digest = _sha256(output_path)
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "utc_date": utc_date.isoformat(),
         "row_count": len(rows),
         "decision_count": len(decisions),
+        "config": asdict(dataset_config),
         "config_sha256": dataset_config.sha256,
+        "research_rows_sha256": digest,
         "normalized_sha256": digest,
+        "input_sources": {
+            "futures_trades": _source_metadata(
+                role="futures_trades",
+                source_root=source_root,
+                frame=trades,
+                interval_start=history_start,
+                interval_end=label_end,
+            ),
+            "book": _source_metadata(
+                role="book",
+                source_root=book_source_root,
+                frame=book_events,
+                interval_start=history_start,
+                interval_end=day_end,
+            ),
+            "mark": _source_metadata(
+                role="mark",
+                source_root=mark_source_root,
+                frame=mark_events,
+                interval_start=history_start,
+                interval_end=day_end,
+            ),
+            "liquidation": _source_metadata(
+                role="liquidation",
+                source_root=liquidation_source_root,
+                frame=liquidation_events,
+                interval_start=history_start,
+                interval_end=day_end,
+            ),
+            "spot_trades": _source_metadata(
+                role="spot_trades",
+                source_root=spot_source_root,
+                frame=spot_trade_events,
+                interval_start=history_start,
+                interval_end=day_end,
+            ),
+        },
+        "feature_families": _feature_family_manifest(rows),
         "source_partition_count": (
             datetime.fromtimestamp(event_times[-1] / 1000, tz=UTC).date()
             - datetime.fromtimestamp(event_times[0] / 1000, tz=UTC).date()
@@ -635,6 +675,57 @@ def _parse_boolean(value: object) -> bool:
     if normalized in {"false", "0"}:
         return False
     raise ValueError(f"invalid boolean value: {value!r}")
+
+
+def _source_metadata(
+    *,
+    role: str,
+    source_root: Path | None,
+    frame: pd.DataFrame | None,
+    interval_start: datetime,
+    interval_end: datetime,
+) -> dict[str, object]:
+    if source_root is None or frame is None:
+        return {
+            "role": role,
+            "present": False,
+        }
+    metadata: dict[str, object] = {
+        "role": role,
+        "present": True,
+        "source_root": str(source_root),
+        "requested_interval_start": interval_start.isoformat(),
+        "requested_interval_end": interval_end.isoformat(),
+        "row_count": int(len(frame)),
+    }
+    if "event_time_ms" in frame.columns and not frame.empty:
+        event_times = frame["event_time_ms"].to_numpy(dtype=np.int64)
+        metadata["first_event_time"] = _epoch_ms_to_iso(int(event_times.min()))
+        metadata["last_event_time"] = _epoch_ms_to_iso(int(event_times.max()))
+        metadata["utc_partition_count"] = (
+            datetime.fromtimestamp(int(event_times.max()) / 1000, tz=UTC).date()
+            - datetime.fromtimestamp(int(event_times.min()) / 1000, tz=UTC).date()
+        ).days + 1
+    return metadata
+
+
+def _feature_family_manifest(rows: pd.DataFrame) -> dict[str, object]:
+    columns = tuple(rows.columns)
+    return {
+        "flow": any(column.startswith("flow_imbalance_") for column in columns),
+        "price": any(column.startswith("return_") for column in columns),
+        "session": {"hour_sin", "hour_cos", "side_sign"}.issubset(columns),
+        "book": "book_available" in columns,
+        "mark_funding": "mark_available" in columns or "funding_rate" in columns,
+        "liquidation": any(column.startswith("liquidation_") for column in columns),
+        "spot_perp": "spot_perp_basis_bps" in columns,
+        "directional": any(column.startswith("directed_") for column in columns),
+        "column_count": len(columns),
+    }
+
+
+def _epoch_ms_to_iso(value: int) -> str:
+    return datetime.fromtimestamp(value / 1000, tz=UTC).isoformat()
 
 
 def _datetime_to_epoch_ms(values: pd.Series) -> pd.Series:

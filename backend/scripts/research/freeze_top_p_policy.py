@@ -88,11 +88,17 @@ def main() -> int:
 def _combined_sha256(root: Path, paths: list[Path]) -> str:
     digest = hashlib.sha256()
     for path in paths:
-        relative = path.relative_to(root).as_posix()
-        digest.update(relative.encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(_sha256_file(path).encode("ascii"))
-        digest.update(b"\n")
+        manifest_path = path.with_name("research_rows.manifest.json")
+        if not manifest_path.exists():
+            raise FileNotFoundError(
+                f"missing research partition manifest for {path}: {manifest_path}"
+            )
+        for fingerprinted_path in (manifest_path, path):
+            relative = fingerprinted_path.relative_to(root).as_posix()
+            digest.update(relative.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(_sha256_file(fingerprinted_path).encode("ascii"))
+            digest.update(b"\n")
     return digest.hexdigest()
 
 

@@ -193,9 +193,11 @@ cd backend
 
 The artifact is JSON-only and includes feature columns, standardization values,
 logistic coefficients, sigmoid calibration parameters, the top-p probability
-threshold, the dataset-partition fingerprint, safety flags, and its own
-`model_sha256`. That hash is the value that shadow signals should record as
-`model_sha256`. The artifact is still research-only:
+threshold, the dataset fingerprint, safety flags, and its own `model_sha256`.
+The dataset fingerprint includes every `research_rows.parquet` file and its
+paired `research_rows.manifest.json`, so changing source lineage, feature
+families, or rows changes the frozen policy input hash. That model hash is the
+value that shadow signals should record as `model_sha256`. The artifact is still research-only:
 `order_submission_allowed=false`, `execution_authorization=none`.
 
 Prospective shadow runners should score and record decisions through

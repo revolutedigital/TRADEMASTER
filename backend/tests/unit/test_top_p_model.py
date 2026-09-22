@@ -20,7 +20,7 @@ from app.services.research.top_p_model import (
     summarize_walk_forward,
     verify_frozen_top_p_policy,
 )
-from scripts.research.freeze_top_p_policy import _build_parser
+from scripts.research.freeze_top_p_policy import _build_parser, _combined_sha256
 
 
 def test_freeze_policy_cli_accepts_every_top_p_feature_set() -> None:
@@ -30,6 +30,27 @@ def test_freeze_policy_cli_accepts_every_top_p_feature_set() -> None:
     assert tuple(feature_action.choices) == TOP_P_FEATURE_SETS
     assert set(BOOK_FEATURE_SETS).issubset(feature_action.choices)
     assert set(AUXILIARY_FEATURE_SETS).issubset(feature_action.choices)
+
+
+def test_freeze_policy_dataset_hash_includes_partition_manifest(tmp_path) -> None:
+    partition = tmp_path / "date=2026-01-01"
+    partition.mkdir()
+    rows_path = partition / "research_rows.parquet"
+    manifest_path = partition / "research_rows.manifest.json"
+    rows_path.write_bytes(b"stable rows")
+    manifest_path.write_text('{"schema_version":2,"input_sources":{}}\n', encoding="utf-8")
+
+    first = _combined_sha256(tmp_path, [rows_path])
+    manifest_path.write_text(
+        '{"schema_version":2,"input_sources":{"spot_trades":{"present":true}}}\n',
+        encoding="utf-8",
+    )
+    second = _combined_sha256(tmp_path, [rows_path])
+
+    assert first != second
+    manifest_path.unlink()
+    with pytest.raises(FileNotFoundError, match="missing research partition manifest"):
+        _combined_sha256(tmp_path, [rows_path])
 
 
 def test_calibrated_walk_forward_is_temporal_and_reports_all_tails() -> None:

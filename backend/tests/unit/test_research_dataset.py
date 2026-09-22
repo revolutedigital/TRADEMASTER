@@ -2,7 +2,7 @@
 
 import gzip
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import numpy as np
@@ -11,6 +11,7 @@ import pytest
 
 from app.services.research.research_dataset import (
     ResearchDatasetConfig,
+    build_research_partition,
     build_research_rows,
     load_book_interval,
     load_liquidation_interval,
@@ -333,6 +334,139 @@ def test_load_trade_interval_converts_event_time_to_epoch_ms(tmp_path: Path) -> 
     assert frame["event_time_ms"].tolist() == [1_000, 2_000]
 
 
+def test_build_research_partition_manifest_records_input_lineage(tmp_path: Path) -> None:
+    utc_date = date(2026, 1, 1)
+    source_root = tmp_path / "normalized" / "trades"
+    book_root = tmp_path / "wal" / "depth"
+    mark_root = tmp_path / "wal" / "mark_price"
+    liquidation_root = tmp_path / "wal" / "liquidation"
+    spot_root = tmp_path / "normalized" / "spot-aggTrades"
+    output_root = tmp_path / "research-v1"
+    previous_event_time = pd.Timestamp("2025-12-31T23:59:59Z")
+    decision_time = pd.Timestamp("2026-01-01T00:00:00Z")
+    horizon_event_time = pd.Timestamp("2026-01-01T00:00:01Z")
+    _write_trade_partition(
+        source_root,
+        "2025-12-31",
+        [
+            {
+                "event_time": previous_event_time,
+                "sequence_id": 1,
+                "price": 100.0,
+                "quantity": 1.0,
+                "is_buyer_maker": False,
+            }
+        ],
+    )
+    _write_trade_partition(
+        source_root,
+        "2026-01-01",
+        [
+            {
+                "event_time": decision_time,
+                "sequence_id": 2,
+                "price": 101.0,
+                "quantity": 1.0,
+                "is_buyer_maker": False,
+            },
+            {
+                "event_time": horizon_event_time,
+                "sequence_id": 3,
+                "price": 102.0,
+                "quantity": 1.0,
+                "is_buyer_maker": True,
+            },
+        ],
+    )
+    _write_trade_partition(
+        spot_root,
+        "2026-01-01",
+        [
+            {
+                "event_time": decision_time,
+                "sequence_id": 10,
+                "price": 100.5,
+                "quantity": 1.0,
+                "is_buyer_maker": False,
+            }
+        ],
+    )
+    _write_parquet_partition(
+        book_root,
+        "2026-01-01",
+        pd.DataFrame(
+            {
+                "event_time": [decision_time],
+                "sequence_id": [20],
+                "bid_price": [100.0],
+                "bid_quantity": [2.0],
+                "ask_price": [102.0],
+                "ask_quantity": [1.0],
+            }
+        ),
+    )
+    _write_parquet_partition(
+        mark_root,
+        "2026-01-01",
+        pd.DataFrame(
+            {
+                "event_time": [decision_time],
+                "price": [101.0],
+                "index_price": [100.0],
+                "funding_rate": [0.0001],
+            }
+        ),
+    )
+    _write_parquet_partition(
+        liquidation_root,
+        "2026-01-01",
+        pd.DataFrame(
+            {
+                "event_time": [decision_time],
+                "sequence_id": [30],
+                "price": [101.0],
+                "quantity": [1.0],
+                "side": ["SELL"],
+            }
+        ),
+    )
+    config = ResearchDatasetConfig(
+        decision_stride_seconds=86_400,
+        horizons_seconds=(1,),
+        feature_windows_seconds=(1,),
+    )
+
+    result = build_research_partition(
+        source_root=source_root,
+        output_root=output_root,
+        utc_date=utc_date,
+        config=config,
+        book_source_root=book_root,
+        mark_source_root=mark_root,
+        liquidation_source_root=liquidation_root,
+        spot_source_root=spot_root,
+    )
+
+    manifest = json.loads(
+        (output_root / "date=2026-01-01" / "research_rows.manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert result.row_count == 2
+    assert manifest["schema_version"] == 2
+    assert manifest["research_rows_sha256"] == result.sha256
+    assert manifest["input_sources"]["futures_trades"]["present"] is True
+    assert manifest["input_sources"]["futures_trades"]["row_count"] == 3
+    assert manifest["input_sources"]["futures_trades"]["utc_partition_count"] == 2
+    assert manifest["input_sources"]["book"]["source_root"] == str(book_root)
+    assert manifest["input_sources"]["spot_trades"]["present"] is True
+    assert manifest["input_sources"]["spot_trades"]["row_count"] == 1
+    assert manifest["feature_families"]["book"] is True
+    assert manifest["feature_families"]["mark_funding"] is True
+    assert manifest["feature_families"]["liquidation"] is True
+    assert manifest["feature_families"]["spot_perp"] is True
+
+
 def _trade_frame() -> pd.DataFrame:
     times = np.arange(0, 11_000, 100, dtype=np.int64)
     prices = 100 + np.sin(np.arange(len(times)) / 5)
@@ -345,3 +479,13 @@ def _trade_frame() -> pd.DataFrame:
             "is_buyer_maker": np.arange(len(times)) % 2 == 0,
         }
     )
+
+
+def _write_trade_partition(root: Path, utc_date: str, rows: list[dict[str, object]]) -> None:
+    _write_parquet_partition(root, utc_date, pd.DataFrame(rows))
+
+
+def _write_parquet_partition(root: Path, utc_date: str, frame: pd.DataFrame) -> None:
+    partition = root / f"date={utc_date}"
+    partition.mkdir(parents=True, exist_ok=True)
+    frame.to_parquet(partition / "events.parquet", index=False)

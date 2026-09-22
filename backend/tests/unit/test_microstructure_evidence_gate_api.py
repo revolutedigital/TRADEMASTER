@@ -426,6 +426,86 @@ async def test_testnet_eligibility_rejects_missing_outcome_for_second_signal_on_
     assert response.order_submission_allowed is False
 
 
+async def test_experiment_report_exposes_evidence_and_shadow_metrics(
+    tmp_path: Path,
+    monkeypatch,
+    db: AsyncSession,
+) -> None:
+    artifact = tmp_path / "evidence-gate-status.json"
+    artifact.write_text(json.dumps(_eligible_evidence_payload()), encoding="utf-8")
+    monkeypatch.setattr(
+        research.settings,
+        "microstructure_evidence_status_path",
+        str(artifact),
+    )
+    db.add(
+        ResearchExperiment(
+            id="experiment",
+            name="candidate",
+            status="APPROVED",
+            code_revision="a" * 40,
+            protocol_sha256="b" * 64,
+            product_json="{}",
+            cost_profile_json="{}",
+            approval_gate_json="{}",
+            experiment_sha256="9" * 64,
+            decision_reasons_json=json.dumps(["passed_shadow"]),
+            decided_at=datetime(2026, 3, 3, tzinfo=UTC),
+        )
+    )
+    start = datetime(2026, 3, 2, tzinfo=UTC)
+    db.add_all(
+        [
+            ResearchShadowSignal(
+                experiment_id="experiment",
+                decision_time=start,
+                recorded_at=start + timedelta(seconds=1),
+                side="BUY",
+                horizon_seconds=300,
+                probability=0.8,
+                threshold=0.7,
+                would_enter=True,
+                model_sha256="d" * 64,
+                feature_vector_sha256="e" * 64,
+                outcome_json=json.dumps({"expected_net_bps": 2.0, "stress_net_bps": 1.0}),
+            ),
+            ResearchShadowSignal(
+                experiment_id="experiment",
+                decision_time=start + timedelta(days=1),
+                recorded_at=start + timedelta(days=1, seconds=1),
+                side="SELL",
+                horizon_seconds=300,
+                probability=0.8,
+                threshold=0.7,
+                would_enter=True,
+                model_sha256="d" * 64,
+                feature_vector_sha256="f" * 64,
+                outcome_json=json.dumps({"expected_net_bps": 4.0, "stress_net_bps": 3.0}),
+            ),
+        ]
+    )
+    await db.flush()
+
+    response = await research.get_experiment_report(
+        "experiment",
+        db=db,
+        _user={"sub": "operator"},
+    )
+
+    assert response["decision_reasons"] == ["passed_shadow"]
+    assert response["artifact_sha256"] is not None
+    assert len(response["artifact_sha256"]) == 64
+    assert response["metrics"]["book_evidence"]["longest_complete_streak_days"] == 60
+    assert response["metrics"]["shadow"]["signal_count"] == 2
+    assert response["metrics"]["shadow"]["outcome_signal_count"] == 2
+    assert response["metrics"]["shadow"]["expected_mean_bps"] == 3.0
+    assert response["metrics"]["shadow"]["stress_mean_bps"] == 2.0
+    assert response["metrics"]["shadow"]["complete"] is True
+    assert response["metrics"]["shadow"]["positive"] is True
+    assert response["metrics"]["testnet_boundary"]["order_submission_allowed"] is False
+    assert response["safety"]["execution_authorization"] == "none"
+
+
 def _eligible_evidence_payload() -> dict[str, object]:
     safety = {
         "research_only": True,

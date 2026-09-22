@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 from datetime import UTC, datetime
 from pathlib import Path
@@ -290,12 +291,53 @@ async def get_experiment_report(
         raise HTTPException(status_code=404, detail="Research experiment was not found")
     if experiment.status == "DRAFT":
         raise HTTPException(status_code=409, detail="Draft experiment has no frozen report")
+    evidence_status = _read_evidence_gate_status()
+    shadow_signals = await research_experiment_repository.list_shadow_signals(db, experiment.id)
+    shadow_summary = _summarize_shadow_outcomes(shadow_signals)
+    metrics = {
+        "experiment_sha256": experiment.experiment_sha256,
+        "book_evidence": {
+            "artifact_available": evidence_status.artifact_available,
+            "eligible": evidence_status.book_evidence_gate.eligible,
+            "required_complete_days": evidence_status.book_evidence_gate.required_complete_days,
+            "longest_complete_streak_days": (
+                evidence_status.book_evidence_gate.longest_complete_streak_days
+            ),
+            "complete_days": evidence_status.book_evidence_gate.complete_days,
+            "manifest_sha256": evidence_status.book_evidence_gate.manifest_sha256,
+            "status_reasons": evidence_status.status_reasons,
+            "gate_reasons": evidence_status.book_evidence_gate.reasons,
+        },
+        "shadow": {
+            **shadow_summary,
+            "complete": (
+                shadow_summary["signal_count"] > 0
+                and shadow_summary["outcome_signal_count"] == shadow_summary["signal_count"]
+                and shadow_summary["outcome_days"] == shadow_summary["decision_days"]
+            ),
+        },
+        "testnet_boundary": {
+            "release_request_required": True,
+            "explicit_testnet_release": False,
+            "order_submission_allowed": False,
+            "execution_authorization": "none",
+        },
+    }
+    decision_reasons = json.loads(experiment.decision_reasons_json)
     return {
         "experiment_id": experiment.id,
         "status": experiment.status,
-        "decision_reasons": json.loads(experiment.decision_reasons_json),
-        "metrics": {},
-        "artifact_sha256": None,
+        "decision_reasons": decision_reasons,
+        "metrics": metrics,
+        "artifact_sha256": _report_sha256(
+            {
+                "experiment_id": experiment.id,
+                "status": experiment.status,
+                "decision_reasons": decision_reasons,
+                "metrics": metrics,
+                "safety": _safety(),
+            }
+        ),
         "safety": _safety(),
         "generated_at": experiment.decided_at or experiment.frozen_at or datetime.now(UTC),
     }
@@ -464,3 +506,8 @@ def _finite_float(value: object) -> float | None:
 
 def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
+
+
+def _report_sha256(payload: dict[str, object]) -> str:
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()

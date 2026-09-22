@@ -255,6 +255,13 @@ and stress mean bps are positive. Outcomes are recorded once through the researc
 shadow recorder with `expected_net_bps`, `stress_net_bps`, and `label_sha256`;
 overwrite, missing, malformed, or non-finite `outcome_json` is fail-closed.
 
+The experiment report endpoint,
+`GET /api/v1/research/microstructure/experiments/{experiment_id}/report`, now
+returns concrete report metrics instead of an empty placeholder: experiment hash,
+book-evidence availability/streak/reasons, shadow signal/outcome counts,
+expected/stress mean bps, shadow completeness/positivity, and the Testnet boundary
+flags. It also emits a deterministic `artifact_sha256` for that report payload.
+
 Shadow runners can append evidence through the research API:
 
 - `POST /api/v1/research/microstructure/experiments/{experiment_id}/partitions/PROSPECTIVE_SHADOW/open`

@@ -7,7 +7,7 @@ import json
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Iterable
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +37,8 @@ ROLE_ORDER = {
 PROTECTED_ROLES = {"AUDIT", "PROSPECTIVE_SHADOW"}
 REQUIRED_ROLES = {"DEVELOPMENT", "TRAINING", "SELECTION", "AUDIT"}
 DECISION_STATUSES = {"REJECTED", "INCONCLUSIVE", "APPROVED"}
+MIN_PROSPECTIVE_SHADOW_DURATION = timedelta(days=20)
+MAX_PROSPECTIVE_SHADOW_DURATION = timedelta(days=30)
 
 V1_PRODUCT = {
     "execution_venue": "binance_usdm_futures",
@@ -371,6 +373,16 @@ class ResearchRegistry:
                 raise ResearchRegistryError("Partition timestamps must be timezone-aware")
             if partition.end_at <= partition.start_at:
                 raise ResearchRegistryError("Partition end must follow its start")
+            if partition.role == "PROSPECTIVE_SHADOW":
+                duration = partition.end_at - partition.start_at
+                if not (
+                    MIN_PROSPECTIVE_SHADOW_DURATION
+                    <= duration
+                    <= MAX_PROSPECTIVE_SHADOW_DURATION
+                ):
+                    raise ResearchRegistryError(
+                        "Prospective shadow partition must be 20 to 30 days"
+                    )
             if index and partition.start_at < ordered[index - 1].end_at:
                 raise ResearchRegistryError("Temporal partitions may not overlap")
 

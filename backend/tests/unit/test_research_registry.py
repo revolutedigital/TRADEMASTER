@@ -129,6 +129,31 @@ async def test_create_draft_requires_book_evidence_gate(database) -> None:
 
 
 @pytest.mark.asyncio
+async def test_prospective_shadow_partition_must_be_20_to_30_days(database) -> None:
+    registry = ResearchRegistry()
+    definition = _definition()
+    audit_end = definition.partitions[-1].end_at
+    short_shadow = PartitionDefinition(
+        "PROSPECTIVE_SHADOW",
+        audit_end,
+        audit_end + timedelta(days=19, hours=23),
+        _hash("p"),
+    )
+    definition = ExperimentDefinition(
+        name=definition.name,
+        code_revision=definition.code_revision,
+        protocol_sha256=definition.protocol_sha256,
+        product=definition.product,
+        cost_profile=definition.cost_profile,
+        approval_gate=definition.approval_gate,
+        partitions=(*definition.partitions, short_shadow),
+    )
+
+    with pytest.raises(ValueError, match="20 to 30 days"):
+        await registry.create_draft(database, definition)
+
+
+@pytest.mark.asyncio
 async def test_opened_audit_partition_is_burned_globally(database) -> None:
     registry = ResearchRegistry()
     burned_hash = _hash("b")

@@ -86,6 +86,15 @@ when it bridges that snapshot `lastUpdateId`; an unmarked sequence discontinuity
 still invalidates the day. This keeps normal resyncs auditable without weakening
 the gap detector.
 
+Deployment `76bfc125-e459-4ffb-96c4-ef84abf12d1f` put that boundary marker in
+production on 2026-09-22. The volume check immediately after deploy found
+`depth_snapshot_count=1`, with the last snapshot received at
+`2026-09-22T06:42:33.896643Z` and `last_update_id=11624103278588`. A second
+read confirmed all four required WAL streams were still growing:
+`spot_trade` 831,349 → 850,072 bytes, `mark_price` 3,108,822 → 3,112,976 bytes,
+`depth` 76,292,216 → 76,411,776 bytes, and `trade` 12,156,982 → 12,182,106
+bytes.
+
 A repeatable WAL audit was added at
 `backend/scripts/research/audit_microstructure_wal.py`. It verifies, per UTC day,
 that the required `trade`, `spot_trade`, `depth`, and `mark_price` gzip JSONL

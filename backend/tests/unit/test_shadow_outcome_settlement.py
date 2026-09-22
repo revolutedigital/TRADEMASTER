@@ -18,6 +18,7 @@ from app.services.research.shadow_outcome_settlement import (
     settle_shadow_signal,
     settle_shadow_signals,
 )
+from scripts.research.settle_shadow_outcomes import _settlement_report
 
 
 POLICY = TrailingPolicy("test", 100, 100, 20, 150, 50)
@@ -93,6 +94,31 @@ def test_settle_shadow_signals_is_deterministic_for_batches() -> None:
 
     assert first == second
     assert [row.signal_id for row in first] == [1, 2]
+
+
+def test_settlement_report_marks_outcome_completeness() -> None:
+    settlement = settle_shadow_signal(
+        _signal(probability=0.2, threshold=0.7, would_enter=False),
+        simulator=HistoricalTrailingSimulator(np.array([0, 100]), np.array([100, 100])),
+        policy=POLICY,
+    )
+
+    report = _settlement_report(
+        settlements=(settlement,),
+        policy=POLICY,
+        settlement_time=datetime(2026, 1, 1, tzinfo=UTC),
+        commit=True,
+        trade_start=datetime(2026, 1, 1, tzinfo=UTC),
+        trade_end=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+    )
+
+    assert report["committed"] is True
+    assert report["dry_run"] is False
+    assert report["signal_count"] == 1
+    assert report["outcome_count"] == 1
+    assert report["complete"] is True
+    assert report["incomplete_signal_ids"] == []
+    assert len(report["outcomes"]) == 1
 
 
 @pytest.mark.asyncio

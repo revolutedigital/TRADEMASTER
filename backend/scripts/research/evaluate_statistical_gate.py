@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -137,16 +139,73 @@ def _read_prospective_shadow_positive(path: Path | None) -> tuple[bool, list[str
         reasons.append("prospective_shadow_report_has_execution_authorization")
     if payload.get("committed") is not True:
         reasons.append("prospective_shadow_report_not_committed")
-    signal_count = int(payload.get("signal_count") or 0)
-    expected_mean = payload.get("expected_mean_bps")
-    stress_mean = payload.get("stress_mean_bps")
+    if payload.get("dry_run") is not False:
+        reasons.append("prospective_shadow_report_is_dry_run")
+    signal_count = _positive_int_or_zero(payload.get("signal_count"))
+    outcome_count = _positive_int_or_zero(payload.get("outcome_count"))
+    outcomes = payload.get("outcomes")
+    if payload.get("complete") is not True:
+        reasons.append("prospective_shadow_report_incomplete")
     if signal_count <= 0:
         reasons.append("prospective_shadow_report_has_no_signals")
-    if expected_mean is None or float(expected_mean) <= 0:
+    if outcome_count != signal_count:
+        reasons.append("prospective_shadow_outcome_count_mismatch")
+    if not isinstance(outcomes, list):
+        reasons.append("prospective_shadow_outcomes_missing")
+    elif len(outcomes) != signal_count:
+        reasons.append("prospective_shadow_outcome_list_incomplete")
+    else:
+        reasons.extend(_shadow_outcome_reasons(outcomes))
+    expected_mean = _finite_float(payload.get("expected_mean_bps"))
+    stress_mean = _finite_float(payload.get("stress_mean_bps"))
+    if expected_mean is None or expected_mean <= 0:
         reasons.append("prospective_shadow_expected_mean_not_positive")
-    if stress_mean is None or float(stress_mean) <= 0:
+    if stress_mean is None or stress_mean <= 0:
         reasons.append("prospective_shadow_stress_mean_not_positive")
     return not reasons, reasons
+
+
+def _shadow_outcome_reasons(outcomes: list[Any]) -> list[str]:
+    reasons: list[str] = []
+    seen_signal_ids: set[int] = set()
+    for index, outcome in enumerate(outcomes):
+        if not isinstance(outcome, dict):
+            reasons.append(f"prospective_shadow_outcome_{index}_malformed")
+            continue
+        signal_id = outcome.get("signal_id")
+        if type(signal_id) is not int or signal_id <= 0:
+            reasons.append(f"prospective_shadow_outcome_{index}_signal_id_invalid")
+        elif signal_id in seen_signal_ids:
+            reasons.append(f"prospective_shadow_outcome_{index}_signal_id_duplicate")
+        else:
+            seen_signal_ids.add(signal_id)
+        label_sha256 = outcome.get("label_sha256")
+        if not isinstance(label_sha256, str) or not _is_sha256(label_sha256):
+            reasons.append(f"prospective_shadow_outcome_{index}_label_sha256_invalid")
+        if _finite_float(outcome.get("expected_net_bps")) is None:
+            reasons.append(f"prospective_shadow_outcome_{index}_expected_net_bps_invalid")
+        if _finite_float(outcome.get("stress_net_bps")) is None:
+            reasons.append(f"prospective_shadow_outcome_{index}_stress_net_bps_invalid")
+        if "order_id" in outcome or "execution_id" in outcome:
+            reasons.append(f"prospective_shadow_outcome_{index}_contains_execution_field")
+    return reasons
+
+
+def _positive_int_or_zero(value: object) -> int:
+    if type(value) is int and value > 0:
+        return value
+    return 0
+
+
+def _finite_float(value: object) -> float | None:
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        return None
+    converted = float(value)
+    return converted if math.isfinite(converted) else None
+
+
+def _is_sha256(value: str) -> bool:
+    return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
 
 if __name__ == "__main__":

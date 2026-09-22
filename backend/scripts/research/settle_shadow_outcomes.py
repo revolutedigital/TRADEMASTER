@@ -170,6 +170,7 @@ def _settlement_report(
 ) -> dict[str, object]:
     expected_values = [settlement.expected_net_bps for settlement in settlements]
     stress_values = [settlement.stress_net_bps for settlement in settlements]
+    outcome_count = len(settlements)
     return {
         "research_only": True,
         "order_submission_allowed": False,
@@ -178,7 +179,10 @@ def _settlement_report(
         "dry_run": not commit,
         "settlement_time": settlement_time.isoformat(),
         "policy": asdict(policy),
-        "signal_count": len(settlements),
+        "signal_count": outcome_count,
+        "outcome_count": outcome_count,
+        "complete": True,
+        "incomplete_signal_ids": [],
         "expected_mean_bps": _mean(expected_values),
         "stress_mean_bps": _mean(stress_values),
         "trade_interval": {
@@ -214,6 +218,9 @@ def _empty_report(
         "settlement_time": settlement_time.isoformat(),
         "policy": asdict(policy),
         "signal_count": 0,
+        "outcome_count": 0,
+        "complete": True,
+        "incomplete_signal_ids": [],
         "expected_mean_bps": None,
         "stress_mean_bps": None,
         "outcomes": [],

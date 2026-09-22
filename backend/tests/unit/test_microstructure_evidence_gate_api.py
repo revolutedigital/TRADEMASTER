@@ -7,6 +7,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from fastapi import Response
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.api.v1 import research
@@ -16,6 +17,7 @@ from app.schemas.research_experiment import (
     RecordExperimentDecisionRequest,
     RecordShadowOutcomeRequest,
     RecordShadowSignalRequest,
+    RecordTestnetReleaseRequest,
 )
 from app.services.market.microstructure_wal_audit import build_evidence_gate_status
 
@@ -355,6 +357,139 @@ async def test_testnet_eligibility_requires_positive_shadow_outcomes(
     assert "prospective_shadow_outcomes_incomplete" in response.reasons
     assert "prospective_shadow_block_not_positive" in response.reasons
     assert response.order_submission_allowed is False
+
+
+async def test_research_testnet_release_requires_all_prior_gates(
+    tmp_path: Path,
+    monkeypatch,
+    db: AsyncSession,
+) -> None:
+    artifact = tmp_path / "evidence-gate-status.json"
+    artifact.write_text(json.dumps(_eligible_evidence_payload()), encoding="utf-8")
+    monkeypatch.setattr(
+        research.settings,
+        "microstructure_evidence_status_path",
+        str(artifact),
+    )
+    db.add(
+        ResearchExperiment(
+            id="experiment",
+            name="candidate",
+            status="FROZEN",
+            code_revision="a" * 40,
+            protocol_sha256="b" * 64,
+            product_json="{}",
+            cost_profile_json="{}",
+            approval_gate_json="{}",
+        )
+    )
+    await db.flush()
+
+    with pytest.raises(research.HTTPException) as error:
+        await research.record_testnet_release(
+            "experiment",
+            RecordTestnetReleaseRequest(
+                confirmation_phrase="REQUEST RESEARCH TESTNET RELEASE",
+                reasons=["manual_release_after_review"],
+            ),
+            response=Response(),
+            db=db,
+            user={"sub": "operator"},
+        )
+
+    assert error.value.status_code == 409
+    assert "experiment_status_is_not_approved" in error.value.detail["reasons"]
+    assert "prospective_shadow_has_fewer_than_20_days" in error.value.detail["reasons"]
+    assert error.value.detail["order_submission_allowed"] is False
+    assert error.value.detail["execution_authorization"] == "none"
+
+
+async def test_research_testnet_release_makes_checklist_eligible_without_execution(
+    tmp_path: Path,
+    monkeypatch,
+    db: AsyncSession,
+) -> None:
+    artifact = tmp_path / "evidence-gate-status.json"
+    artifact.write_text(json.dumps(_eligible_evidence_payload()), encoding="utf-8")
+    monkeypatch.setattr(
+        research.settings,
+        "microstructure_evidence_status_path",
+        str(artifact),
+    )
+    db.add(
+        ResearchExperiment(
+            id="experiment",
+            name="candidate",
+            status="APPROVED",
+            code_revision="a" * 40,
+            protocol_sha256="b" * 64,
+            product_json="{}",
+            cost_profile_json="{}",
+            approval_gate_json="{}",
+            experiment_sha256="9" * 64,
+            decision_reasons_json=json.dumps(["all_gates_passed"]),
+            decided_at=datetime(2026, 3, 3, tzinfo=UTC),
+        )
+    )
+    start = datetime(2026, 3, 2, tzinfo=UTC)
+    for day_offset in range(20):
+        db.add(
+            ResearchShadowSignal(
+                experiment_id="experiment",
+                decision_time=start + timedelta(days=day_offset),
+                recorded_at=start + timedelta(days=day_offset, seconds=1),
+                side="BUY",
+                horizon_seconds=300,
+                probability=0.8,
+                threshold=0.7,
+                would_enter=True,
+                model_sha256="d" * 64,
+                feature_vector_sha256=f"{day_offset:064x}"[-64:],
+                outcome_json=json.dumps({"expected_net_bps": 1.2, "stress_net_bps": 0.4}),
+            )
+        )
+    await db.flush()
+
+    release_response = Response()
+    release = await research.record_testnet_release(
+        "experiment",
+        RecordTestnetReleaseRequest(
+            confirmation_phrase="REQUEST RESEARCH TESTNET RELEASE",
+            reasons=["manual_release_after_review"],
+        ),
+        response=release_response,
+        db=db,
+        user={"sub": "operator"},
+    )
+    second_response = Response()
+    same_release = await research.record_testnet_release(
+        "experiment",
+        RecordTestnetReleaseRequest(
+            confirmation_phrase="REQUEST RESEARCH TESTNET RELEASE",
+            reasons=["manual_release_after_review"],
+        ),
+        response=second_response,
+        db=db,
+        user={"sub": "operator"},
+    )
+    eligibility = await research.get_testnet_eligibility(
+        "experiment",
+        db=db,
+        _user={"sub": "operator"},
+    )
+
+    assert second_response.status_code == 200
+    assert same_release.release_sha256 == release.release_sha256
+    assert release.explicit_testnet_release is True
+    assert release.release_request_required is False
+    assert release.order_submission_allowed is False
+    assert release.execution_authorization == "none"
+    assert release.evidence_snapshot["book_evidence_contiguous_days"] == 60
+    assert eligibility.eligible is True
+    assert eligibility.explicit_testnet_release is True
+    assert eligibility.release_request_required is False
+    assert eligibility.order_submission_allowed is False
+    assert eligibility.execution_authorization == "none"
 
 
 async def test_testnet_eligibility_rejects_missing_outcome_for_second_signal_on_same_day(

@@ -275,13 +275,24 @@ and `execution_authorization=none`.
 The research panel also exposes
 `GET /api/v1/research/microstructure/experiments/{experiment_id}/testnet-eligibility`.
 That endpoint crosses experiment status, the book-evidence artifact, and the
-append-only shadow ledger. It is still metadata only: `explicit_testnet_release`
-is always false in this read path, `release_request_required=true`, and order
-submission remains blocked. A 20-to-30-day shadow block counts toward Testnet
-only when every shadow signal has immutable outcome evidence and both expected
-and stress mean bps are positive. Outcomes are recorded once through the research
-shadow recorder with `expected_net_bps`, `stress_net_bps`, and `label_sha256`;
-overwrite, missing, malformed, or non-finite `outcome_json` is fail-closed.
+append-only shadow ledger. It is still metadata only: order submission remains
+blocked and execution authorization remains `none`. A 20-to-30-day shadow block
+counts toward Testnet only when every shadow signal has immutable outcome
+evidence and both expected and stress mean bps are positive. Outcomes are
+recorded once through the research shadow recorder with `expected_net_bps`,
+`stress_net_bps`, and `label_sha256`; overwrite, missing, malformed, or
+non-finite `outcome_json` is fail-closed.
+
+The separate
+`POST /api/v1/research/microstructure/experiments/{experiment_id}/testnet-release`
+endpoint records the explicit manual research release only after the experiment
+is already `APPROVED`, the 60-day book gate passes, the prospective shadow block
+is complete and positive, and there are no unresolved evidence failures. It is
+idempotent and stores a snapshot hashable release record; it still does not
+activate Testnet, start a strategy, load credentials, or submit orders. After
+that record exists, the eligibility checklist may return
+`explicit_testnet_release=true` and `release_request_required=false`, while
+`order_submission_allowed=false` and `execution_authorization=none` remain true.
 
 The experiment report endpoint,
 `GET /api/v1/research/microstructure/experiments/{experiment_id}/report`, now

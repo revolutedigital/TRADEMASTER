@@ -147,13 +147,45 @@ class TestnetEligibilityResponse(BaseModel):
     prospective_shadow_stress_mean_bps: float | None
     prospective_shadow_positive: bool
     unresolved_failures: int = Field(ge=0)
-    explicit_testnet_release: Literal[False]
-    release_request_required: Literal[True]
+    explicit_testnet_release: bool
+    release_request_required: bool
     evidence_artifact_available: bool
     order_submission_allowed: Literal[False]
     execution_authorization: Literal["none"]
     safety: SafetyBoundary
     generated_at: datetime
+
+
+class RecordTestnetReleaseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    confirmation_phrase: Literal["REQUEST RESEARCH TESTNET RELEASE"]
+    reasons: list[str] = Field(min_length=1, max_length=50)
+
+    @field_validator("reasons")
+    @classmethod
+    def reject_blank_reasons(cls, value: list[str]) -> list[str]:
+        normalized = [reason.strip() for reason in value]
+        if any(not reason for reason in normalized):
+            raise ValueError("release reasons cannot be blank")
+        return normalized
+
+
+class ResearchTestnetReleaseResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    experiment_id: str
+    release_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    requested_by: str
+    reasons: list[str]
+    evidence_snapshot: dict[str, Any]
+    released_at: datetime
+    explicit_testnet_release: Literal[True]
+    release_request_required: Literal[False]
+    order_submission_allowed: Literal[False]
+    execution_authorization: Literal["none"]
+    safety: SafetyBoundary
 
 
 class OpenedPartitionResponse(BaseModel):

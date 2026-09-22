@@ -9,13 +9,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path as ApiPath, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path as ApiPath, Query, Response, status
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.dependencies import get_db, require_auth
-from app.models.research_experiment import ResearchDataUse, ResearchExperiment, ResearchShadowSignal
+from app.models.research_experiment import (
+    ResearchDataUse,
+    ResearchExperiment,
+    ResearchExperimentEvent,
+    ResearchShadowSignal,
+    ResearchTestnetRelease,
+)
 from app.repositories.research_experiment_repo import research_experiment_repository
 from app.schemas.research_experiment import (
     CreateExperimentRequest,
@@ -27,6 +34,8 @@ from app.schemas.research_experiment import (
     RecordExperimentDecisionRequest,
     RecordShadowOutcomeRequest,
     RecordShadowSignalRequest,
+    RecordTestnetReleaseRequest,
+    ResearchTestnetReleaseResponse,
     ShadowSignalResponse,
     TestnetEligibilityResponse,
 )
@@ -73,6 +82,8 @@ async def get_testnet_eligibility(
     )
     shadow_summary = _summarize_shadow_outcomes(shadow_signals)
     unresolved_failures = len(evidence_status.status_reasons)
+    testnet_release = await _get_testnet_release(db, experiment_id)
+    explicit_testnet_release = testnet_release is not None
     eligibility = evaluate_testnet_eligibility(
         experiment,
         book_evidence_contiguous_days=(
@@ -86,7 +97,7 @@ async def get_testnet_eligibility(
         prospective_shadow_outcome_signal_count=shadow_summary["outcome_signal_count"],
         prospective_shadow_positive=shadow_summary["positive"],
         unresolved_failures=unresolved_failures,
-        explicit_testnet_release=False,
+        explicit_testnet_release=explicit_testnet_release,
     )
     return TestnetEligibilityResponse(
         experiment_id=experiment.id,
@@ -102,14 +113,116 @@ async def get_testnet_eligibility(
         prospective_shadow_stress_mean_bps=shadow_summary["stress_mean_bps"],
         prospective_shadow_positive=eligibility.prospective_shadow_positive,
         unresolved_failures=unresolved_failures,
-        explicit_testnet_release=False,
-        release_request_required=True,
+        explicit_testnet_release=explicit_testnet_release,
+        release_request_required=not explicit_testnet_release,
         evidence_artifact_available=evidence_status.artifact_available,
         order_submission_allowed=False,
         execution_authorization="none",
         safety=_safety(),
         generated_at=datetime.now(UTC),
     )
+
+
+@router.post(
+    "/experiments/{experiment_id}/testnet-release",
+    response_model=ResearchTestnetReleaseResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def record_testnet_release(
+    experiment_id: str,
+    body: RecordTestnetReleaseRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_auth),
+) -> ResearchTestnetReleaseResponse:
+    experiment = await research_experiment_repository.get(db, experiment_id)
+    if experiment is None:
+        raise HTTPException(status_code=404, detail="Research experiment was not found")
+
+    existing_release = await _get_testnet_release(db, experiment_id)
+    if existing_release is not None:
+        response.status_code = status.HTTP_200_OK
+        return _serialize_testnet_release(existing_release)
+
+    evidence_status = _read_evidence_gate_status()
+    shadow_signals = await research_experiment_repository.list_shadow_signals(db, experiment_id)
+    shadow_summary = _summarize_shadow_outcomes(shadow_signals)
+    unresolved_failures = len(evidence_status.status_reasons)
+    eligibility = evaluate_testnet_eligibility(
+        experiment,
+        book_evidence_contiguous_days=(
+            evidence_status.book_evidence_gate.longest_complete_streak_days
+            if evidence_status.artifact_available
+            else 0
+        ),
+        prospective_shadow_days=shadow_summary["decision_days"],
+        prospective_shadow_outcome_days=shadow_summary["outcome_days"],
+        prospective_shadow_signal_count=shadow_summary["signal_count"],
+        prospective_shadow_outcome_signal_count=shadow_summary["outcome_signal_count"],
+        prospective_shadow_positive=shadow_summary["positive"],
+        unresolved_failures=unresolved_failures,
+        explicit_testnet_release=True,
+    )
+    if not eligibility.eligible:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reasons": list(eligibility.reasons),
+                "order_submission_allowed": False,
+                "execution_authorization": "none",
+            },
+        )
+
+    release_time = datetime.now(UTC)
+    evidence_snapshot = _testnet_release_evidence_snapshot(
+        experiment=experiment,
+        evidence_status=evidence_status,
+        shadow_summary=shadow_summary,
+        unresolved_failures=unresolved_failures,
+        generated_at=release_time,
+    )
+    requested_by = str(user.get("sub", "operator"))[:120]
+    reasons = body.reasons
+    release_payload = {
+        "experiment_id": experiment.id,
+        "experiment_sha256": experiment.experiment_sha256,
+        "requested_by": requested_by,
+        "reasons": reasons,
+        "evidence_snapshot": evidence_snapshot,
+        "released_at": release_time.isoformat(),
+        "safety": _safety(),
+    }
+    release = ResearchTestnetRelease(
+        experiment_id=experiment.id,
+        release_sha256=_report_sha256(release_payload),
+        requested_by=requested_by,
+        reasons_json=json.dumps(reasons, ensure_ascii=False, sort_keys=True),
+        evidence_snapshot_json=json.dumps(
+            evidence_snapshot,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        released_at=release_time,
+    )
+    db.add(release)
+    db.add(
+        ResearchExperimentEvent(
+            experiment_id=experiment.id,
+            kind="TESTNET_RELEASE_RECORDED",
+            payload_json=json.dumps(
+                {
+                    "release_sha256": release.release_sha256,
+                    "order_submission_allowed": False,
+                    "execution_authorization": "none",
+                },
+                sort_keys=True,
+            ),
+            occurred_at=release_time,
+        )
+    )
+    await db.flush()
+    return _serialize_testnet_release(release)
 
 
 @router.post(
@@ -316,6 +429,8 @@ async def get_experiment_report(
     evidence_status = _read_evidence_gate_status()
     shadow_signals = await research_experiment_repository.list_shadow_signals(db, experiment.id)
     shadow_summary = _summarize_shadow_outcomes(shadow_signals)
+    testnet_release = await _get_testnet_release(db, experiment.id)
+    explicit_testnet_release = testnet_release is not None
     metrics = {
         "experiment_sha256": experiment.experiment_sha256,
         "book_evidence": {
@@ -339,8 +454,8 @@ async def get_experiment_report(
             ),
         },
         "testnet_boundary": {
-            "release_request_required": True,
-            "explicit_testnet_release": False,
+            "release_request_required": not explicit_testnet_release,
+            "explicit_testnet_release": explicit_testnet_release,
             "order_submission_allowed": False,
             "execution_authorization": "none",
         },
@@ -446,6 +561,69 @@ def _serialize_opened_partition(partition: ResearchDataUse) -> OpenedPartitionRe
         opened_at=_as_utc_datetime(partition.opened_at),
         safety=_safety(),
     )
+
+
+async def _get_testnet_release(
+    db: AsyncSession,
+    experiment_id: str,
+) -> ResearchTestnetRelease | None:
+    result = await db.execute(
+        select(ResearchTestnetRelease).where(
+            ResearchTestnetRelease.experiment_id == experiment_id
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+def _serialize_testnet_release(
+    release: ResearchTestnetRelease,
+) -> ResearchTestnetReleaseResponse:
+    return ResearchTestnetReleaseResponse(
+        id=release.id,
+        experiment_id=release.experiment_id,
+        release_sha256=release.release_sha256,
+        requested_by=release.requested_by,
+        reasons=json.loads(release.reasons_json),
+        evidence_snapshot=json.loads(release.evidence_snapshot_json),
+        released_at=_as_utc_datetime(release.released_at),
+        explicit_testnet_release=True,
+        release_request_required=False,
+        order_submission_allowed=False,
+        execution_authorization="none",
+        safety=_safety(),
+    )
+
+
+def _testnet_release_evidence_snapshot(
+    *,
+    experiment: ResearchExperiment,
+    evidence_status: EvidenceGateStatusResponse,
+    shadow_summary: dict[str, object],
+    unresolved_failures: int,
+    generated_at: datetime,
+) -> dict[str, object]:
+    return {
+        "experiment_status": experiment.status,
+        "experiment_sha256": experiment.experiment_sha256,
+        "book_evidence_contiguous_days": (
+            evidence_status.book_evidence_gate.longest_complete_streak_days
+            if evidence_status.artifact_available
+            else 0
+        ),
+        "evidence_artifact_available": evidence_status.artifact_available,
+        "evidence_manifest_sha256": evidence_status.book_evidence_gate.manifest_sha256,
+        "prospective_shadow_days": shadow_summary["decision_days"],
+        "prospective_shadow_outcome_days": shadow_summary["outcome_days"],
+        "prospective_shadow_signal_count": shadow_summary["signal_count"],
+        "prospective_shadow_outcome_signal_count": shadow_summary["outcome_signal_count"],
+        "prospective_shadow_expected_mean_bps": shadow_summary["expected_mean_bps"],
+        "prospective_shadow_stress_mean_bps": shadow_summary["stress_mean_bps"],
+        "prospective_shadow_positive": shadow_summary["positive"],
+        "unresolved_failures": unresolved_failures,
+        "generated_at": generated_at.isoformat(),
+        "order_submission_allowed": False,
+        "execution_authorization": "none",
+    }
 
 
 def _parse_shadow_outcome(signal: ResearchShadowSignal) -> dict[str, object] | None:

@@ -32,6 +32,7 @@ def test_microstructure_spec_is_openapi_31_and_research_only() -> None:
         "/research/microstructure/experiments",
         "/research/microstructure/experiments/{experiment_id}",
         "/research/microstructure/experiments/{experiment_id}/testnet-eligibility",
+        "/research/microstructure/experiments/{experiment_id}/testnet-release",
         "/research/microstructure/experiments/{experiment_id}/partitions/{role}/open",
         "/research/microstructure/experiments/{experiment_id}/shadow-signals",
         "/research/microstructure/shadow-signals/{signal_id}/outcome",
@@ -95,13 +96,28 @@ def test_microstructure_spec_publishes_metadata_only_testnet_eligibility() -> No
     properties = eligibility["properties"]
 
     assert eligibility["additionalProperties"] is False
-    assert properties["explicit_testnet_release"]["const"] is False
-    assert properties["release_request_required"]["const"] is True
+    assert "const" not in properties["explicit_testnet_release"]
+    assert "const" not in properties["release_request_required"]
     assert "prospective_shadow_outcome_days" in eligibility["required"]
     assert "prospective_shadow_outcome_signal_count" in eligibility["required"]
     assert "prospective_shadow_positive" in eligibility["required"]
     assert properties["order_submission_allowed"]["const"] is False
     assert properties["execution_authorization"]["const"] == "none"
+
+
+def test_microstructure_spec_publishes_research_testnet_release_without_execution() -> None:
+    spec = _load_spec()
+    release = spec["components"]["schemas"]["ResearchTestnetRelease"]
+    request = spec["components"]["schemas"]["RecordTestnetReleaseRequest"]
+
+    assert release["additionalProperties"] is False
+    assert request["properties"]["confirmation_phrase"]["const"] == (
+        "REQUEST RESEARCH TESTNET RELEASE"
+    )
+    assert release["properties"]["explicit_testnet_release"]["const"] is True
+    assert release["properties"]["release_request_required"]["const"] is False
+    assert release["properties"]["order_submission_allowed"]["const"] is False
+    assert release["properties"]["execution_authorization"]["const"] == "none"
 
 
 def test_microstructure_spec_marks_returned_experiment_report_fields_required() -> None:

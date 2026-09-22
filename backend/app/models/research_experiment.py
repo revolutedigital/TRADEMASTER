@@ -175,3 +175,30 @@ class ResearchShadowSignal(Base):
         ),
         Index("ix_research_shadow_experiment_time", "experiment_id", "decision_time"),
     )
+
+
+class ResearchTestnetRelease(Base, TimestampMixin):
+    """Explicit research-only Testnet release record after all evidence gates pass."""
+
+    __tablename__ = "research_testnet_releases"
+
+    id: Mapped[int] = mapped_column(_IDENTITY, primary_key=True, autoincrement=True)
+    experiment_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("research_experiments.id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    )
+    release_sha256: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    requested_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    reasons_json: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
+    released_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index(
+            "ix_research_testnet_releases_lookup",
+            "experiment_id",
+            "released_at",
+        ),
+    )

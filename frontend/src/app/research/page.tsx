@@ -64,8 +64,8 @@ interface TestnetEligibility {
   prospective_shadow_stress_mean_bps: number | null;
   prospective_shadow_positive: boolean;
   unresolved_failures: number;
-  explicit_testnet_release: false;
-  release_request_required: true;
+  explicit_testnet_release: boolean;
+  release_request_required: boolean;
   evidence_artifact_available: boolean;
   order_submission_allowed: false;
   execution_authorization: "none";
@@ -333,6 +333,11 @@ function TestnetEligibilityPanel({
 }) {
   const checklistReady = status?.eligible === true;
   const visibleReason = error ?? status?.reasons[0] ?? (hasExperiments ? null : "nenhum_experimento_registrado");
+  const badgeLabel = checklistReady
+    ? "Release registrado"
+    : status?.explicit_testnet_release
+      ? "Release incompleto"
+      : "Sem release";
 
   return (
     <Card className={checklistReady ? "border-blue-500/30" : "border-red-500/30"}>
@@ -344,12 +349,12 @@ function TestnetEligibilityPanel({
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="font-semibold text-[var(--color-text)]">Checklist Testnet</h2>
                 <Badge variant={checklistReady ? "primary" : "danger"}>
-                  {checklistReady ? "Pronto para release manual" : "Sem release"}
+                  {badgeLabel}
                 </Badge>
               </div>
               <p className="mt-1 text-sm text-[var(--color-text-muted)]">
                 Cruza experimento, 60 dias de book e 20–30 dias de shadow com outcomes positivos.
-                Mesmo quando ficar pronto, este painel continua sem autorização de execução e exige release explícito separado.
+                Mesmo com release registrado, este painel continua sem autorização de execução e sem botão de ordem.
               </p>
               {visibleReason ? (
                 <p className="mt-2 font-mono text-xs text-red-300">{visibleReason}</p>

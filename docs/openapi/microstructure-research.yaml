@@ -131,6 +131,46 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+  /research/microstructure/experiments/{experiment_id}/testnet-release:
+    post:
+      operationId: recordMicrostructureResearchTestnetRelease
+      summary: Record explicit research Testnet release after all gates pass.
+      description: |
+        Creates a one-shot research-only release record only after the experiment
+        is approved, 60 complete book days are present, the prospective shadow
+        block is complete and positive, and there are no unresolved evidence
+        failures. This record can make the metadata checklist eligible, but this
+        endpoint still does not submit orders, start Testnet, activate a
+        strategy, or grant execution authorization.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ExperimentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordTestnetReleaseRequest'
+      responses:
+        '201':
+          description: Explicit research Testnet release recorded without execution access.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResearchTestnetRelease'
+        '200':
+          description: Existing release returned idempotently.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResearchTestnetRelease'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Required research gates have not all passed.
   /research/microstructure/experiments/{experiment_id}/partitions/{role}/open:
     post:
       operationId: openMicrostructureResearchPartition
@@ -614,10 +654,10 @@ components:
           minimum: 0
         explicit_testnet_release:
           type: boolean
-          const: false
+          description: True only after the separate research-only release record is present.
         release_request_required:
           type: boolean
-          const: true
+          description: False only after explicit research Testnet release is recorded.
         evidence_artifact_available:
           type: boolean
         order_submission_allowed:
@@ -631,6 +671,73 @@ components:
         generated_at:
           type: string
           format: date-time
+    RecordTestnetReleaseRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - confirmation_phrase
+        - reasons
+      properties:
+        confirmation_phrase:
+          type: string
+          const: REQUEST RESEARCH TESTNET RELEASE
+        reasons:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            minLength: 1
+    ResearchTestnetRelease:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - experiment_id
+        - release_sha256
+        - requested_by
+        - reasons
+        - evidence_snapshot
+        - released_at
+        - explicit_testnet_release
+        - release_request_required
+        - order_submission_allowed
+        - execution_authorization
+        - safety
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        experiment_id:
+          type: string
+          format: uuid
+        release_sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        requested_by:
+          type: string
+        reasons:
+          type: array
+          items: { type: string }
+        evidence_snapshot:
+          type: object
+          additionalProperties: true
+        released_at:
+          type: string
+          format: date-time
+        explicit_testnet_release:
+          type: boolean
+          const: true
+        release_request_required:
+          type: boolean
+          const: false
+        order_submission_allowed:
+          type: boolean
+          const: false
+        execution_authorization:
+          type: string
+          const: none
+        safety:
+          $ref: '#/components/schemas/SafetyBoundary'
     OpenedResearchPartition:
       type: object
       additionalProperties: false

@@ -8,6 +8,7 @@ import json
 import os
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -23,6 +24,7 @@ from app.services.market.order_book_rebuilder import OrderBookGapError, OrderBoo
 logger = get_logger(__name__)
 FUTURES_STREAM_URL = "wss://fstream.binance.com/stream"
 FUTURES_REST_URL = "https://fapi.binance.com"
+SPOT_STREAM_URL = "wss://stream.binance.com:9443/stream"
 
 
 class EventSink(Protocol):
@@ -42,13 +44,15 @@ class JsonlEventSink:
         grouped: dict[tuple[str, str], list[str]] = defaultdict(list)
         for event in events:
             day = event.event_time.astimezone(UTC).date().isoformat()
-            grouped[(event.event_type.value, day)].append(event.model_dump_json(exclude_none=True))
+            grouped[(_event_directory(event), day)].append(
+                event.model_dump_json(exclude_none=True)
+            )
         async with self._lock:
             await asyncio.to_thread(self._append_grouped, grouped)
 
     def _append_grouped(self, grouped: dict[tuple[str, str], list[str]]) -> None:
-        for (event_type, day), serialized_events in grouped.items():
-            path = self._root / event_type.lower() / f"date={day}" / "events.jsonl.gz"
+        for (event_directory, day), serialized_events in grouped.items():
+            path = self._root / event_directory / f"date={day}" / "events.jsonl.gz"
             path.parent.mkdir(parents=True, exist_ok=True)
             payload = ("\n".join(serialized_events) + "\n").encode()
             with path.open("ab") as raw_output:
@@ -94,6 +98,8 @@ class MicrostructureRecorder:
         symbol: str = "BTCUSDT",
         rest_base_url: str = FUTURES_REST_URL,
         stream_base_url: str = FUTURES_STREAM_URL,
+        include_spot_trades: bool = False,
+        spot_stream_base_url: str = SPOT_STREAM_URL,
         batch_size: int = 500,
         queue_size: int = 50_000,
         snapshot_fetcher: Callable[[], Awaitable[dict[str, Any]]] | None = None,
@@ -103,6 +109,8 @@ class MicrostructureRecorder:
         self._symbol = symbol.upper()
         self._rest_base_url = rest_base_url.rstrip("/")
         self._stream_base_url = stream_base_url.rstrip("/")
+        self._include_spot_trades = include_spot_trades
+        self._spot_stream_base_url = spot_stream_base_url.rstrip("/")
         self._batch_size = batch_size
         self._queue: asyncio.Queue[MicrostructureEvent] = asyncio.Queue(maxsize=queue_size)
         self._snapshot_fetcher = snapshot_fetcher or self._fetch_depth_snapshot
@@ -111,6 +119,7 @@ class MicrostructureRecorder:
         self._book = OrderBookRebuilder()
         self._running = False
         self.reconnect_count = 0
+        self.spot_reconnect_count = 0
         self.gap_count = 0
 
     @property
@@ -125,6 +134,11 @@ class MicrostructureRecorder:
         )
         return f"{self._stream_base_url}?streams={streams}"
 
+    @property
+    def spot_stream_url(self) -> str:
+        symbol = self._symbol.lower()
+        return f"{self._spot_stream_base_url}?streams={symbol}@trade"
+
     async def run(self, stop_event: asyncio.Event) -> None:
         self._running = True
         writer_stop_event = asyncio.Event()
@@ -133,6 +147,11 @@ class MicrostructureRecorder:
         )
         mark_price_task = asyncio.create_task(
             self._mark_price_poller(stop_event), name="mark_price_poller"
+        )
+        spot_task = (
+            asyncio.create_task(self._spot_trade_runner(stop_event), name="spot_trade_stream")
+            if self._include_spot_trades
+            else None
         )
 
         def stop_on_writer_failure(task: asyncio.Task[None]) -> None:
@@ -160,6 +179,10 @@ class MicrostructureRecorder:
         finally:
             self._running = False
             stop_event.set()
+            if spot_task is not None:
+                spot_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await spot_task
             await mark_price_task
             writer_stop_event.set()
             await writer_task
@@ -189,6 +212,58 @@ class MicrostructureRecorder:
             while not stop_event.is_set():
                 raw_message = await asyncio.wait_for(websocket.recv(), timeout=60)
                 await self._handle_message(_decode_message(raw_message))
+
+    async def _spot_trade_runner(self, stop_event: asyncio.Event) -> None:
+        while not stop_event.is_set():
+            try:
+                await self._run_spot_trade_connection(stop_event)
+                self.spot_reconnect_count = 0
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                self.spot_reconnect_count += 1
+                logger.warning("spot_trade_stream_reconnect", error=str(error))
+            if not stop_event.is_set():
+                await asyncio.sleep(min(2 ** min(self.spot_reconnect_count, 5), 30))
+
+    async def _run_spot_trade_connection(self, stop_event: asyncio.Event) -> None:
+        async with websockets.connect(
+            self.spot_stream_url,
+            open_timeout=20,
+            ping_interval=20,
+            ping_timeout=20,
+            max_queue=10_000,
+        ) as websocket:
+            while not stop_event.is_set():
+                raw_message = await asyncio.wait_for(websocket.recv(), timeout=60)
+                await self._handle_spot_message(_decode_message(raw_message))
+
+    async def _handle_spot_message(self, wrapper: dict[str, Any]) -> None:
+        stream = str(wrapper.get("stream", ""))
+        payload = wrapper.get("data")
+        if not stream or not isinstance(payload, dict):
+            return
+        try:
+            event = parse_market_message(
+                stream=stream,
+                payload=payload,
+                receive_time=datetime.now(UTC),
+                symbol=self._symbol,
+                product="spot",
+            )
+        except Exception as error:
+            raise ValueError(
+                f"Invalid spot market event stream={stream} event={payload.get('e')} "
+                f"price={payload.get('p')}"
+            ) from error
+        if event is None:
+            return
+        if event.sequence_id is not None:
+            if not self._sequence_tracker.observe(
+                f"spot:{stream}", event.sequence_id, require_contiguous=False
+            ):
+                return
+        await self._queue.put(event)
 
     async def _handle_message(self, wrapper: dict[str, Any]) -> None:
         stream = str(wrapper.get("stream", ""))
@@ -327,11 +402,12 @@ def parse_market_message(
     payload: dict[str, Any],
     receive_time: datetime,
     symbol: str,
+    product: str = "usdm_perpetual",
 ) -> MicrostructureEvent | None:
     event_name = payload.get("e")
     event_time = _event_time(payload)
     base = {
-        "product": "usdm_perpetual",
+        "product": product,
         "symbol": symbol.upper(),
         "event_time": event_time,
         "receive_time": receive_time,
@@ -354,6 +430,7 @@ def parse_market_message(
         if float(payload["p"]) <= 0 or float(payload["q"]) <= 0:
             return None
         is_buyer_maker = bool(payload["m"])
+        trade_payload = {"order_type": payload["X"]} if "X" in payload else None
         return MicrostructureEvent(
             **base,
             event_type=MarketEventType.TRADE,
@@ -363,7 +440,7 @@ def parse_market_message(
             quote_quantity=float(payload["p"]) * float(payload["q"]),
             is_buyer_maker=is_buyer_maker,
             side="SELL" if is_buyer_maker else "BUY",
-            payload={"order_type": payload.get("X")},
+            payload=trade_payload,
         )
     if event_name == "bookTicker" or stream.endswith("@bookTicker"):
         return MicrostructureEvent(
@@ -415,6 +492,16 @@ def parse_market_message(
             payload={"status": order.get("X"), "order_type": order.get("o")},
         )
     return None
+
+
+def _event_directory(event: MicrostructureEvent) -> str:
+    event_type = event.event_type.value.lower()
+    product = event.product.lower()
+    if product == "usdm_perpetual":
+        return event_type
+    if not product or not product.replace("_", "").isalnum():
+        raise ValueError(f"Unsafe event product for WAL directory: {event.product}")
+    return f"{product}_{event_type}"
 
 
 def _event_time(payload: dict[str, Any]) -> datetime:

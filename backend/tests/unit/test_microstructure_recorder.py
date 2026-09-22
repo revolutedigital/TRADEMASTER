@@ -6,13 +6,22 @@ from pathlib import Path
 
 import pytest
 
-from app.schemas.microstructure import MarketEventType
+from app.schemas.microstructure import MarketEventType, MicrostructureEvent
 from app.services.market.microstructure_recorder import (
     JsonlEventSink,
+    MicrostructureRecorder,
     SequenceTracker,
     StreamSequenceGap,
     parse_market_message,
 )
+
+
+class InMemorySink:
+    def __init__(self) -> None:
+        self.events: list[MicrostructureEvent] = []
+
+    async def append_batch(self, events: list[MicrostructureEvent]) -> None:
+        self.events = events
 
 
 def test_parse_aggregate_trade_keeps_aggressor_and_sequence() -> None:
@@ -86,6 +95,31 @@ def test_parse_raw_trade_supports_non_contiguous_trade_ids() -> None:
     assert event is not None and event.event_type == MarketEventType.TRADE
     assert event.side == "BUY"
     assert event.payload == {"order_type": "MARKET"}
+
+
+def test_parse_spot_trade_marks_product_and_omits_futures_order_payload() -> None:
+    event = parse_market_message(
+        stream="btcusdt@trade",
+        payload={
+            "e": "trade",
+            "E": 1_767_225_600_000,
+            "T": 1_767_225_600_000,
+            "t": 12,
+            "p": "100",
+            "q": "0.5",
+            "m": False,
+            "M": True,
+        },
+        receive_time=datetime(2026, 1, 1, tzinfo=UTC),
+        symbol="BTCUSDT",
+        product="spot",
+    )
+
+    assert event is not None
+    assert event.product == "spot"
+    assert event.event_type == MarketEventType.TRADE
+    assert event.side == "BUY"
+    assert event.payload is None
 
 
 def test_zero_quantity_trade_heartbeat_is_ignored() -> None:
@@ -193,3 +227,77 @@ async def test_jsonl_sink_partitions_and_persists_events(tmp_path: Path) -> None
         persisted = source.read()
     assert '"order_submission_allowed"' not in persisted
     assert '"BOOK_TICKER"' in persisted
+
+
+@pytest.mark.asyncio
+async def test_jsonl_sink_routes_spot_trades_to_separate_directory(tmp_path: Path) -> None:
+    futures_event = parse_market_message(
+        stream="btcusdt@trade",
+        payload={
+            "e": "trade",
+            "T": 1_767_225_600_000,
+            "t": 12,
+            "p": "100",
+            "q": "0.5",
+            "m": False,
+            "X": "MARKET",
+        },
+        receive_time=datetime(2026, 1, 1, tzinfo=UTC),
+        symbol="BTCUSDT",
+    )
+    spot_event = parse_market_message(
+        stream="btcusdt@trade",
+        payload={
+            "e": "trade",
+            "T": 1_767_225_600_000,
+            "t": 13,
+            "p": "101",
+            "q": "0.25",
+            "m": True,
+        },
+        receive_time=datetime(2026, 1, 1, tzinfo=UTC),
+        symbol="BTCUSDT",
+        product="spot",
+    )
+    assert futures_event is not None
+    assert spot_event is not None
+
+    await JsonlEventSink(tmp_path).append_batch([futures_event, spot_event])
+
+    paths = {path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("events.jsonl.gz")}
+    assert paths == {
+        "trade/date=2026-01-01/events.jsonl.gz",
+        "spot_trade/date=2026-01-01/events.jsonl.gz",
+    }
+
+
+@pytest.mark.asyncio
+async def test_jsonl_sink_rejects_unsafe_product_directory(tmp_path: Path) -> None:
+    event = MicrostructureEvent(
+        product="../spot",
+        symbol="BTCUSDT",
+        event_type=MarketEventType.TRADE,
+        event_time=datetime(2026, 1, 1, tzinfo=UTC),
+        receive_time=datetime(2026, 1, 1, tzinfo=UTC),
+        price=100,
+        quantity=1,
+    )
+
+    with pytest.raises(ValueError, match="Unsafe event product"):
+        await JsonlEventSink(tmp_path).append_batch([event])
+
+
+def test_recorder_spot_stream_url_is_opt_in() -> None:
+    recorder = MicrostructureRecorder(
+        sink=InMemorySink(),
+        stream_base_url="wss://futures.test/stream",
+        spot_stream_base_url="wss://spot.test/stream",
+        include_spot_trades=True,
+    )
+
+    assert (
+        recorder.stream_url
+        == "wss://futures.test/stream?streams=btcusdt@trade/"
+        "btcusdt@depth@100ms/btcusdt@forceOrder"
+    )
+    assert recorder.spot_stream_url == "wss://spot.test/stream?streams=btcusdt@trade"

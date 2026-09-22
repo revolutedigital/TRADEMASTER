@@ -151,7 +151,12 @@ The first command converts recorder `trade/date=*/events.jsonl.gz` WAL files
 into the same immutable parquet schema used by the replay. The second command
 downloads and normalizes Binance Spot public archive `aggTrades` into
 `normalized/spot-aggTrades`; spot timestamps are preserved at the archive's
-millisecond/microsecond precision. The third command adds `book_available`,
+millisecond/microsecond precision. For fully prospective auxiliary evidence, run
+the recorder with `--include-spot-trades`; it listens only to the public Spot
+trade stream and writes those events under
+`prospective-wal/spot_trade/date=*/events.jsonl.gz`, which can be passed as
+`--spot-source-root` instead of the historical spot archive. The third command
+adds `book_available`,
 `book_update_age_ms`, `spread_bps`,
 `depth_imbalance`, `microprice_displacement_bps`, and short-window top-of-book
 dynamics: event count, bid/ask replenishment, bid/ask removed liquidity, net book

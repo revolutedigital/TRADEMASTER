@@ -100,6 +100,7 @@ class MicrostructureRecorder:
         stream_base_url: str = FUTURES_STREAM_URL,
         include_spot_trades: bool = False,
         spot_stream_base_url: str = SPOT_STREAM_URL,
+        include_rest_mark_price_poller: bool = False,
         batch_size: int = 500,
         queue_size: int = 50_000,
         snapshot_fetcher: Callable[[], Awaitable[dict[str, Any]]] | None = None,
@@ -111,6 +112,7 @@ class MicrostructureRecorder:
         self._stream_base_url = stream_base_url.rstrip("/")
         self._include_spot_trades = include_spot_trades
         self._spot_stream_base_url = spot_stream_base_url.rstrip("/")
+        self._include_rest_mark_price_poller = include_rest_mark_price_poller
         self._batch_size = batch_size
         self._queue: asyncio.Queue[MicrostructureEvent] = asyncio.Queue(maxsize=queue_size)
         self._snapshot_fetcher = snapshot_fetcher or self._fetch_depth_snapshot
@@ -129,6 +131,7 @@ class MicrostructureRecorder:
             (
                 f"{symbol}@trade",
                 f"{symbol}@depth@100ms",
+                f"{symbol}@markPrice@1s",
                 f"{symbol}@forceOrder",
             )
         )
@@ -145,8 +148,10 @@ class MicrostructureRecorder:
         writer_task = asyncio.create_task(
             self._writer(writer_stop_event), name="microstructure_writer"
         )
-        mark_price_task = asyncio.create_task(
-            self._mark_price_poller(stop_event), name="mark_price_poller"
+        mark_price_task = (
+            asyncio.create_task(self._mark_price_poller(stop_event), name="mark_price_poller")
+            if self._include_rest_mark_price_poller
+            else None
         )
         spot_task = (
             asyncio.create_task(self._spot_trade_runner(stop_event), name="spot_trade_stream")
@@ -183,7 +188,8 @@ class MicrostructureRecorder:
                 spot_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await spot_task
-            await mark_price_task
+            if mark_price_task is not None:
+                await mark_price_task
             writer_stop_event.set()
             await writer_task
 

@@ -97,6 +97,34 @@ def test_parse_raw_trade_supports_non_contiguous_trade_ids() -> None:
     assert event.payload == {"order_type": "MARKET"}
 
 
+def test_parse_mark_price_stream_keeps_index_and_funding_payload() -> None:
+    event = parse_market_message(
+        stream="btcusdt@markPrice@1s",
+        payload={
+            "e": "markPriceUpdate",
+            "E": 1_767_225_600_000,
+            "s": "BTCUSDT",
+            "p": "100.5",
+            "i": "100.1",
+            "P": "100.2",
+            "r": "0.0001",
+            "T": 1_767_254_400_000,
+        },
+        receive_time=datetime(2026, 1, 1, tzinfo=UTC),
+        symbol="BTCUSDT",
+    )
+
+    assert event is not None
+    assert event.event_type == MarketEventType.MARK_PRICE
+    assert event.price == 100.5
+    assert event.payload == {
+        "index_price": 100.1,
+        "estimated_settle_price": 100.2,
+        "funding_rate": 0.0001,
+        "next_funding_time": 1_767_254_400_000,
+    }
+
+
 def test_parse_spot_trade_marks_product_and_omits_futures_order_payload() -> None:
     event = parse_market_message(
         stream="btcusdt@trade",
@@ -298,6 +326,6 @@ def test_recorder_spot_stream_url_is_opt_in() -> None:
     assert (
         recorder.stream_url
         == "wss://futures.test/stream?streams=btcusdt@trade/"
-        "btcusdt@depth@100ms/btcusdt@forceOrder"
+        "btcusdt@depth@100ms/btcusdt@markPrice@1s/btcusdt@forceOrder"
     )
     assert recorder.spot_stream_url == "wss://spot.test/stream?streams=btcusdt@trade"

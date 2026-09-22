@@ -20,6 +20,8 @@ from app.models.research_experiment import (
 
 
 SHA256 = re.compile(r"^[a-f0-9]{64}$")
+MIN_PROSPECTIVE_SHADOW_DURATION = timedelta(days=20)
+MAX_PROSPECTIVE_SHADOW_DURATION = timedelta(days=30)
 
 
 class ShadowRecorderError(ValueError):
@@ -69,6 +71,15 @@ class ResearchShadowRecorder:
         normalized_decision_time = decision_time.astimezone(UTC)
         partition_start = _normalize_utc(prospective.start_at)
         partition_end = _normalize_utc(prospective.end_at)
+        partition_duration = partition_end - partition_start
+        if not (
+            MIN_PROSPECTIVE_SHADOW_DURATION
+            <= partition_duration
+            <= MAX_PROSPECTIVE_SHADOW_DURATION
+        ):
+            raise ShadowRecorderError(
+                "prospective shadow partition must be 20 to 30 days"
+            )
         if not (partition_start <= normalized_decision_time < partition_end):
             raise ShadowRecorderError(
                 "decision_time must be inside the opened prospective shadow partition"

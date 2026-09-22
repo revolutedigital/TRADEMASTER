@@ -35,7 +35,12 @@ async def db():
 
 @pytest.mark.asyncio
 async def test_frozen_policy_runner_records_scored_shadow_signal(db: AsyncSession) -> None:
-    await _seed_shadow_experiment(db)
+    now = datetime.now(UTC)
+    await _seed_shadow_experiment(
+        db,
+        partition_start=now - timedelta(days=1),
+        partition_end=now + timedelta(days=19),
+    )
     artifact = _artifact()
     feature_vector = _feature_vector()
     probability = predict_frozen_top_p_probability(artifact, feature_vector)
@@ -58,7 +63,12 @@ async def test_frozen_policy_runner_records_scored_shadow_signal(db: AsyncSessio
 
 @pytest.mark.asyncio
 async def test_frozen_policy_runner_rejects_tampered_artifact(db: AsyncSession) -> None:
-    await _seed_shadow_experiment(db)
+    now = datetime.now(UTC)
+    await _seed_shadow_experiment(
+        db,
+        partition_start=now - timedelta(days=1),
+        partition_end=now + timedelta(days=19),
+    )
     artifact = _artifact()
     artifact["probability_threshold"] = 0.0
 
@@ -93,7 +103,12 @@ def test_frozen_policy_shadow_scoring_selects_entries_only() -> None:
 async def test_frozen_policy_shadow_batch_records_entries_idempotently(
     db: AsyncSession,
 ) -> None:
-    await _seed_shadow_experiment(db)
+    partition_start = datetime(2026, 1, 1, tzinfo=UTC)
+    await _seed_shadow_experiment(
+        db,
+        partition_start=partition_start,
+        partition_end=partition_start + timedelta(days=30),
+    )
     artifact = _artifact()
 
     first = await record_frozen_top_p_shadow_batch(
@@ -131,9 +146,13 @@ async def test_frozen_policy_shadow_batch_records_entries_idempotently(
     assert first.execution_authorization == "none"
 
 
-async def _seed_shadow_experiment(db: AsyncSession) -> None:
+async def _seed_shadow_experiment(
+    db: AsyncSession,
+    *,
+    partition_start: datetime,
+    partition_end: datetime,
+) -> None:
     now = datetime.now(UTC)
-    partition_start = datetime(2026, 1, 1, tzinfo=UTC)
     db.add(
         ResearchExperiment(
             id="experiment",
@@ -151,7 +170,7 @@ async def _seed_shadow_experiment(db: AsyncSession) -> None:
             experiment_id="experiment",
             role="PROSPECTIVE_SHADOW",
             start_at=partition_start,
-            end_at=partition_start + timedelta(days=365),
+            end_at=partition_end,
             manifest_sha256="c" * 64,
             opened_at=now,
         )

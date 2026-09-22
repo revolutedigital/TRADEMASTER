@@ -143,6 +143,58 @@ async def test_shadow_signal_fails_when_horizon_exits_prospective_partition(
 
 
 @pytest.mark.asyncio
+async def test_shadow_signal_fails_when_prospective_partition_is_too_short(
+    db: AsyncSession,
+) -> None:
+    partition_start = datetime(2026, 1, 1, tzinfo=UTC)
+    await seed(
+        db,
+        opened=True,
+        start_at=partition_start,
+        end_at=partition_start + timedelta(days=19, hours=23),
+    )
+
+    with pytest.raises(ShadowRecorderError, match="20 to 30 days"):
+        await ResearchShadowRecorder().record(
+            db,
+            experiment_id="experiment",
+            decision_time=partition_start + timedelta(days=1),
+            side="BUY",
+            horizon_seconds=120,
+            probability=0.8,
+            threshold=0.7,
+            model_sha256="d" * 64,
+            feature_vector={"flow": 0.5},
+        )
+
+
+@pytest.mark.asyncio
+async def test_shadow_signal_fails_when_prospective_partition_is_too_long(
+    db: AsyncSession,
+) -> None:
+    partition_start = datetime(2026, 1, 1, tzinfo=UTC)
+    await seed(
+        db,
+        opened=True,
+        start_at=partition_start,
+        end_at=partition_start + timedelta(days=31),
+    )
+
+    with pytest.raises(ShadowRecorderError, match="20 to 30 days"):
+        await ResearchShadowRecorder().record(
+            db,
+            experiment_id="experiment",
+            decision_time=partition_start + timedelta(days=1),
+            side="BUY",
+            horizon_seconds=120,
+            probability=0.8,
+            threshold=0.7,
+            model_sha256="d" * 64,
+            feature_vector={"flow": 0.5},
+        )
+
+
+@pytest.mark.asyncio
 async def test_shadow_outcome_is_recorded_once_without_execution_fields(db: AsyncSession) -> None:
     await seed(db, opened=True)
     recorder = ResearchShadowRecorder()

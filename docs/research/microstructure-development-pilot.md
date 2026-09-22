@@ -277,7 +277,9 @@ been explicitly opened should the same command be re-run with `--commit`. The
 batch records entry candidates where the frozen probability clears the frozen
 top-p threshold, skips already-recorded `(decision_time, side, horizon)` signals,
 and still returns `order_submission_allowed=false` and
-`execution_authorization=none`.
+`execution_authorization=none`. The shadow recorder also rejects legacy/manual
+prospective partitions whose opened window is outside 20 to 30 days, even if such
+a row already exists in the database.
 
 ## Portfolio replay result
 

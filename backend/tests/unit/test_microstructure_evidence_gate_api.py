@@ -12,7 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.api.v1 import research
 from app.models.base import Base
 from app.models.research_experiment import ResearchDataUse, ResearchExperiment, ResearchShadowSignal
-from app.schemas.research_experiment import RecordShadowOutcomeRequest, RecordShadowSignalRequest
+from app.schemas.research_experiment import (
+    RecordExperimentDecisionRequest,
+    RecordShadowOutcomeRequest,
+    RecordShadowSignalRequest,
+)
 from app.services.market.microstructure_wal_audit import build_evidence_gate_status
 
 
@@ -504,6 +508,57 @@ async def test_experiment_report_exposes_evidence_and_shadow_metrics(
     assert response["metrics"]["shadow"]["positive"] is True
     assert response["metrics"]["testnet_boundary"]["order_submission_allowed"] is False
     assert response["safety"]["execution_authorization"] == "none"
+
+
+async def test_record_experiment_decision_is_terminal_and_research_only(
+    db: AsyncSession,
+) -> None:
+    db.add(
+        ResearchExperiment(
+            id="experiment",
+            name="candidate",
+            status="FROZEN",
+            code_revision="a" * 40,
+            protocol_sha256="b" * 64,
+            product_json="{}",
+            cost_profile_json="{}",
+            approval_gate_json="{}",
+            experiment_sha256="9" * 64,
+            frozen_at=datetime(2026, 3, 1, tzinfo=UTC),
+        )
+    )
+    await db.flush()
+
+    response = await research.record_experiment_decision(
+        "experiment",
+        RecordExperimentDecisionRequest(
+            status="REJECTED",
+            reasons=["stress_mean_bps_not_positive"],
+        ),
+        db=db,
+        _user={"sub": "operator"},
+    )
+
+    assert response["status"] == "REJECTED"
+    assert response["safety"]["order_submission_allowed"] is False
+    assert response["safety"]["execution_authorization"] == "none"
+    report = await research.get_experiment_report(
+        "experiment",
+        db=db,
+        _user={"sub": "operator"},
+    )
+    assert report["decision_reasons"] == ["stress_mean_bps_not_positive"]
+    with pytest.raises(research.HTTPException) as error:
+        await research.record_experiment_decision(
+            "experiment",
+            RecordExperimentDecisionRequest(
+                status="APPROVED",
+                reasons=["cannot_overwrite_terminal_decision"],
+            ),
+            db=db,
+            _user={"sub": "operator"},
+        )
+    assert error.value.status_code == 409
 
 
 def _eligible_evidence_payload() -> dict[str, object]:

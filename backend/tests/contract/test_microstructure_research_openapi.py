@@ -36,6 +36,7 @@ def test_microstructure_spec_is_openapi_31_and_research_only() -> None:
         "/research/microstructure/experiments/{experiment_id}/shadow-signals",
         "/research/microstructure/shadow-signals/{signal_id}/outcome",
         "/research/microstructure/experiments/{experiment_id}/freeze",
+        "/research/microstructure/experiments/{experiment_id}/decision",
         "/research/microstructure/experiments/{experiment_id}/report",
     }
     forbidden_route_terms = {"order", "deploy", "activate", "engine", "arm", "execution"}
@@ -113,6 +114,18 @@ def test_microstructure_spec_publishes_research_only_shadow_signal_contract() ->
     assert "safety" in shadow_signal["required"]
     assert "order_id" not in shadow_signal["properties"]
     assert "execution_authorization" not in shadow_signal["properties"]
+
+
+def test_microstructure_spec_publishes_terminal_decision_as_metadata_only() -> None:
+    spec = _load_spec()
+    decision_path = spec["paths"]["/research/microstructure/experiments/{experiment_id}/decision"]
+    request = spec["components"]["schemas"]["RecordExperimentDecisionRequest"]
+
+    assert decision_path["post"]["operationId"] == "recordMicrostructureExperimentDecision"
+    assert request["additionalProperties"] is False
+    assert request["properties"]["status"]["enum"] == ["REJECTED", "INCONCLUSIVE", "APPROVED"]
+    assert "order_submission_allowed" not in request["properties"]
+    assert "execution_authorization" not in request["properties"]
 
 
 def test_microstructure_spec_publishes_partition_opening_as_research_only() -> None:

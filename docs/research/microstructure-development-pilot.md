@@ -290,6 +290,14 @@ book-evidence availability/streak/reasons, shadow signal/outcome counts,
 expected/stress mean bps, shadow completeness/positivity, and the Testnet boundary
 flags. It also emits a deterministic `artifact_sha256` for that report payload.
 
+Once an offline/statistical gate has produced its terminal result, the decision
+can be recorded through
+`POST /api/v1/research/microstructure/experiments/{experiment_id}/decision` with
+`REJECTED`, `INCONCLUSIVE`, or `APPROVED` and concrete reasons. This is a
+research-ledger mutation only. Even an `APPROVED` research decision still leaves
+`order_submission_allowed=false`, `execution_authorization=none`, and Testnet
+blocked until the separate evidence and explicit-release gates pass.
+
 Shadow runners can append evidence through the research API:
 
 - `POST /api/v1/research/microstructure/experiments/{experiment_id}/partitions/PROSPECTIVE_SHADOW/open`

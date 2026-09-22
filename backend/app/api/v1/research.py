@@ -24,6 +24,7 @@ from app.schemas.research_experiment import (
     ExperimentReportResponse,
     ExperimentResponse,
     OpenedPartitionResponse,
+    RecordExperimentDecisionRequest,
     RecordShadowOutcomeRequest,
     RecordShadowSignalRequest,
     ShadowSignalResponse,
@@ -277,6 +278,27 @@ async def freeze_experiment(
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except (ResearchRegistryError, FrozenExperimentError, BurnedDataConflict) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/experiments/{experiment_id}/decision", response_model=ExperimentResponse)
+async def record_experiment_decision(
+    experiment_id: str,
+    body: RecordExperimentDecisionRequest,
+    db: AsyncSession = Depends(get_db),
+    _user: dict = Depends(require_auth),
+) -> dict[str, object]:
+    try:
+        experiment = await research_registry.record_decision(
+            db,
+            experiment_id,
+            status=body.status,
+            reasons=body.reasons,
+        )
+        return await _serialize_experiment(db, experiment)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except (ResearchRegistryError, FrozenExperimentError) as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 
 

@@ -196,6 +196,21 @@ class RecordShadowOutcomeRequest(BaseModel):
     label_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
+class RecordExperimentDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["REJECTED", "INCONCLUSIVE", "APPROVED"]
+    reasons: list[str] = Field(min_length=1, max_length=50)
+
+    @field_validator("reasons")
+    @classmethod
+    def reject_blank_reasons(cls, value: list[str]) -> list[str]:
+        normalized = [reason.strip() for reason in value]
+        if any(not reason for reason in normalized):
+            raise ValueError("decision reasons cannot be blank")
+        return normalized
+
+
 class ShadowSignalResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

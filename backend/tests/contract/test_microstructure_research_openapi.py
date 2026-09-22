@@ -104,6 +104,15 @@ def test_microstructure_spec_publishes_metadata_only_testnet_eligibility() -> No
     assert properties["execution_authorization"]["const"] == "none"
 
 
+def test_microstructure_spec_marks_returned_experiment_report_fields_required() -> None:
+    schemas = _load_spec()["components"]["schemas"]
+
+    assert "experiment_sha256" in schemas["Experiment"]["required"]
+    assert "frozen_at" in schemas["Experiment"]["required"]
+    assert "metrics" in schemas["ExperimentReport"]["required"]
+    assert "artifact_sha256" in schemas["ExperimentReport"]["required"]
+
+
 def test_microstructure_spec_publishes_research_only_shadow_signal_contract() -> None:
     schemas = _load_spec()["components"]["schemas"]
     shadow_signal = schemas["ShadowSignal"]

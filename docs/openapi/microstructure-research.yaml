@@ -858,12 +858,14 @@ components:
         - status
         - code_revision
         - protocol_sha256
+        - experiment_sha256
         - product
         - cost_profile
         - dataset_partitions
         - approval_gate
         - safety
         - created_at
+        - frozen_at
       properties:
         id:
           type: string
@@ -902,7 +904,14 @@ components:
     ExperimentReport:
       type: object
       additionalProperties: false
-      required: [experiment_id, status, decision_reasons, safety, generated_at]
+      required:
+        - experiment_id
+        - status
+        - decision_reasons
+        - metrics
+        - artifact_sha256
+        - safety
+        - generated_at
       properties:
         experiment_id:
           type: string

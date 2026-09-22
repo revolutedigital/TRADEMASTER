@@ -620,6 +620,7 @@ def _decision_evidence_or_raise(
         return {
             "statistical_gate_sha256": _report_sha256(gate_payload),
             "statistical_gate_decision": _best_statistical_gate_decision(statistical_gate),
+            "research_only": True,
             "order_submission_allowed": False,
             "execution_authorization": "none",
         }
@@ -637,6 +638,7 @@ def _decision_evidence_or_raise(
         "statistical_gate_decision": "APPROVED",
         "attempted_hypotheses": statistical_gate.attempted_hypotheses,
         "approved_strategy_count": _approved_statistical_gate_count(statistical_gate),
+        "research_only": True,
         "order_submission_allowed": False,
         "execution_authorization": "none",
     }
@@ -824,6 +826,7 @@ async def _approved_statistical_gate_verified(
         return (
             evidence.get("statistical_gate_decision") == "APPROVED"
             and approved_strategy_count > 0
+            and evidence.get("research_only") is True
             and evidence.get("order_submission_allowed") is False
             and evidence.get("execution_authorization") == "none"
         )

@@ -495,6 +495,68 @@ async def test_testnet_eligibility_rejects_legacy_approved_status_without_gate_e
     assert response.execution_authorization == "none"
 
 
+async def test_testnet_eligibility_rejects_approved_gate_event_without_research_only_boundary(
+    tmp_path: Path,
+    monkeypatch,
+    db: AsyncSession,
+) -> None:
+    artifact = tmp_path / "evidence-gate-status.json"
+    artifact.write_text(json.dumps(_eligible_evidence_payload()), encoding="utf-8")
+    monkeypatch.setattr(
+        research.settings,
+        "microstructure_evidence_status_path",
+        str(artifact),
+    )
+    db.add(
+        ResearchExperiment(
+            id="experiment",
+            name="legacy-gate-event",
+            status="APPROVED",
+            code_revision="a" * 40,
+            protocol_sha256="b" * 64,
+            product_json="{}",
+            cost_profile_json="{}",
+            approval_gate_json="{}",
+        )
+    )
+    unsafe_event = _approved_decision_event()
+    event_payload = json.loads(unsafe_event.payload_json)
+    event_payload["evidence"].pop("research_only", None)
+    unsafe_event.payload_json = json.dumps(event_payload, sort_keys=True)
+    db.add(unsafe_event)
+    start = datetime(2026, 3, 2, tzinfo=UTC)
+    for day_offset in range(20):
+        db.add(
+            ResearchShadowSignal(
+                experiment_id="experiment",
+                decision_time=start + timedelta(days=day_offset),
+                recorded_at=start + timedelta(days=day_offset, seconds=1),
+                side="BUY",
+                horizon_seconds=300,
+                probability=0.8,
+                threshold=0.7,
+                would_enter=True,
+                model_sha256="d" * 64,
+                feature_vector_sha256=f"{day_offset:064x}"[-64:],
+                outcome_json=_safe_shadow_outcome_json(),
+            )
+        )
+    await db.flush()
+
+    response = await research.get_testnet_eligibility(
+        "experiment",
+        db=db,
+        _user={"sub": "operator"},
+    )
+
+    assert response.eligible is False
+    assert response.approved_statistical_gate_verified is False
+    assert response.prospective_shadow_positive is True
+    assert "approved_statistical_gate_evidence_missing" in response.reasons
+    assert response.order_submission_allowed is False
+    assert response.execution_authorization == "none"
+
+
 async def test_testnet_eligibility_requires_positive_shadow_outcomes(
     tmp_path: Path,
     monkeypatch,
@@ -1218,6 +1280,7 @@ async def test_approved_experiment_decision_records_statistical_gate_hash(
     assert payload["evidence"]["attempted_hypotheses"] == 44
     assert payload["evidence"]["approved_strategy_count"] == 1
     assert len(payload["evidence"]["statistical_gate_sha256"]) == 64
+    assert payload["evidence"]["research_only"] is True
     assert payload["evidence"]["order_submission_allowed"] is False
     assert payload["evidence"]["execution_authorization"] == "none"
 
@@ -1448,6 +1511,7 @@ def _approved_decision_event(experiment_id: str = "experiment") -> ResearchExper
                     "statistical_gate_decision": "APPROVED",
                     "attempted_hypotheses": 44,
                     "approved_strategy_count": 1,
+                    "research_only": True,
                     "order_submission_allowed": False,
                     "execution_authorization": "none",
                 },

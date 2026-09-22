@@ -106,7 +106,7 @@ class BookEvidenceGateResponse(BaseModel):
     incomplete_days: list[date]
     manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     reasons: list[str]
-    safety: SafetyBoundary = Field(default_factory=SafetyBoundary)
+    safety: SafetyBoundary
 
 
 class EvidenceGateStatusResponse(BaseModel):
@@ -117,10 +117,10 @@ class EvidenceGateStatusResponse(BaseModel):
     audited_end_date: date | None
     audited_days: int = Field(ge=0)
     latest_daily_status: WalAuditStatus | None
-    latest_daily_manifest_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    latest_daily_manifest_sha256: str | None = Field(pattern=r"^[a-f0-9]{64}$")
     book_evidence_gate: BookEvidenceGateResponse
     status_reasons: list[str]
-    safety: SafetyBoundary = Field(default_factory=SafetyBoundary)
+    safety: SafetyBoundary
     generated_at: datetime
 
 

@@ -122,7 +122,12 @@ async def _run(
                 _normalize_utc(signal.decision_time) + timedelta(seconds=signal.horizon_seconds)
                 for signal in signals
             ) + timedelta(seconds=1)
-            trades = load_trade_interval(trade_root, start, end)
+            trades = load_trade_interval(
+                trade_root,
+                start,
+                end,
+                expected_product="usdm_perpetual",
+            )
             simulator = HistoricalTrailingSimulator(
                 trades["event_time_ms"].to_numpy(),
                 trades["price"].to_numpy(),

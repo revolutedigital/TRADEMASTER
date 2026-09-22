@@ -14,6 +14,9 @@ def test_recorder_deploy_commands_include_required_spot_trade_stream() -> None:
     assert "--include-spot-trades" in railway_config
     assert "--audit-status-path" in dockerfile
     assert "--audit-status-path" in railway_config
+    assert "--serve-status-port" in dockerfile
+    assert "--serve-status-port" in railway_config
+    assert "${PORT:-8000}" in railway_config
     assert "/data/microstructure-v1/prospective-audits/evidence-gate-status.json" in dockerfile
     assert (
         "/data/microstructure-v1/prospective-audits/evidence-gate-status.json"

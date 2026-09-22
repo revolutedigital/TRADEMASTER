@@ -3,7 +3,7 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile.recorder"
 
 [deploy]
-startCommand = "python -m scripts.research.record_microstructure --root /data/microstructure-v1 --include-spot-trades --audit-status-path /data/microstructure-v1/prospective-audits/evidence-gate-status.json"
+startCommand = "sh -c 'python -m scripts.research.record_microstructure --root /data/microstructure-v1 --include-spot-trades --audit-status-path /data/microstructure-v1/prospective-audits/evidence-gate-status.json --serve-status-port \"${PORT:-8000}\"'"
 requiredMountPath = "/data"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10

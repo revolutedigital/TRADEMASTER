@@ -61,6 +61,42 @@ def test_write_audit_status_emits_small_research_only_artifact(
     assert "daily_audits" not in payload
 
 
+def test_status_artifact_reader_fails_closed_when_artifact_is_missing(tmp_path: Path) -> None:
+    payload = record_microstructure._read_status_artifact(tmp_path / "missing.json")
+
+    assert payload["artifact_available"] is False
+    assert payload["book_evidence_gate"]["eligible"] is False
+    assert payload["status_reasons"] == ["evidence_gate_artifact_missing"]
+    assert payload["safety"] == {
+        "research_only": True,
+        "order_submission_allowed": False,
+        "execution_authorization": "none",
+    }
+
+
+def test_status_artifact_reader_fails_closed_when_artifact_is_invalid(tmp_path: Path) -> None:
+    artifact = tmp_path / "evidence-gate-status.json"
+    artifact.write_text("{not-json", encoding="utf-8")
+
+    payload = record_microstructure._read_status_artifact(artifact)
+
+    assert payload["artifact_available"] is False
+    assert payload["book_evidence_gate"]["eligible"] is False
+    assert payload["status_reasons"] == [
+        "evidence_gate_artifact_unreadable:JSONDecodeError"
+    ]
+
+
+def test_health_payload_never_grants_execution(tmp_path: Path) -> None:
+    payload = record_microstructure._health_payload(tmp_path / "status.json")
+
+    assert payload["status"] == "healthy"
+    assert payload["artifact_exists"] is False
+    assert payload["research_only"] is True
+    assert payload["order_submission_allowed"] is False
+    assert payload["execution_authorization"] == "none"
+
+
 def _event(
     event_type: MarketEventType,
     when: datetime,

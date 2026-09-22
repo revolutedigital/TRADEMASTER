@@ -383,6 +383,13 @@ mounted recorder volume. The background refresh audits only complete UTC days
 ending at yesterday; today's partial collection can be inspected manually, but it
 does not count toward the 60-day book-evidence gate.
 
+The recorder service exposes only read-only metadata over HTTP: `/health` and
+`/evidence-gate-status.json`. The latter returns the already-written small JSON
+artifact and never scans raw WAL gzip files on request. If the artifact is
+missing or malformed, it returns a valid fail-closed status payload with
+`artifact_available=false`, `eligible=false`, `order_submission_allowed=false`,
+and `execution_authorization=none`.
+
 Deployment `031473e8-d8b6-43e0-97cd-c2d2a382f657` activated the background
 artifact refresh. The first production artifact was written at
 `2026-09-22T06:48:08.715131Z`, audited 60 complete UTC days

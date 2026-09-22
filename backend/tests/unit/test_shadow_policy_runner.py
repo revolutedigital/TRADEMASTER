@@ -133,6 +133,7 @@ async def test_frozen_policy_shadow_batch_records_entries_idempotently(
 
 async def _seed_shadow_experiment(db: AsyncSession) -> None:
     now = datetime.now(UTC)
+    partition_start = datetime(2026, 1, 1, tzinfo=UTC)
     db.add(
         ResearchExperiment(
             id="experiment",
@@ -149,8 +150,8 @@ async def _seed_shadow_experiment(db: AsyncSession) -> None:
         ResearchDataUse(
             experiment_id="experiment",
             role="PROSPECTIVE_SHADOW",
-            start_at=now,
-            end_at=now + timedelta(days=20),
+            start_at=partition_start,
+            end_at=partition_start + timedelta(days=365),
             manifest_sha256="c" * 64,
             opened_at=now,
         )

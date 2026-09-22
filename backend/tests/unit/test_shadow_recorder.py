@@ -26,8 +26,17 @@ async def db():
     await engine.dispose()
 
 
-async def seed(db: AsyncSession, *, opened: bool, status: str = "FROZEN") -> None:
+async def seed(
+    db: AsyncSession,
+    *,
+    opened: bool,
+    status: str = "FROZEN",
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+) -> None:
     now = datetime.now(UTC)
+    partition_start = start_at or now - timedelta(minutes=5)
+    partition_end = end_at or now + timedelta(days=20)
     db.add(
         ResearchExperiment(
             id="experiment",
@@ -44,8 +53,8 @@ async def seed(db: AsyncSession, *, opened: bool, status: str = "FROZEN") -> Non
         ResearchDataUse(
             experiment_id="experiment",
             role="PROSPECTIVE_SHADOW",
-            start_at=now,
-            end_at=now + timedelta(days=20),
+            start_at=partition_start,
+            end_at=partition_end,
             manifest_sha256="c" * 64,
             opened_at=now if opened else None,
         )
@@ -86,6 +95,50 @@ async def test_shadow_signal_fails_before_prospective_partition_open(db: AsyncSe
             threshold=0.7,
             model_sha256="d" * 64,
             feature_vector={"flow": -0.5},
+        )
+
+
+@pytest.mark.asyncio
+async def test_shadow_signal_fails_outside_opened_prospective_partition(
+    db: AsyncSession,
+) -> None:
+    partition_start = datetime(2026, 1, 1, tzinfo=UTC)
+    partition_end = partition_start + timedelta(days=20)
+    await seed(db, opened=True, start_at=partition_start, end_at=partition_end)
+
+    with pytest.raises(ShadowRecorderError, match="inside the opened prospective"):
+        await ResearchShadowRecorder().record(
+            db,
+            experiment_id="experiment",
+            decision_time=partition_start - timedelta(seconds=1),
+            side="SELL",
+            horizon_seconds=120,
+            probability=0.8,
+            threshold=0.7,
+            model_sha256="d" * 64,
+            feature_vector={"flow": -0.5},
+        )
+
+
+@pytest.mark.asyncio
+async def test_shadow_signal_fails_when_horizon_exits_prospective_partition(
+    db: AsyncSession,
+) -> None:
+    partition_start = datetime(2026, 1, 1, tzinfo=UTC)
+    partition_end = partition_start + timedelta(days=20)
+    await seed(db, opened=True, start_at=partition_start, end_at=partition_end)
+
+    with pytest.raises(ShadowRecorderError, match="horizon must finish"):
+        await ResearchShadowRecorder().record(
+            db,
+            experiment_id="experiment",
+            decision_time=partition_end - timedelta(seconds=119),
+            side="BUY",
+            horizon_seconds=120,
+            probability=0.8,
+            threshold=0.7,
+            model_sha256="d" * 64,
+            feature_vector={"flow": 0.5},
         )
 
 

@@ -6,7 +6,7 @@ import hashlib
 import json
 import math
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -66,6 +66,17 @@ class ResearchShadowRecorder:
             raise ShadowRecorderError("shadow horizon must be 120 or 300 seconds")
         if decision_time.tzinfo is None:
             raise ShadowRecorderError("decision_time must be timezone-aware")
+        normalized_decision_time = decision_time.astimezone(UTC)
+        partition_start = _normalize_utc(prospective.start_at)
+        partition_end = _normalize_utc(prospective.end_at)
+        if not (partition_start <= normalized_decision_time < partition_end):
+            raise ShadowRecorderError(
+                "decision_time must be inside the opened prospective shadow partition"
+            )
+        if normalized_decision_time + timedelta(seconds=horizon_seconds) > partition_end:
+            raise ShadowRecorderError(
+                "shadow horizon must finish inside the opened prospective shadow partition"
+            )
         if not all(math.isfinite(value) and 0 <= value <= 1 for value in (probability, threshold)):
             raise ShadowRecorderError("probability and threshold must be in [0, 1]")
         if not SHA256.fullmatch(model_sha256):
@@ -131,6 +142,12 @@ def _sha256(value: Any) -> str:
 
 def _canonical_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _normalize_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 research_shadow_recorder = ResearchShadowRecorder()

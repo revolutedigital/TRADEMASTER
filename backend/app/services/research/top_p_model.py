@@ -35,6 +35,27 @@ AUXILIARY_FEATURE_SETS = (
     "flow_price_book_aux",
     "flow_price_book_aux_session",
 )
+LOG1P_NONNEGATIVE_PREFIXES = (
+    "trade_count_",
+    "quote_volume_",
+    "mean_interarrival_ms_",
+    "book_event_count_",
+    "book_bid_replenishment_qty_",
+    "book_ask_replenishment_qty_",
+    "book_bid_liquidity_removed_qty_",
+    "book_ask_liquidity_removed_qty_",
+    "book_spread_widening_bps_",
+    "book_spread_recovery_bps_",
+    "mark_update_age_ms",
+    "liquidation_count_",
+    "liquidation_abs_qty_",
+    "liquidation_abs_notional_",
+    "spot_update_age_ms",
+    "spot_trade_count_",
+    "spot_quote_volume_",
+    "spot_mean_interarrival_ms_",
+    "spot_perp_quote_volume_ratio_",
+)
 SHA256_HEX_LENGTH = 64
 
 
@@ -196,6 +217,23 @@ def feature_columns(frame: pd.DataFrame, feature_set: str) -> tuple[str, ...]:
                 "liquidation_net_notional_",
                 "directed_liquidation_net_notional_",
                 "liquidation_abs_notional_",
+                "spot_available",
+                "spot_update_age_ms",
+                "spot_trade_count_",
+                "spot_quote_volume_",
+                "spot_flow_imbalance_",
+                "directed_spot_flow_imbalance_",
+                "spot_return_",
+                "directed_spot_return_",
+                "spot_realized_vol_",
+                "spot_mean_interarrival_ms_",
+                "spot_perp_basis_bps",
+                "directed_spot_perp_basis_bps",
+                "spot_perp_return_gap_",
+                "directed_spot_perp_return_gap_",
+                "spot_perp_flow_gap_",
+                "directed_spot_perp_flow_gap_",
+                "spot_perp_quote_volume_ratio_",
             )
         )
     )
@@ -322,22 +360,7 @@ def freeze_top_p_policy(
             ),
         },
         "transform": {
-            "log1p_nonnegative_prefixes": [
-                "trade_count_",
-                "quote_volume_",
-                "mean_interarrival_ms_",
-                "book_event_count_",
-                "book_bid_replenishment_qty_",
-                "book_ask_replenishment_qty_",
-                "book_bid_liquidity_removed_qty_",
-                "book_ask_liquidity_removed_qty_",
-                "book_spread_widening_bps_",
-                "book_spread_recovery_bps_",
-                "mark_update_age_ms",
-                "liquidation_count_",
-                "liquidation_abs_qty_",
-                "liquidation_abs_notional_",
-            ],
+            "log1p_nonnegative_prefixes": list(LOG1P_NONNEGATIVE_PREFIXES),
             "scaler_mean": _float_list(scaler.mean_),
             "scaler_scale": _float_list(scaler.scale_),
         },
@@ -371,10 +394,11 @@ def predict_frozen_top_p_probability(
     if not np.isfinite(raw_values).all():
         raise ValueError("feature vector must contain finite values")
     transformed = raw_values.copy()
-    for index, column in enumerate(columns):
-        if column.startswith(("trade_count_", "quote_volume_", "mean_interarrival_ms_")):
-            transformed[index] = math.log1p(max(transformed[index], 0.0))
     transform = artifact["transform"]
+    log1p_prefixes = tuple(transform.get("log1p_nonnegative_prefixes", ()))
+    for index, column in enumerate(columns):
+        if column.startswith(log1p_prefixes):
+            transformed[index] = math.log1p(max(transformed[index], 0.0))
     scaler_mean = np.asarray(transform["scaler_mean"], dtype=np.float64)
     scaler_scale = np.asarray(transform["scaler_scale"], dtype=np.float64)
     if len(scaler_mean) != len(columns) or len(scaler_scale) != len(columns):
@@ -703,24 +727,7 @@ def _matrix(frame: pd.DataFrame, columns: tuple[str, ...]) -> np.ndarray:
     if not np.isfinite(matrix).all():
         raise ValueError("model features must be finite")
     for index, column in enumerate(columns):
-        if column.startswith(
-            (
-                "trade_count_",
-                "quote_volume_",
-                "mean_interarrival_ms_",
-                "book_event_count_",
-                "book_bid_replenishment_qty_",
-                "book_ask_replenishment_qty_",
-                "book_bid_liquidity_removed_qty_",
-                "book_ask_liquidity_removed_qty_",
-                "book_spread_widening_bps_",
-                "book_spread_recovery_bps_",
-                "mark_update_age_ms",
-                "liquidation_count_",
-                "liquidation_abs_qty_",
-                "liquidation_abs_notional_",
-            )
-        ):
+        if column.startswith(LOG1P_NONNEGATIVE_PREFIXES):
             matrix[:, index] = np.log1p(np.maximum(matrix[:, index], 0))
     return matrix
 

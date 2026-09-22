@@ -100,12 +100,16 @@ def _has_book_features(frame: pd.DataFrame) -> bool:
 
 def _has_auxiliary_features(frame: pd.DataFrame) -> bool:
     return any(
-        column in frame.columns
-        for column in (
+        any(column.startswith(prefix) for column in frame.columns)
+        for prefix in (
             "mark_available",
             "mark_index_basis_bps",
             "funding_rate",
             "liquidation_net_qty_1s",
+            "spot_available",
+            "spot_perp_basis_bps",
+            "spot_perp_return_gap_",
+            "spot_perp_flow_gap_",
         )
     )
 

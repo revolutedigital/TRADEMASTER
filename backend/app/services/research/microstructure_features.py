@@ -261,6 +261,59 @@ def materialize_trade_flow_features(
     return pd.DataFrame(output)
 
 
+def materialize_spot_perp_features(
+    spot_trades: pd.DataFrame,
+    perp_trades: pd.DataFrame,
+    decision_times_ms: np.ndarray,
+    *,
+    windows_seconds: tuple[int, ...] = TRADE_WINDOWS_SECONDS,
+) -> pd.DataFrame:
+    """Spot-vs-perp auxiliary features using only trades known by decision time."""
+    if not windows_seconds or any(window <= 0 for window in windows_seconds):
+        raise ValueError("feature windows must be positive")
+    windows = tuple(sorted(set(windows_seconds)))
+    decisions = np.asarray(decision_times_ms, dtype=np.int64)
+    if decisions.ndim != 1 or (np.diff(decisions) < 0).any():
+        raise ValueError("decision times must be a monotonic vector")
+
+    ordered_spot = _ordered_trade_features_frame(spot_trades, frame_name="spot trade")
+    ordered_perp = _ordered_trade_features_frame(perp_trades, frame_name="perp trade")
+    spot_flow = _prefix_trade_flow_features(
+        _materialize_trade_flow_features_or_zeros(ordered_spot, decisions, windows),
+        prefix="spot_",
+    )
+    perp_flow = _materialize_trade_flow_features_or_zeros(ordered_perp, decisions, windows)
+    spot_available, spot_latest_price, spot_update_age_ms = _latest_trade_price_state(
+        ordered_spot,
+        decisions,
+    )
+    perp_available, perp_latest_price, _ = _latest_trade_price_state(ordered_perp, decisions)
+    basis_available = spot_available & perp_available & (spot_latest_price > 0)
+
+    output = spot_flow.copy()
+    output["spot_available"] = spot_available.astype(np.float64)
+    output["spot_update_age_ms"] = spot_update_age_ms
+    output["spot_perp_basis_bps"] = np.where(
+        basis_available,
+        (perp_latest_price / spot_latest_price - 1) * 10_000,
+        0.0,
+    )
+    for window in windows:
+        output[f"spot_perp_return_gap_{window}s_bps"] = (
+            output[f"spot_return_{window}s_bps"] - perp_flow[f"return_{window}s_bps"]
+        )
+        output[f"spot_perp_flow_gap_{window}s"] = (
+            output[f"spot_flow_imbalance_{window}s"] - perp_flow[f"flow_imbalance_{window}s"]
+        )
+        output[f"spot_perp_quote_volume_ratio_{window}s"] = np.divide(
+            output[f"spot_quote_volume_{window}s"],
+            perp_flow[f"quote_volume_{window}s"],
+            out=np.zeros(len(decisions), dtype=np.float64),
+            where=perp_flow[f"quote_volume_{window}s"] > 0,
+        )
+    return output
+
+
 def materialize_book_features(
     book_events: pd.DataFrame,
     decision_times_ms: np.ndarray,
@@ -506,6 +559,73 @@ def _trade_window_features(
 
 def _prefix_sum(values: np.ndarray) -> np.ndarray:
     return np.concatenate((np.zeros(1, dtype=np.float64), np.cumsum(values)))
+
+
+def _ordered_trade_features_frame(trades: pd.DataFrame, *, frame_name: str) -> pd.DataFrame:
+    required = {"event_time_ms", "price", "quantity", "is_buyer_maker"}
+    missing = required - set(trades.columns)
+    if missing:
+        raise ValueError(f"{frame_name} frame is missing columns: {sorted(missing)}")
+    sort_columns = ["event_time_ms"]
+    if "sequence_id" in trades.columns:
+        sort_columns.append("sequence_id")
+    return trades.sort_values(sort_columns, kind="stable").reset_index(drop=True)
+
+
+def _materialize_trade_flow_features_or_zeros(
+    trades: pd.DataFrame,
+    decisions: np.ndarray,
+    windows_seconds: tuple[int, ...],
+) -> pd.DataFrame:
+    if not trades.empty:
+        return materialize_trade_flow_features(
+            trades,
+            decisions,
+            windows_seconds=windows_seconds,
+        )
+    output: dict[str, np.ndarray] = {"decision_time_ms": decisions}
+    for window in windows_seconds:
+        prefix = f"{window}s"
+        output[f"trade_count_{prefix}"] = np.zeros(len(decisions), dtype=np.float64)
+        output[f"quote_volume_{prefix}"] = np.zeros(len(decisions), dtype=np.float64)
+        output[f"flow_imbalance_{prefix}"] = np.zeros(len(decisions), dtype=np.float64)
+        output[f"return_{prefix}_bps"] = np.zeros(len(decisions), dtype=np.float64)
+        output[f"realized_vol_{prefix}_bps"] = np.zeros(len(decisions), dtype=np.float64)
+        output[f"mean_interarrival_ms_{prefix}"] = np.zeros(len(decisions), dtype=np.float64)
+    hour_fraction = (decisions % 86_400_000) / 86_400_000
+    output["hour_sin"] = np.sin(2 * np.pi * hour_fraction)
+    output["hour_cos"] = np.cos(2 * np.pi * hour_fraction)
+    return pd.DataFrame(output)
+
+
+def _prefix_trade_flow_features(frame: pd.DataFrame, *, prefix: str) -> pd.DataFrame:
+    renamed = frame.drop(columns=["hour_sin", "hour_cos"], errors="ignore").copy()
+    return renamed.rename(
+        columns={
+            column: f"{prefix}{column}"
+            for column in renamed.columns
+            if column != "decision_time_ms"
+        }
+    )
+
+
+def _latest_trade_price_state(
+    trades: pd.DataFrame,
+    decisions: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    available = np.zeros(len(decisions), dtype=bool)
+    latest_prices = np.zeros(len(decisions), dtype=np.float64)
+    update_age_ms = np.zeros(len(decisions), dtype=np.float64)
+    if trades.empty:
+        return available, latest_prices, update_age_ms
+    times = trades["event_time_ms"].to_numpy(dtype=np.int64)
+    prices = trades["price"].to_numpy(dtype=np.float64)
+    latest_indices = np.searchsorted(times, decisions, side="right") - 1
+    available = latest_indices >= 0
+    safe_indices = np.maximum(latest_indices, 0)
+    latest_prices = np.where(available, prices[safe_indices], 0.0)
+    update_age_ms = np.where(available, decisions - times[safe_indices], 0.0)
+    return available, latest_prices, update_age_ms
 
 
 def _empty_book_feature_row(windows_seconds: tuple[int, ...]) -> dict[str, float]:

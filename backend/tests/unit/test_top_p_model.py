@@ -86,7 +86,7 @@ def test_auxiliary_feature_sets_require_real_auxiliary_columns() -> None:
         feature_columns(frame, "flow_aux")
 
 
-def test_auxiliary_feature_sets_include_mark_and_liquidation_columns() -> None:
+def test_auxiliary_feature_sets_include_mark_liquidation_and_spot_perp_columns() -> None:
     frame = pd.DataFrame(
         {
             "trade_count_1s": [1.0],
@@ -106,6 +106,19 @@ def test_auxiliary_feature_sets_include_mark_and_liquidation_columns() -> None:
             "liquidation_net_notional_1s": [-200.0],
             "directed_liquidation_net_notional_1s": [-200.0],
             "liquidation_abs_notional_1s": [200.0],
+            "spot_available": [1.0],
+            "spot_update_age_ms": [50.0],
+            "spot_flow_imbalance_1s": [0.3],
+            "directed_spot_flow_imbalance_1s": [0.3],
+            "spot_return_1s_bps": [1.0],
+            "directed_spot_return_1s_bps": [1.0],
+            "spot_perp_basis_bps": [0.5],
+            "directed_spot_perp_basis_bps": [0.5],
+            "spot_perp_return_gap_1s_bps": [0.2],
+            "directed_spot_perp_return_gap_1s_bps": [0.2],
+            "spot_perp_flow_gap_1s": [0.1],
+            "directed_spot_perp_flow_gap_1s": [0.1],
+            "spot_perp_quote_volume_ratio_1s": [1.2],
             "hour_sin": [0.0],
             "hour_cos": [1.0],
             "side_sign": [1.0],
@@ -118,6 +131,10 @@ def test_auxiliary_feature_sets_include_mark_and_liquidation_columns() -> None:
     assert "directed_funding_rate" in columns
     assert "directed_liquidation_net_qty_1s" in columns
     assert "directed_liquidation_net_notional_1s" in columns
+    assert "directed_spot_perp_basis_bps" in columns
+    assert "directed_spot_perp_return_gap_1s_bps" in columns
+    assert "directed_spot_perp_flow_gap_1s" in columns
+    assert "spot_perp_quote_volume_ratio_1s" in columns
     assert "side_sign" in columns
 
 
@@ -252,6 +269,33 @@ def test_frozen_top_p_policy_scores_feature_vectors_without_sklearn_state() -> N
     assert frozen_top_p_would_enter(artifact, feature_vector) is (
         probability >= artifact["probability_threshold"]
     )
+
+
+def test_frozen_top_p_policy_applies_artifact_log1p_prefixes() -> None:
+    artifact = {
+        "feature_columns": ["spot_update_age_ms"],
+        "probability_threshold": 0.5,
+        "transform": {
+            "log1p_nonnegative_prefixes": ["spot_update_age_ms"],
+            "scaler_mean": [np.log1p(99.0)],
+            "scaler_scale": [1.0],
+        },
+        "base_model": {
+            "intercept": 0.0,
+            "coefficients": [1.0],
+        },
+        "calibrator": {
+            "intercept": 0.0,
+            "coefficient": 1.0,
+        },
+    }
+
+    probability = predict_frozen_top_p_probability(
+        artifact,
+        {"spot_update_age_ms": 99.0},
+    )
+
+    assert probability == pytest.approx(0.5)
 
 
 def test_top_p_monotonicity_detects_clear_tail_inversion() -> None:

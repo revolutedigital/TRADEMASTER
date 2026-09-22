@@ -54,6 +54,15 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--spot-source-root",
+        type=Path,
+        help=(
+            "Optional Binance spot trade root with date=*/events.parquet or "
+            "date=*/events.jsonl.gz partitions. Used only as auxiliary signal features; "
+            "execution labels and P&L remain on the futures source root."
+        ),
+    )
+    parser.add_argument(
         "--require-book-features",
         action="store_true",
         help="Fail closed unless every decision has fresh book features.",
@@ -83,6 +92,7 @@ def main() -> int:
             book_source_root=arguments.book_source_root,
             mark_source_root=arguments.mark_source_root,
             liquidation_source_root=arguments.liquidation_source_root,
+            spot_source_root=arguments.spot_source_root,
         )
         print(json.dumps(result.__dict__, sort_keys=True), flush=True)  # noqa: T201
         cursor += timedelta(days=1)

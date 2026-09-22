@@ -12,6 +12,7 @@ from app.services.research.microstructure_features import (
     materialize_book_features,
     materialize_liquidation_features,
     materialize_mark_features,
+    materialize_spot_perp_features,
     materialize_trade_flow_features,
 )
 
@@ -89,6 +90,50 @@ def test_offline_trade_features_equal_online_snapshot() -> None:
             assert offline[key] == pytest.approx(online[key])
     assert offline["hour_sin"] == pytest.approx(online["hour_sin"])
     assert offline["hour_cos"] == pytest.approx(online["hour_cos"])
+
+
+def test_spot_perp_features_are_causal_and_compute_gaps() -> None:
+    base_ms = int(NOW.timestamp() * 1000)
+    spot_trades = pd.DataFrame(
+        {
+            "event_time_ms": [base_ms, base_ms + 1_000],
+            "sequence_id": [1, 2],
+            "price": [100.0, 102.0],
+            "quantity": [1.0, 1.0],
+            "is_buyer_maker": [False, False],
+        }
+    )
+    perp_trades = pd.DataFrame(
+        {
+            "event_time_ms": [base_ms, base_ms + 1_000],
+            "sequence_id": [10, 11],
+            "price": [100.0, 101.0],
+            "quantity": [1.0, 1.0],
+            "is_buyer_maker": [False, True],
+        }
+    )
+
+    features = materialize_spot_perp_features(
+        spot_trades,
+        perp_trades,
+        np.array([base_ms + 500, base_ms + 1_000], dtype=np.int64),
+        windows_seconds=(2,),
+    )
+
+    first = features.iloc[0]
+    second = features.iloc[1]
+    assert first["spot_trade_count_2s"] == 1
+    assert first["spot_return_2s_bps"] == 0
+    assert first["spot_perp_basis_bps"] == 0
+    assert second["spot_available"] == 1
+    assert second["spot_update_age_ms"] == 0
+    assert second["spot_trade_count_2s"] == 2
+    assert second["spot_return_2s_bps"] == pytest.approx(np.log(102 / 100) * 10_000)
+    assert second["spot_perp_return_gap_2s_bps"] == pytest.approx(
+        (np.log(102 / 100) - np.log(101 / 100)) * 10_000
+    )
+    assert second["spot_perp_flow_gap_2s"] > 1
+    assert second["spot_perp_basis_bps"] == pytest.approx((101 / 102 - 1) * 10_000)
 
 
 def test_offline_book_features_are_causal_and_match_online_snapshot() -> None:

@@ -20,6 +20,7 @@ from app.services.research.microstructure_features import (
     materialize_book_features,
     materialize_liquidation_features,
     materialize_mark_features,
+    materialize_spot_perp_features,
     materialize_trade_flow_features,
 )
 from app.services.research.path_labels import EventPathLabeler, PathLabelConfig
@@ -67,6 +68,7 @@ def build_research_rows(
     book_events: pd.DataFrame | None = None,
     mark_events: pd.DataFrame | None = None,
     liquidation_events: pd.DataFrame | None = None,
+    spot_trade_events: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Build side/horizon rows; all event data must include the full label horizon."""
     dataset_config = config or ResearchDatasetConfig()
@@ -116,6 +118,14 @@ def build_research_rows(
             windows_seconds=dataset_config.feature_windows_seconds,
         )
         features = features.merge(liquidation_features, on="decision_time_ms", how="left")
+    if spot_trade_events is not None:
+        spot_perp_features = materialize_spot_perp_features(
+            spot_trade_events,
+            ordered,
+            decisions,
+            windows_seconds=dataset_config.feature_windows_seconds,
+        )
+        features = features.merge(spot_perp_features, on="decision_time_ms", how="left")
     labeler = EventPathLabeler(
         times,
         sequences,
@@ -145,6 +155,10 @@ def build_research_rows(
             f"book_microprice_displacement_change_bps_{window}s",
             f"liquidation_net_qty_{window}s",
             f"liquidation_net_notional_{window}s",
+            f"spot_flow_imbalance_{window}s",
+            f"spot_return_{window}s_bps",
+            f"spot_perp_flow_gap_{window}s",
+            f"spot_perp_return_gap_{window}s_bps",
         )
         for column in directional_columns:
             if column in rows.columns:
@@ -159,6 +173,8 @@ def build_research_rows(
         rows["directed_mark_index_basis_bps"] = rows["mark_index_basis_bps"] * rows["side_sign"]
     if "funding_rate" in rows.columns:
         rows["directed_funding_rate"] = -rows["funding_rate"] * rows["side_sign"]
+    if "spot_perp_basis_bps" in rows.columns:
+        rows["directed_spot_perp_basis_bps"] = rows["spot_perp_basis_bps"] * rows["side_sign"]
     rows["target"] = rows["paid_expected_before_stop"].astype(np.int8)
     return rows.sort_values(
         ["decision_time_ms", "side", "horizon_seconds"], kind="stable"
@@ -174,6 +190,7 @@ def build_research_partition(
     book_source_root: Path | None = None,
     mark_source_root: Path | None = None,
     liquidation_source_root: Path | None = None,
+    spot_source_root: Path | None = None,
 ) -> ResearchPartitionResult:
     dataset_config = config or ResearchDatasetConfig()
     day_start = datetime.combine(utc_date, datetime.min.time(), tzinfo=UTC)
@@ -204,6 +221,11 @@ def build_research_partition(
         if liquidation_source_root is not None
         else None
     )
+    spot_trade_events = (
+        load_trade_interval(spot_source_root, history_start, day_end)
+        if spot_source_root is not None
+        else None
+    )
     history_ready = decisions - max(dataset_config.feature_windows_seconds) * 1000
     complete = (history_ready >= event_times[0]) & (
         decisions + max(dataset_config.horizons_seconds) * 1000 <= event_times[-1]
@@ -218,6 +240,7 @@ def build_research_partition(
         book_events=book_events,
         mark_events=mark_events,
         liquidation_events=liquidation_events,
+        spot_trade_events=spot_trade_events,
     )
     partition_dir = output_root / f"date={utc_date.isoformat()}"
     partition_dir.mkdir(parents=True, exist_ok=True)
@@ -258,10 +281,12 @@ def load_trade_interval(
     frames: list[pd.DataFrame] = []
     cursor = interval_start.date()
     while cursor <= interval_end.date():
-        path = source_root / f"date={cursor.isoformat()}" / "events.parquet"
-        if path.exists():
+        partition_dir = source_root / f"date={cursor.isoformat()}"
+        parquet_path = partition_dir / "events.parquet"
+        jsonl_path = partition_dir / "events.jsonl.gz"
+        if parquet_path.exists():
             table = pq.read_table(
-                path,
+                parquet_path,
                 columns=[
                     "event_time",
                     "sequence_id",
@@ -271,13 +296,14 @@ def load_trade_interval(
                 ],
             )
             frame = table.to_pandas()
-            frame["event_time_ms"] = _datetime_to_epoch_ms(
-                pd.to_datetime(frame["event_time"], utc=True)
-            )
-            start_ms = int(interval_start.timestamp() * 1000)
-            end_ms = int(interval_end.timestamp() * 1000)
-            frame = frame[(frame["event_time_ms"] >= start_ms) & (frame["event_time_ms"] <= end_ms)]
-            frames.append(frame.drop(columns="event_time"))
+        elif jsonl_path.exists():
+            frame = _read_trade_wal_jsonl(jsonl_path)
+        else:
+            cursor += timedelta(days=1)
+            continue
+        frame = _prepare_trade_frame(frame, interval_start, interval_end)
+        if not frame.empty:
+            frames.append(frame)
         cursor += timedelta(days=1)
     if not frames:
         raise FileNotFoundError("no normalized trade partitions overlap the interval")
@@ -384,6 +410,25 @@ def load_liquidation_interval(
     )
 
 
+def _read_trade_wal_jsonl(path: Path) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    with gzip.open(path, "rt", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            payload = json.loads(line)
+            rows.append(
+                {
+                    "event_time": payload.get("event_time"),
+                    "sequence_id": payload.get("sequence_id"),
+                    "price": payload.get("price"),
+                    "quantity": payload.get("quantity"),
+                    "is_buyer_maker": payload.get("is_buyer_maker"),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
 def _read_book_wal_jsonl(path: Path) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     with gzip.open(path, "rt", encoding="utf-8") as handle:
@@ -440,6 +485,41 @@ def _read_liquidation_wal_jsonl(path: Path) -> pd.DataFrame:
                 }
             )
     return pd.DataFrame(rows)
+
+
+def _prepare_trade_frame(
+    frame: pd.DataFrame,
+    interval_start: datetime,
+    interval_end: datetime,
+) -> pd.DataFrame:
+    if frame.empty:
+        return pd.DataFrame(
+            columns=["event_time_ms", "sequence_id", "price", "quantity", "is_buyer_maker"]
+        )
+    prepared = frame.copy()
+    prepared["event_time"] = pd.to_datetime(prepared["event_time"], utc=True)
+    prepared["event_time_ms"] = _datetime_to_epoch_ms(prepared["event_time"])
+    start_ms = int(interval_start.timestamp() * 1000)
+    end_ms = int(interval_end.timestamp() * 1000)
+    prepared = prepared[
+        (prepared["event_time_ms"] >= start_ms) & (prepared["event_time_ms"] <= end_ms)
+    ]
+    if "sequence_id" in prepared.columns:
+        prepared["sequence_id"] = pd.to_numeric(prepared["sequence_id"], errors="coerce").fillna(0)
+    else:
+        prepared["sequence_id"] = 0
+    prepared["price"] = pd.to_numeric(prepared["price"], errors="raise")
+    prepared["quantity"] = pd.to_numeric(prepared["quantity"], errors="raise")
+    prepared["is_buyer_maker"] = prepared["is_buyer_maker"].map(_parse_boolean)
+    return prepared[
+        [
+            "event_time_ms",
+            "sequence_id",
+            "price",
+            "quantity",
+            "is_buyer_maker",
+        ]
+    ]
 
 
 def _prepare_book_frame(
@@ -544,6 +624,17 @@ def _require_complete_book_features(features: pd.DataFrame, *, max_staleness_ms:
             f"{unavailable_count} decisions without book, "
             f"{stale_count} decisions older than {max_staleness_ms}ms"
         )
+
+
+def _parse_boolean(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {"true", "1"}:
+        return True
+    if normalized in {"false", "0"}:
+        return False
+    raise ValueError(f"invalid boolean value: {value!r}")
 
 
 def _datetime_to_epoch_ms(values: pd.Series) -> pd.Series:

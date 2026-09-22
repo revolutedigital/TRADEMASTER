@@ -110,7 +110,7 @@ also drifted across days: a threshold calibrated as top 1% selected more than 1%
 on later test days. The selection policy therefore needs regime-aware prospective
 calibration rather than a permanent raw-probability cutoff.
 
-### Book-aware dataset path
+### Book/aux-aware dataset path
 
 The historical development result above was intentionally trade-flow-only because
 Binance aggregate-trade archives do not contain executable top-of-book state. The
@@ -135,6 +135,7 @@ cd backend
   --book-source-root data/microstructure_v1/prospective-wal/depth \
   --mark-source-root data/microstructure_v1/prospective-wal/mark_price \
   --liquidation-source-root data/microstructure_v1/prospective-wal/liquidation \
+  --spot-source-root data/microstructure_v1/normalized/spot-trades \
   --require-book-features \
   --max-book-staleness-ms 1000
 ```
@@ -149,16 +150,21 @@ proxies. Directional versions are emitted for imbalance, microprice displacement
 book pressure, depth-imbalance change, and microprice-change features. Optional
 mark/liquidation joins add mark availability, mark/index basis, funding, and
 windowed liquidation count/quantity/notional with directional liquidation
-features. If any decision lacks fresh book state, the partition fails instead of
-silently producing a fake “book” model.
+features. Optional spot trade joins add causal Binance Spot-vs-USD-M features:
+spot trade count/quote volume/flow/return/volatility/interarrival, latest
+spot-update age, spot-perp basis, return gap, flow gap, quote-volume ratio, and
+directional spot/perp gap columns. The spot source is an auxiliary signal venue
+only; execution labels, replay, costs, and P&L stay bound to the futures
+`--source-root`. If any decision lacks fresh book state, the partition fails
+instead of silently producing a fake “book” model.
 
 The top-p pilot recognizes book-specific feature families only when those columns
 exist (`flow_book`, `flow_price_book`, `flow_price_book_session`). It also adds
 auxiliary sets (`flow_aux`, `flow_price_aux`, `flow_price_aux_session`, and
-book+aux variants) only when real mark/liquidation columns exist. Without real
-book or auxiliary columns it continues to run only the historical
+book+aux variants) only when real mark/liquidation/spot-perp columns exist.
+Without real book or auxiliary columns it continues to run only the historical
 flow/price/session families, so a missing WAL join cannot be mistaken for a
-book-edge or liquidation/funding-edge test.
+book-edge, liquidation/funding-edge, or spot/perp lead-lag test.
 
 Once a candidate is selected, the probability rule used for prospective shadow
 must be frozen into a deterministic artifact before any shadow partition opens:

@@ -131,6 +131,44 @@ def test_build_research_rows_can_include_mark_and_liquidation_features() -> None
     assert sell["directed_liquidation_net_qty_1s"] == pytest.approx(2)
 
 
+def test_build_research_rows_can_include_spot_perp_auxiliary_features() -> None:
+    trades = _trade_frame()
+    spot_trade_events = pd.DataFrame(
+        {
+            "event_time_ms": [4_500, 5_000],
+            "sequence_id": [1, 2],
+            "price": [99.0, 101.0],
+            "quantity": [1.0, 1.0],
+            "is_buyer_maker": [False, False],
+        }
+    )
+    config = ResearchDatasetConfig(horizons_seconds=(2,), feature_windows_seconds=(1,))
+
+    rows = build_research_rows(
+        trades,
+        np.array([5_000]),
+        config,
+        spot_trade_events=spot_trade_events,
+    )
+
+    buy = rows[rows["side"] == "BUY"].iloc[0]
+    sell = rows[rows["side"] == "SELL"].iloc[0]
+    assert buy["spot_available"] == 1
+    assert buy["spot_update_age_ms"] == 0
+    assert buy["spot_trade_count_1s"] == 2
+    assert "spot_perp_quote_volume_ratio_1s" in buy
+    assert buy["directed_spot_perp_return_gap_1s_bps"] == pytest.approx(
+        buy["spot_perp_return_gap_1s_bps"]
+    )
+    assert sell["directed_spot_perp_return_gap_1s_bps"] == pytest.approx(
+        -sell["spot_perp_return_gap_1s_bps"]
+    )
+    assert buy["directed_spot_perp_basis_bps"] == pytest.approx(buy["spot_perp_basis_bps"])
+    assert sell["directed_spot_perp_basis_bps"] == pytest.approx(
+        -sell["spot_perp_basis_bps"]
+    )
+
+
 def test_required_book_features_fail_closed_when_stale() -> None:
     config = ResearchDatasetConfig(
         horizons_seconds=(2,),
@@ -239,6 +277,35 @@ def test_load_liquidation_interval_reads_prospective_wal_jsonl(tmp_path: Path) -
     assert frame["event_time_ms"].tolist() == [int(event_time.timestamp() * 1000)]
     assert frame["quantity"].tolist() == [2.0]
     assert frame["side"].tolist() == ["SELL"]
+
+
+def test_load_trade_interval_reads_prospective_wal_jsonl(tmp_path: Path) -> None:
+    event_time = datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC)
+    partition = tmp_path / "date=2026-01-01"
+    partition.mkdir(parents=True)
+    with gzip.open(partition / "events.jsonl.gz", "wt", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps(
+                {
+                    "event_time": event_time.isoformat(),
+                    "sequence_id": 42,
+                    "price": 100.0,
+                    "quantity": 2.0,
+                    "is_buyer_maker": "false",
+                }
+            )
+            + "\n"
+        )
+
+    frame = load_trade_interval(
+        tmp_path,
+        datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+        datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+    )
+
+    assert frame["event_time_ms"].tolist() == [int(event_time.timestamp() * 1000)]
+    assert frame["sequence_id"].tolist() == [42]
+    assert frame["is_buyer_maker"].tolist() == [False]
 
 
 def test_load_trade_interval_converts_event_time_to_epoch_ms(tmp_path: Path) -> None:

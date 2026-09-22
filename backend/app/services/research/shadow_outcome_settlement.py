@@ -5,7 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.research_experiment import ResearchShadowSignal
 from app.services.backtest.event_replay import OrderSide
@@ -14,6 +18,7 @@ from app.services.backtest.trailing_portfolio import (
     ManagedTrade,
     TrailingPolicy,
 )
+from app.services.research.shadow_recorder import ResearchShadowRecorder, research_shadow_recorder
 
 
 @dataclass(frozen=True)
@@ -83,6 +88,39 @@ def settle_shadow_signals(
     )
 
 
+async def settle_pending_shadow_outcomes(
+    db: AsyncSession,
+    *,
+    experiment_id: str,
+    simulator: HistoricalTrailingSimulator,
+    policy: TrailingPolicy,
+    now: datetime | None = None,
+    limit: int = 1_000,
+    recorder: ResearchShadowRecorder = research_shadow_recorder,
+) -> tuple[ShadowOutcomeSettlement, ...]:
+    """Record replay outcomes for mature pending shadow signals only."""
+    if limit <= 0:
+        raise ValueError("settlement limit must be positive")
+    settlement_time = _normalize_utc(now or datetime.now(UTC))
+    result = await db.execute(
+        select(ResearchShadowSignal)
+        .where(
+            ResearchShadowSignal.experiment_id == experiment_id,
+            ResearchShadowSignal.outcome_json.is_(None),
+        )
+        .order_by(ResearchShadowSignal.decision_time, ResearchShadowSignal.id)
+        .limit(limit)
+    )
+    settlements: list[ShadowOutcomeSettlement] = []
+    for signal in result.scalars().all():
+        if not _is_mature(signal, settlement_time):
+            continue
+        settlement = settle_shadow_signal(signal, simulator=simulator, policy=policy)
+        await recorder.record_outcome(db, **settlement.to_recorder_kwargs())
+        settlements.append(settlement)
+    return tuple(settlements)
+
+
 def _no_entry_settlement(
     signal: ResearchShadowSignal,
     *,
@@ -125,7 +163,17 @@ def _signal_fingerprint(signal: ResearchShadowSignal) -> dict[str, object]:
 
 
 def _decision_time_ms(signal: ResearchShadowSignal) -> int:
-    return int(signal.decision_time.timestamp() * 1000)
+    return int(_normalize_utc(signal.decision_time).timestamp() * 1000)
+
+
+def _is_mature(signal: ResearchShadowSignal, now: datetime) -> bool:
+    return _normalize_utc(signal.decision_time) + timedelta(seconds=signal.horizon_seconds) <= now
+
+
+def _normalize_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _stable_sha256(payload: dict[str, Any]) -> str:

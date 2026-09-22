@@ -196,12 +196,18 @@ async def test_shadow_signal_fails_when_prospective_partition_is_too_long(
 
 @pytest.mark.asyncio
 async def test_shadow_outcome_is_recorded_once_without_execution_fields(db: AsyncSession) -> None:
-    await seed(db, opened=True)
+    now = datetime.now(UTC)
+    await seed(
+        db,
+        opened=True,
+        start_at=now - timedelta(hours=1),
+        end_at=now + timedelta(days=20),
+    )
     recorder = ResearchShadowRecorder()
     signal = await recorder.record(
         db,
         experiment_id="experiment",
-        decision_time=datetime.now(UTC),
+        decision_time=now - timedelta(seconds=301),
         side="BUY",
         horizon_seconds=300,
         probability=0.8,
@@ -237,12 +243,18 @@ async def test_shadow_outcome_is_recorded_once_without_execution_fields(db: Asyn
 
 @pytest.mark.asyncio
 async def test_shadow_outcome_rejects_non_finite_values(db: AsyncSession) -> None:
-    await seed(db, opened=True)
+    now = datetime.now(UTC)
+    await seed(
+        db,
+        opened=True,
+        start_at=now - timedelta(hours=1),
+        end_at=now + timedelta(days=20),
+    )
     recorder = ResearchShadowRecorder()
     signal = await recorder.record(
         db,
         experiment_id="experiment",
-        decision_time=datetime.now(UTC),
+        decision_time=now - timedelta(seconds=121),
         side="SELL",
         horizon_seconds=120,
         probability=0.8,
@@ -258,4 +270,37 @@ async def test_shadow_outcome_rejects_non_finite_values(db: AsyncSession) -> Non
             expected_net_bps=math.nan,
             stress_net_bps=0.4,
             label_sha256="e" * 64,
+        )
+
+
+@pytest.mark.asyncio
+async def test_shadow_outcome_rejects_immature_signal_horizon(db: AsyncSession) -> None:
+    now = datetime.now(UTC)
+    await seed(
+        db,
+        opened=True,
+        start_at=now - timedelta(hours=1),
+        end_at=now + timedelta(days=20),
+    )
+    recorder = ResearchShadowRecorder()
+    signal = await recorder.record(
+        db,
+        experiment_id="experiment",
+        decision_time=now - timedelta(seconds=119),
+        side="SELL",
+        horizon_seconds=120,
+        probability=0.8,
+        threshold=0.7,
+        model_sha256="d" * 64,
+        feature_vector={"flow": 0.5},
+    )
+
+    with pytest.raises(ShadowRecorderError, match="horizon matures"):
+        await recorder.record_outcome(
+            db,
+            signal_id=signal.id,
+            expected_net_bps=1.0,
+            stress_net_bps=0.5,
+            label_sha256="e" * 64,
+            now=now,
         )

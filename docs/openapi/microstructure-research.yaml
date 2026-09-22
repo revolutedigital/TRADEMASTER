@@ -242,8 +242,9 @@ paths:
       summary: Attach immutable outcome evidence to one shadow signal.
       description: |
         Records expected/stress net bps for a previously appended hypothetical
-        signal. Outcomes are one-shot evidence and cannot be overwritten. This
-        endpoint grants no Testnet or LIVE authority.
+        signal only after that signal's full replay horizon has elapsed.
+        Outcomes are one-shot evidence and cannot be overwritten. This endpoint
+        grants no Testnet or LIVE authority.
       security:
         - bearerAuth: []
       parameters:
@@ -271,7 +272,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: Outcome is invalid or was already recorded.
+          description: Outcome is immature, invalid, or was already recorded.
   /research/microstructure/experiments/{experiment_id}/freeze:
     post:
       operationId: freezeMicrostructureExperiment

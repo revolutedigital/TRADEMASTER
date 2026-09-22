@@ -121,12 +121,21 @@ class ResearchShadowRecorder:
         expected_net_bps: float,
         stress_net_bps: float,
         label_sha256: str,
+        now: datetime | None = None,
     ) -> ResearchShadowSignal:
         signal = await db.get(ResearchShadowSignal, signal_id)
         if signal is None:
             raise LookupError("research shadow signal was not found")
         if signal.outcome_json is not None:
             raise ShadowRecorderError("shadow outcome is immutable once recorded")
+        recorded_at = _normalize_utc(now or datetime.now(UTC))
+        horizon_end = _normalize_utc(signal.decision_time) + timedelta(
+            seconds=signal.horizon_seconds
+        )
+        if recorded_at < horizon_end:
+            raise ShadowRecorderError(
+                "shadow outcome cannot be recorded before the signal horizon matures"
+            )
         if not math.isfinite(expected_net_bps) or not math.isfinite(stress_net_bps):
             raise ShadowRecorderError("shadow outcome bps must be finite")
         if not SHA256.fullmatch(label_sha256):
@@ -136,7 +145,7 @@ class ResearchShadowRecorder:
                 "expected_net_bps": expected_net_bps,
                 "stress_net_bps": stress_net_bps,
                 "label_sha256": label_sha256,
-                "recorded_at": datetime.now(UTC).isoformat(),
+                "recorded_at": recorded_at.isoformat(),
                 "research_only": True,
                 "order_submission_allowed": False,
                 "execution_authorization": "none",

@@ -520,7 +520,8 @@ Shadow runners can append evidence through the research API:
   records a hypothetical decision after the `PROSPECTIVE_SHADOW` partition is
   explicitly opened. It stores `feature_vector_sha256`, not raw feature values.
 - `POST /api/v1/research/microstructure/shadow-signals/{signal_id}/outcome`
-  records the one-shot outcome for that signal.
+  records the one-shot outcome for that signal, but only after the signal's full
+  replay horizon has elapsed.
 
 Both endpoints are metadata-only and return
 `order_submission_allowed=false` and `execution_authorization=none`.
@@ -532,8 +533,9 @@ same trailing policy through `HistoricalTrailingSimulator`, returns
 be passed directly to the immutable shadow-outcome recorder. For live shadow
 bookkeeping, use `settle_pending_shadow_outcomes(...)`: it selects only pending
 signals whose full horizon has matured, records one immutable replay outcome per
-signal, and leaves immature signals untouched. It does not call an exchange and
-does not create orders.
+signal, and leaves immature signals untouched. The recorder enforces the same
+maturity rule, so manual/API outcome attempts before `decision_time + horizon`
+fail closed. It does not call an exchange and does not create orders.
 
 The matching batch CLI is also dry-run by default:
 

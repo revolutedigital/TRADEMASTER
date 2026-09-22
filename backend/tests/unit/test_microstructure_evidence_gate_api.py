@@ -291,10 +291,11 @@ async def test_shadow_signal_api_records_hypothetical_signal_without_order_field
 
 async def test_shadow_outcome_api_records_once_and_rejects_overwrite(db: AsyncSession) -> None:
     await _seed_shadow_experiment(db, opened=True)
+    now = datetime.now(UTC)
     signal = await research.record_shadow_signal(
         "experiment",
         RecordShadowSignalRequest(
-            decision_time=datetime.now(UTC),
+            decision_time=now - timedelta(seconds=121),
             side="SELL",
             horizon_seconds=120,
             probability=0.8,
@@ -331,8 +332,43 @@ async def test_shadow_outcome_api_records_once_and_rejects_overwrite(db: AsyncSe
             ),
             db=db,
             _user={"sub": "operator"},
-        )
+    )
     assert error.value.status_code == 409
+
+
+async def test_shadow_outcome_api_rejects_immature_signal_horizon(
+    db: AsyncSession,
+) -> None:
+    await _seed_shadow_experiment(db, opened=True)
+    signal = await research.record_shadow_signal(
+        "experiment",
+        RecordShadowSignalRequest(
+            decision_time=datetime.now(UTC),
+            side="SELL",
+            horizon_seconds=120,
+            probability=0.8,
+            threshold=0.7,
+            model_sha256="d" * 64,
+            feature_vector={"flow": -0.5},
+        ),
+        db=db,
+        _user={"sub": "operator"},
+    )
+
+    with pytest.raises(research.HTTPException) as error:
+        await research.record_shadow_outcome(
+            signal.id,
+            RecordShadowOutcomeRequest(
+                expected_net_bps=1.2,
+                stress_net_bps=0.4,
+                label_sha256="e" * 64,
+            ),
+            db=db,
+            _user={"sub": "operator"},
+        )
+
+    assert error.value.status_code == 409
+    assert "horizon matures" in error.value.detail
 
 
 async def test_testnet_eligibility_remains_metadata_without_explicit_release(
@@ -1339,7 +1375,7 @@ async def _seed_shadow_experiment(db: AsyncSession, *, opened: bool) -> None:
         ResearchDataUse(
             experiment_id="experiment",
             role="PROSPECTIVE_SHADOW",
-            start_at=now,
+            start_at=now - timedelta(hours=1),
             end_at=now + timedelta(days=20),
             manifest_sha256="c" * 64,
             opened_at=now if opened else None,

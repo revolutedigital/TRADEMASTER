@@ -412,6 +412,19 @@ deploy confirmed live WAL growth: `spot_trade` 1,507,695 → 1,519,731 bytes,
 `mark_price` 3,403,597 → 3,407,233 bytes, `depth` 81,299,366 → 81,386,709
 bytes, and `trade` 12,933,192 → 12,945,801 bytes.
 
+The backend production service was then configured with
+`MICROSTRUCTURE_EVIDENCE_STATUS_URL=http://microstructure-recorder.railway.internal:8000/evidence-gate-status.json`.
+The first variable-triggered redeploy (`6723ca58-cb0a-48c9-9736-efe67f4ee03a`)
+failed before app startup because Railway rebuilt from a stale source that did
+not contain Alembic revision `022`; the previous backend deployment remained
+healthy and continued serving traffic. A manual local-source redeploy,
+`3dcc26a0-f47f-4fb0-ab2e-ee7267ecd55d`, succeeded. Post-deploy verification
+inside the backend container confirmed the configured private URL was used and
+returned `artifact_available=true`, `eligible=false`, `complete_days=0`,
+required streams `TRADE, DEPTH, MARK_PRICE, SPOT_TRADE`,
+`order_submission_allowed=false`, `execution_authorization=none`, and
+`research_only=true`.
+
 The research panel also exposes
 `GET /api/v1/research/microstructure/experiments/{experiment_id}/testnet-eligibility`.
 That endpoint crosses experiment status, the book-evidence artifact, and the

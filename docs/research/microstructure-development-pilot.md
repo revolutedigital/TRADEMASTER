@@ -170,6 +170,26 @@ serialized coefficients, uses the artifact threshold and horizon, and appends th
 signal through the immutable shadow recorder. It has no exchange adapter and no
 order-submission path.
 
+For partition batches, use the dry-run-first CLI. Without `--commit`, it only
+scores the frozen policy and prints the selected shadow entries:
+
+```bash
+cd backend
+./.venv/bin/python scripts/research/run_shadow_policy_batch.py \
+  --experiment-id EXPERIMENT_ID \
+  --policy-artifact data/microstructure_v1/models/frozen-shadow-policy.json \
+  --dataset-root data/microstructure_v1/research-v1 \
+  --start-date YYYY-MM-DD \
+  --end-date YYYY-MM-DD
+```
+
+Only after the experiment is `FROZEN` and the `PROSPECTIVE_SHADOW` partition has
+been explicitly opened should the same command be re-run with `--commit`. The
+batch records entry candidates where the frozen probability clears the frozen
+top-p threshold, skips already-recorded `(decision_time, side, horizon)` signals,
+and still returns `order_submission_allowed=false` and
+`execution_authorization=none`.
+
 ## Portfolio replay result
 
 The replay enforced 100 ms latency, one net position, true ordered trade paths,

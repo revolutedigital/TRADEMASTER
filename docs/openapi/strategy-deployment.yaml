@@ -9,7 +9,9 @@ info:
     plus fresh walk-forward evidence. Activation only makes an approved
     strategy available to the matching engine mode; it never arms LIVE orders.
     TESTNET and LIVE engines reject all new entries when no approved active
-    deployment matches the symbol and interval.
+    deployment matches the symbol and interval. TESTNET activation also requires
+    an intact research-only Testnet release from the microstructure evidence
+    gate; walk-forward evidence alone cannot unlock runtime Testnet trading.
 servers:
   - url: /api/v1
 paths:
@@ -80,9 +82,13 @@ paths:
       summary: Activate one approved strategy for its matching execution mode.
       description: |
         Only one strategy may be active for the same symbol, interval, and
-        target execution mode. LIVE activation still does not authorize an
-        order; the live guard must separately be ready and armed. LIVE
-        activation also requires a valid operator TOTP code.
+        target execution mode. TESTNET activation first verifies the latest
+        research-only Testnet release snapshot, approved experiment status,
+        positive 60-day book/spot WAL evidence, positive 20-to-30-day shadow
+        outcome evidence, and an intact research event hash chain. LIVE
+        activation still does not authorize an order; the live guard must
+        separately be ready and armed. LIVE activation also requires a valid
+        operator TOTP code.
       security:
         - bearerAuth: []
       parameters:
@@ -108,7 +114,9 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '409':
-          description: Deployment is not approved or the runtime mode does not match.
+          description: >
+            Deployment is not approved, runtime mode does not match, or TESTNET
+            lacks a valid research-only release gate.
 components:
   securitySchemes:
     bearerAuth:

@@ -21,6 +21,7 @@ from app.services.backtest.technical_strategy import build_technical_strategy_si
 from app.services.backtest.walk_forward import candles_per_day, run_walk_forward
 from app.services.market.data_collector import market_data_collector
 from app.services.market.freshness import has_recent_closed_candle
+from app.services.research.testnet_release_gate import research_testnet_release_readiness
 
 logger = get_logger(__name__)
 
@@ -174,6 +175,13 @@ async def activate_strategy_deployment(
         raise StrategyDeploymentSourceError(
             "strategy target execution mode does not match the active runtime mode"
         )
+    if execution_mode == TradingExecutionMode.TESTNET:
+        research_release = await research_testnet_release_readiness(db)
+        if not research_release.ready:
+            raise StrategyDeploymentSourceError(
+                "Research Testnet release gate is not satisfied: "
+                + "; ".join(research_release.reasons)
+            )
 
     await _acquire_strategy_activation_lock(
         db,

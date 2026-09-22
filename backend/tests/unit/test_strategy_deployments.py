@@ -11,6 +11,7 @@ import pytest
 import yaml
 
 from app.config import TradingExecutionMode
+from app.services.research.testnet_release_gate import ResearchTestnetReleaseReadiness
 from app.services.backtest.walk_forward import WalkForwardResult, WalkForwardWindow
 from app.services.strategy_deployments import (
     ACTIVE,
@@ -271,6 +272,43 @@ async def test_activation_requires_matching_runtime_mode_and_replaces_old_active
 
 
 @pytest.mark.asyncio
+async def test_testnet_activation_requires_research_testnet_release_gate() -> None:
+    deployment = SimpleNamespace(
+        id=22,
+        symbol="SOLUSDT",
+        interval="1h",
+        target_execution_mode="TESTNET",
+        status=APPROVED,
+        activated_at=None,
+        deactivated_at=None,
+    )
+    database = AsyncMock()
+    database.scalar = AsyncMock(return_value=deployment)
+    database.execute = AsyncMock()
+
+    with (
+        patch(
+            "app.services.strategy_deployments.research_testnet_release_readiness",
+            new=AsyncMock(
+                return_value=ResearchTestnetReleaseReadiness(
+                    ready=False,
+                    reasons=("research_testnet_release_missing",),
+                )
+            ),
+        ),
+        pytest.raises(StrategyDeploymentSourceError, match="research_testnet_release_missing"),
+    ):
+        await activate_strategy_deployment(
+            database,
+            deployment_id=22,
+            execution_mode=TradingExecutionMode.TESTNET,
+        )
+
+    assert deployment.status == APPROVED
+    database.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_testnet_activation_stops_at_the_portfolio_wide_canary_cap() -> None:
     deployment = SimpleNamespace(
         id=22,
@@ -285,7 +323,20 @@ async def test_testnet_activation_stops_at_the_portfolio_wide_canary_cap() -> No
     database.scalar = AsyncMock(side_effect=[deployment, 3])
     database.execute = AsyncMock()
 
-    with pytest.raises(StrategyDeploymentSourceError, match="canary is limited"):
+    with (
+        patch(
+            "app.services.strategy_deployments.research_testnet_release_readiness",
+            new=AsyncMock(
+                return_value=ResearchTestnetReleaseReadiness(
+                    ready=True,
+                    reasons=(),
+                    experiment_id="experiment",
+                    release_sha256="a" * 64,
+                )
+            ),
+        ),
+        pytest.raises(StrategyDeploymentSourceError, match="canary is limited"),
+    ):
         await activate_strategy_deployment(
             database,
             deployment_id=22,

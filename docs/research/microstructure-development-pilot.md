@@ -502,6 +502,15 @@ eligibility checklist may return
 `explicit_testnet_release=true` and `release_request_required=false`, while
 `order_submission_allowed=false` and `execution_authorization=none` remain true.
 
+Runtime strategy activation now consumes that release gate too:
+`activate_strategy_deployment(..., execution_mode=TESTNET)` refuses to activate
+any TESTNET strategy unless the latest research-only release snapshot is intact,
+the experiment is still `APPROVED`, the event hash chain verifies, book evidence
+has the 60-day eligible window, prospective shadow has 20-to-30 days of complete
+positive outcomes, the statistical gate was verified, and unresolved failures are
+zero. Walk-forward strategy evidence alone is therefore not enough to unlock
+Testnet runtime exposure.
+
 The experiment report endpoint,
 `GET /api/v1/research/microstructure/experiments/{experiment_id}/report`, now
 returns concrete report metrics instead of an empty placeholder: experiment hash,

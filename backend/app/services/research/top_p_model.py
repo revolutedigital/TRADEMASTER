@@ -304,6 +304,23 @@ def frozen_top_p_would_enter(artifact: dict[str, Any], feature_vector: dict[str,
     return probability >= float(artifact["probability_threshold"])
 
 
+def verify_frozen_top_p_policy(artifact: dict[str, Any]) -> str:
+    """Return the model hash when a frozen top-p artifact is intact and research-only."""
+    model_sha256 = str(artifact.get("model_sha256", ""))
+    payload = {key: value for key, value in artifact.items() if key != "model_sha256"}
+    if model_sha256 != _stable_sha256(payload):
+        raise ValueError("frozen top-p policy artifact hash does not match its payload")
+    if payload.get("artifact_kind") != "research_top_p_shadow_policy":
+        raise ValueError("unexpected frozen top-p policy artifact kind")
+    if payload.get("research_only") is not True:
+        raise ValueError("frozen top-p policy must be research-only")
+    if payload.get("order_submission_allowed") is not False:
+        raise ValueError("frozen top-p policy cannot allow order submission")
+    if payload.get("execution_authorization") != "none":
+        raise ValueError("frozen top-p policy cannot carry execution authorization")
+    return model_sha256
+
+
 def run_calibrated_walk_forward(
     frame: pd.DataFrame,
     *,

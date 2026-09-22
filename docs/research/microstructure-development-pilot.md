@@ -163,6 +163,13 @@ threshold, the dataset-partition fingerprint, safety flags, and its own
 `model_sha256`. The artifact is still research-only:
 `order_submission_allowed=false`, `execution_authorization=none`.
 
+Prospective shadow runners should score and record decisions through
+`app.services.research.shadow_policy_runner.record_frozen_top_p_shadow_signal`.
+That function verifies the artifact hash, computes the probability from the
+serialized coefficients, uses the artifact threshold and horizon, and appends the
+signal through the immutable shadow recorder. It has no exchange adapter and no
+order-submission path.
+
 ## Portfolio replay result
 
 The replay enforced 100 ms latency, one net position, true ordered trade paths,

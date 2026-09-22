@@ -11,6 +11,7 @@ from app.services.research.top_p_model import (
     predict_frozen_top_p_probability,
     run_calibrated_walk_forward,
     summarize_walk_forward,
+    verify_frozen_top_p_policy,
 )
 
 
@@ -201,6 +202,23 @@ def test_frozen_top_p_policy_requires_complete_feature_vector() -> None:
 
     with pytest.raises(KeyError):
         predict_frozen_top_p_probability(policy.to_dict(), {"flow_imbalance_1s": 1.0})
+
+
+def test_frozen_top_p_policy_verification_rejects_tampering() -> None:
+    policy = freeze_top_p_policy(
+        _model_frame(days=7, samples_per_day=60),
+        horizon_seconds=120,
+        feature_set="flow",
+        tail_fraction=0.10,
+        calibration_date="2026-01-06",
+        dataset_manifest_sha256="a" * 64,
+        embargo_seconds=300,
+    )
+    artifact = policy.to_dict()
+    artifact["probability_threshold"] = 0.0
+
+    with pytest.raises(ValueError, match="hash"):
+        verify_frozen_top_p_policy(artifact)
 
 
 def _model_frame(*, days: int, samples_per_day: int) -> pd.DataFrame:

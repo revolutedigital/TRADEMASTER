@@ -73,6 +73,54 @@ def test_book_feature_sets_require_real_book_columns() -> None:
         feature_columns(frame, "flow_book")
 
 
+def test_auxiliary_feature_sets_require_real_auxiliary_columns() -> None:
+    frame = pd.DataFrame(
+        {
+            "trade_count_1s": [1.0],
+            "flow_imbalance_1s": [0.1],
+            "directed_flow_imbalance_1s": [0.1],
+        }
+    )
+
+    with pytest.raises(ValueError, match="requires auxiliary"):
+        feature_columns(frame, "flow_aux")
+
+
+def test_auxiliary_feature_sets_include_mark_and_liquidation_columns() -> None:
+    frame = pd.DataFrame(
+        {
+            "trade_count_1s": [1.0],
+            "flow_imbalance_1s": [0.1],
+            "directed_flow_imbalance_1s": [0.1],
+            "return_1s_bps": [2.0],
+            "mark_available": [1.0],
+            "mark_update_age_ms": [50.0],
+            "mark_index_basis_bps": [1.2],
+            "directed_mark_index_basis_bps": [1.2],
+            "funding_rate": [0.0001],
+            "directed_funding_rate": [-0.0001],
+            "liquidation_count_1s": [1.0],
+            "liquidation_net_qty_1s": [-2.0],
+            "directed_liquidation_net_qty_1s": [-2.0],
+            "liquidation_abs_qty_1s": [2.0],
+            "liquidation_net_notional_1s": [-200.0],
+            "directed_liquidation_net_notional_1s": [-200.0],
+            "liquidation_abs_notional_1s": [200.0],
+            "hour_sin": [0.0],
+            "hour_cos": [1.0],
+            "side_sign": [1.0],
+        }
+    )
+
+    columns = feature_columns(frame, "flow_price_aux_session")
+
+    assert "directed_mark_index_basis_bps" in columns
+    assert "directed_funding_rate" in columns
+    assert "directed_liquidation_net_qty_1s" in columns
+    assert "directed_liquidation_net_notional_1s" in columns
+    assert "side_sign" in columns
+
+
 def test_book_feature_sets_include_directed_microstructure_columns() -> None:
     frame = pd.DataFrame(
         {

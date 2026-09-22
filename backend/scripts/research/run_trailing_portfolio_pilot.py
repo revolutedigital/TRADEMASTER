@@ -55,9 +55,7 @@ def main() -> int:
         parser.error("no research dataset partitions found")
     frame = pd.concat((pd.read_parquet(path) for path in paths), ignore_index=True)
     frame["target"] = frame["paid_stress_before_stop"].astype("int8")
-    model_feature_set = (
-        "flow_price_book_session" if _has_book_features(frame) else "flow_price_session"
-    )
+    model_feature_set = _default_model_feature_set(frame)
     prediction_frames = []
     model_folds = []
     for horizon in (120, 300):
@@ -144,6 +142,30 @@ def _has_book_features(frame: pd.DataFrame) -> bool:
             "microprice_displacement_bps",
         )
     )
+
+
+def _has_auxiliary_features(frame: pd.DataFrame) -> bool:
+    return any(
+        column in frame.columns
+        for column in (
+            "mark_available",
+            "mark_index_basis_bps",
+            "funding_rate",
+            "liquidation_net_qty_1s",
+        )
+    )
+
+
+def _default_model_feature_set(frame: pd.DataFrame) -> str:
+    has_book = _has_book_features(frame)
+    has_auxiliary = _has_auxiliary_features(frame)
+    if has_book and has_auxiliary:
+        return "flow_price_book_aux_session"
+    if has_book:
+        return "flow_price_book_session"
+    if has_auxiliary:
+        return "flow_price_aux_session"
+    return "flow_price_session"
 
 
 if __name__ == "__main__":

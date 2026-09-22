@@ -54,10 +54,11 @@ class CausalMicrostructureFeatureEngine:
         self._windows = tuple(sorted(set(windows_seconds)))
         self._max_window_ms = self._windows[-1] * 1000
         self._trades: deque[tuple[int, float, float, float, float]] = deque()
-        self._liquidations: deque[tuple[int, float]] = deque()
+        self._liquidations: deque[tuple[int, float, float, float, float]] = deque()
         self._last_event_time_ms: int | None = None
         self._book: tuple[int, float, float, float, float] | None = None
         self._book_events: deque[tuple[int, float, float, float, float]] = deque()
+        self._last_mark_event_time_ms: int | None = None
         self._mark_price: float | None = None
         self._index_price: float | None = None
         self._funding_rate: float | None = None
@@ -103,6 +104,7 @@ class CausalMicrostructureFeatureEngine:
                 )
                 self._book_events.append(self._book)
         elif event.event_type == MarketEventType.MARK_PRICE and event.price is not None:
+            self._last_mark_event_time_ms = timestamp_ms
             self._mark_price = event.price
             payload = event.payload or {}
             self._index_price = _optional_float(payload.get("index_price"))
@@ -110,7 +112,16 @@ class CausalMicrostructureFeatureEngine:
         elif event.event_type == MarketEventType.LIQUIDATION:
             if event.quantity is not None and event.quantity > 0:
                 sign = 1.0 if event.side == "BUY" else -1.0
-                self._liquidations.append((timestamp_ms, sign * event.quantity))
+                notional = event.quantity * event.price if event.price is not None else 0.0
+                self._liquidations.append(
+                    (
+                        timestamp_ms,
+                        sign * event.quantity,
+                        event.quantity,
+                        sign * notional,
+                        notional,
+                    )
+                )
         self._evict(timestamp_ms)
 
     def snapshot(self, decision_time_ms: int) -> FeatureSnapshot:
@@ -123,12 +134,28 @@ class CausalMicrostructureFeatureEngine:
             trades = [trade for trade in self._trades if trade[0] >= cutoff]
             values.update(_trade_window_features(trades, window))
             liquidations = [
-                signed_quantity
-                for timestamp, signed_quantity in self._liquidations
-                if timestamp >= cutoff
+                liquidation for liquidation in self._liquidations if liquidation[0] >= cutoff
             ]
-            values[f"liquidation_net_qty_{window}s"] = float(sum(liquidations))
+            values[f"liquidation_count_{window}s"] = float(len(liquidations))
+            values[f"liquidation_net_qty_{window}s"] = float(
+                sum(liquidation[1] for liquidation in liquidations)
+            )
+            values[f"liquidation_abs_qty_{window}s"] = float(
+                sum(liquidation[2] for liquidation in liquidations)
+            )
+            values[f"liquidation_net_notional_{window}s"] = float(
+                sum(liquidation[3] for liquidation in liquidations)
+            )
+            values[f"liquidation_abs_notional_{window}s"] = float(
+                sum(liquidation[4] for liquidation in liquidations)
+            )
         values.update(self._book_features(decision_time_ms))
+        values["mark_available"] = 1.0 if self._mark_price is not None else 0.0
+        values["mark_update_age_ms"] = (
+            float(decision_time_ms - self._last_mark_event_time_ms)
+            if self._last_mark_event_time_ms is not None
+            else 0.0
+        )
         values["mark_index_basis_bps"] = _basis_bps(self._mark_price, self._index_price)
         values["funding_rate"] = self._funding_rate or 0.0
         values["hour_sin"], values["hour_cos"] = _cyclical_hour(decision_time_ms)
@@ -307,6 +334,141 @@ def materialize_book_features(
                 deltas=book_deltas,
                 window=window,
             )
+        )
+    return pd.DataFrame(output)
+
+
+def materialize_mark_features(
+    mark_events: pd.DataFrame,
+    decision_times_ms: np.ndarray,
+) -> pd.DataFrame:
+    """Latest mark/index/funding facts using only events before each decision."""
+    decisions = np.asarray(decision_times_ms, dtype=np.int64)
+    if decisions.ndim != 1 or (np.diff(decisions) < 0).any():
+        raise ValueError("decision times must be a monotonic vector")
+    output = {
+        "decision_time_ms": decisions,
+        "mark_available": np.zeros(len(decisions), dtype=np.float64),
+        "mark_update_age_ms": np.zeros(len(decisions), dtype=np.float64),
+        "mark_index_basis_bps": np.zeros(len(decisions), dtype=np.float64),
+        "funding_rate": np.zeros(len(decisions), dtype=np.float64),
+    }
+    required = {"event_time_ms", "funding_rate", "index_price"}
+    mark_column = "mark_price" if "mark_price" in mark_events.columns else "price"
+    if mark_column not in mark_events.columns:
+        required.add("mark_price")
+    missing = required - set(mark_events.columns)
+    if missing:
+        raise ValueError(f"mark frame is missing columns: {sorted(missing)}")
+    if mark_events.empty:
+        return pd.DataFrame(output)
+
+    ordered = mark_events.sort_values("event_time_ms", kind="stable")
+    times = ordered["event_time_ms"].to_numpy(dtype=np.int64)
+    if (np.diff(times) < 0).any():
+        raise ValueError("mark events must be chronological")
+    mark_prices = ordered[mark_column].to_numpy(dtype=np.float64)
+    index_prices = ordered["index_price"].to_numpy(dtype=np.float64)
+    funding_rates = ordered["funding_rate"].to_numpy(dtype=np.float64)
+    if not np.isfinite(mark_prices).all() or (mark_prices <= 0).any():
+        raise ValueError("mark prices must be finite and positive")
+    if not np.isfinite(index_prices).all() or (index_prices <= 0).any():
+        raise ValueError("index prices must be finite and positive")
+    if not np.isfinite(funding_rates).all():
+        raise ValueError("funding rates must be finite")
+
+    latest_indices = np.searchsorted(times, decisions, side="right") - 1
+    available = latest_indices >= 0
+    safe_indices = np.maximum(latest_indices, 0)
+    output["mark_available"] = available.astype(np.float64)
+    output["mark_update_age_ms"] = np.where(available, decisions - times[safe_indices], 0.0)
+    output["mark_index_basis_bps"] = np.where(
+        available,
+        (mark_prices[safe_indices] / index_prices[safe_indices] - 1) * 10_000,
+        0.0,
+    )
+    output["funding_rate"] = np.where(available, funding_rates[safe_indices], 0.0)
+    return pd.DataFrame(output)
+
+
+def materialize_liquidation_features(
+    liquidation_events: pd.DataFrame,
+    decision_times_ms: np.ndarray,
+    *,
+    windows_seconds: tuple[int, ...] = TRADE_WINDOWS_SECONDS,
+) -> pd.DataFrame:
+    """Windowed liquidation-flow features using only prior force-order events."""
+    if not windows_seconds or any(window <= 0 for window in windows_seconds):
+        raise ValueError("feature windows must be positive")
+    windows = tuple(sorted(set(windows_seconds)))
+    decisions = np.asarray(decision_times_ms, dtype=np.int64)
+    if decisions.ndim != 1 or (np.diff(decisions) < 0).any():
+        raise ValueError("decision times must be a monotonic vector")
+    output: dict[str, np.ndarray] = {"decision_time_ms": decisions}
+    for window in windows:
+        prefix = f"{window}s"
+        output[f"liquidation_count_{prefix}"] = np.zeros(len(decisions), dtype=np.float64)
+        output[f"liquidation_net_qty_{prefix}"] = np.zeros(len(decisions), dtype=np.float64)
+        output[f"liquidation_abs_qty_{prefix}"] = np.zeros(len(decisions), dtype=np.float64)
+        output[f"liquidation_net_notional_{prefix}"] = np.zeros(
+            len(decisions), dtype=np.float64
+        )
+        output[f"liquidation_abs_notional_{prefix}"] = np.zeros(
+            len(decisions), dtype=np.float64
+        )
+    required = {"event_time_ms", "quantity", "side"}
+    missing = required - set(liquidation_events.columns)
+    if missing:
+        raise ValueError(f"liquidation frame is missing columns: {sorted(missing)}")
+    if liquidation_events.empty:
+        return pd.DataFrame(output)
+
+    sort_columns = ["event_time_ms"]
+    if "sequence_id" in liquidation_events.columns:
+        sort_columns.append("sequence_id")
+    ordered = liquidation_events.sort_values(sort_columns, kind="stable")
+    times = ordered["event_time_ms"].to_numpy(dtype=np.int64)
+    if (np.diff(times) < 0).any():
+        raise ValueError("liquidation events must be chronological")
+    quantities = ordered["quantity"].to_numpy(dtype=np.float64)
+    if not np.isfinite(quantities).all() or (quantities < 0).any():
+        raise ValueError("liquidation quantities must be finite and non-negative")
+    sides = ordered["side"].astype(str).str.upper().to_numpy()
+    if not np.isin(sides, ["BUY", "SELL"]).all():
+        raise ValueError("liquidation sides must be BUY or SELL")
+    prices = (
+        ordered["price"].fillna(0).to_numpy(dtype=np.float64)
+        if "price" in ordered.columns
+        else np.zeros(len(ordered), dtype=np.float64)
+    )
+    if not np.isfinite(prices).all() or (prices < 0).any():
+        raise ValueError("liquidation prices must be finite and non-negative")
+    signs = np.where(sides == "BUY", 1.0, -1.0)
+    notional = quantities * prices
+    signed_quantity = quantities * signs
+    signed_notional = notional * signs
+
+    prefix_count = _prefix_sum(np.ones(len(times), dtype=np.float64))
+    prefix_signed_quantity = _prefix_sum(signed_quantity)
+    prefix_abs_quantity = _prefix_sum(quantities)
+    prefix_signed_notional = _prefix_sum(signed_notional)
+    prefix_abs_notional = _prefix_sum(notional)
+    right = np.searchsorted(times, decisions, side="right")
+    for window in windows:
+        prefix = f"{window}s"
+        left = np.searchsorted(times, decisions - window * 1000, side="left")
+        output[f"liquidation_count_{prefix}"] = prefix_count[right] - prefix_count[left]
+        output[f"liquidation_net_qty_{prefix}"] = (
+            prefix_signed_quantity[right] - prefix_signed_quantity[left]
+        )
+        output[f"liquidation_abs_qty_{prefix}"] = (
+            prefix_abs_quantity[right] - prefix_abs_quantity[left]
+        )
+        output[f"liquidation_net_notional_{prefix}"] = (
+            prefix_signed_notional[right] - prefix_signed_notional[left]
+        )
+        output[f"liquidation_abs_notional_{prefix}"] = (
+            prefix_abs_notional[right] - prefix_abs_notional[left]
         )
     return pd.DataFrame(output)
 

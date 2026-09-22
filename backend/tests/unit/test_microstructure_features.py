@@ -10,6 +10,8 @@ from app.schemas.microstructure import MarketEventType, MicrostructureEvent
 from app.services.research.microstructure_features import (
     CausalMicrostructureFeatureEngine,
     materialize_book_features,
+    materialize_liquidation_features,
+    materialize_mark_features,
     materialize_trade_flow_features,
 )
 
@@ -226,8 +228,108 @@ def test_book_microprice_mark_basis_and_liquidation_are_causal() -> None:
     assert values["book_available"] == 1
     assert values["depth_imbalance"] == 0.5
     assert values["microprice_displacement_bps"] > 0
+    assert values["mark_available"] == 1
+    assert values["mark_update_age_ms"] == 0
     assert values["mark_index_basis_bps"] == pytest.approx(100)
+    assert values["liquidation_count_5s"] == 1
     assert values["liquidation_net_qty_5s"] == -2
+    assert values["liquidation_abs_qty_5s"] == 2
+
+
+def test_mark_and_liquidation_features_are_causal_and_match_online_snapshot() -> None:
+    base_ms = int(NOW.timestamp() * 1000)
+    decision_times = np.array([base_ms + 500, base_ms + 1_500], dtype=np.int64)
+    offline_mark = materialize_mark_features(
+        pd.DataFrame(
+            {
+                "event_time_ms": np.array([base_ms, base_ms + 1_000], dtype=np.int64),
+                "mark_price": [101.0, 99.0],
+                "index_price": [100.0, 100.0],
+                "funding_rate": [0.0001, -0.0002],
+            }
+        ),
+        decision_times,
+    )
+    offline_liquidations = materialize_liquidation_features(
+        pd.DataFrame(
+            {
+                "event_time_ms": np.array([base_ms + 400, base_ms + 1_200], dtype=np.int64),
+                "sequence_id": [1, 2],
+                "price": [100.0, 110.0],
+                "quantity": [2.0, 3.0],
+                "side": ["SELL", "BUY"],
+            }
+        ),
+        decision_times,
+        windows_seconds=(1,),
+    )
+
+    engine = CausalMicrostructureFeatureEngine(windows_seconds=(1,))
+    engine.consume(
+        MicrostructureEvent(
+            product="usdm_perpetual",
+            symbol="BTCUSDT",
+            event_type=MarketEventType.MARK_PRICE,
+            event_time=NOW,
+            price=101.0,
+            payload={"index_price": 100.0, "funding_rate": 0.0001},
+        )
+    )
+    engine.consume(
+        MicrostructureEvent(
+            product="usdm_perpetual",
+            symbol="BTCUSDT",
+            event_type=MarketEventType.LIQUIDATION,
+            event_time=NOW + timedelta(milliseconds=400),
+            price=100.0,
+            quantity=2.0,
+            side="SELL",
+        )
+    )
+    first_online = engine.snapshot(base_ms + 500).values
+    engine.consume(
+        MicrostructureEvent(
+            product="usdm_perpetual",
+            symbol="BTCUSDT",
+            event_type=MarketEventType.MARK_PRICE,
+            event_time=NOW + timedelta(milliseconds=1_000),
+            price=99.0,
+            payload={"index_price": 100.0, "funding_rate": -0.0002},
+        )
+    )
+    engine.consume(
+        MicrostructureEvent(
+            product="usdm_perpetual",
+            symbol="BTCUSDT",
+            event_type=MarketEventType.LIQUIDATION,
+            event_time=NOW + timedelta(milliseconds=1_200),
+            price=110.0,
+            quantity=3.0,
+            side="BUY",
+        )
+    )
+    second_online = engine.snapshot(base_ms + 1_500).values
+
+    for index, online in enumerate((first_online, second_online)):
+        assert offline_mark.iloc[index]["mark_available"] == pytest.approx(
+            online["mark_available"]
+        )
+        assert offline_mark.iloc[index]["mark_update_age_ms"] == pytest.approx(
+            online["mark_update_age_ms"]
+        )
+        assert offline_mark.iloc[index]["mark_index_basis_bps"] == pytest.approx(
+            online["mark_index_basis_bps"]
+        )
+        assert offline_mark.iloc[index]["funding_rate"] == pytest.approx(online["funding_rate"])
+        assert offline_liquidations.iloc[index]["liquidation_count_1s"] == pytest.approx(
+            online["liquidation_count_1s"]
+        )
+        assert offline_liquidations.iloc[index]["liquidation_net_qty_1s"] == pytest.approx(
+            online["liquidation_net_qty_1s"]
+        )
+        assert offline_liquidations.iloc[index]["liquidation_net_notional_1s"] == pytest.approx(
+            online["liquidation_net_notional_1s"]
+        )
 
 
 def test_snapshot_cannot_move_backwards() -> None:

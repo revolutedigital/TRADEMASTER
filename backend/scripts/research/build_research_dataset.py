@@ -38,6 +38,22 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--mark-source-root",
+        type=Path,
+        help=(
+            "Optional mark-price root with date=*/events.parquet or date=*/events.jsonl.gz "
+            "partitions, for example the prospective WAL mark_price directory."
+        ),
+    )
+    parser.add_argument(
+        "--liquidation-source-root",
+        type=Path,
+        help=(
+            "Optional liquidation root with date=*/events.parquet or date=*/events.jsonl.gz "
+            "partitions, for example the prospective WAL liquidation directory."
+        ),
+    )
+    parser.add_argument(
         "--require-book-features",
         action="store_true",
         help="Fail closed unless every decision has fresh book features.",
@@ -65,6 +81,8 @@ def main() -> int:
             utc_date=cursor,
             config=config,
             book_source_root=arguments.book_source_root,
+            mark_source_root=arguments.mark_source_root,
+            liquidation_source_root=arguments.liquidation_source_root,
         )
         print(json.dumps(result.__dict__, sort_keys=True), flush=True)  # noqa: T201
         cursor += timedelta(days=1)

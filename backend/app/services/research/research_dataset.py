@@ -18,6 +18,8 @@ from app.services.backtest.event_replay import OrderSide
 from app.services.research.microstructure_features import (
     TRADE_WINDOWS_SECONDS,
     materialize_book_features,
+    materialize_liquidation_features,
+    materialize_mark_features,
     materialize_trade_flow_features,
 )
 from app.services.research.path_labels import EventPathLabeler, PathLabelConfig
@@ -63,6 +65,8 @@ def build_research_rows(
     config: ResearchDatasetConfig | None = None,
     *,
     book_events: pd.DataFrame | None = None,
+    mark_events: pd.DataFrame | None = None,
+    liquidation_events: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Build side/horizon rows; all event data must include the full label horizon."""
     dataset_config = config or ResearchDatasetConfig()
@@ -102,6 +106,16 @@ def build_research_rows(
                 max_staleness_ms=dataset_config.max_book_staleness_ms,
             )
         features = features.merge(book_features, on="decision_time_ms", how="left")
+    if mark_events is not None:
+        mark_features = materialize_mark_features(mark_events, decisions)
+        features = features.merge(mark_features, on="decision_time_ms", how="left")
+    if liquidation_events is not None:
+        liquidation_features = materialize_liquidation_features(
+            liquidation_events,
+            decisions,
+            windows_seconds=dataset_config.feature_windows_seconds,
+        )
+        features = features.merge(liquidation_features, on="decision_time_ms", how="left")
     labeler = EventPathLabeler(
         times,
         sequences,
@@ -125,12 +139,14 @@ def build_research_rows(
             rows[f"flow_imbalance_{window}s"] * rows["side_sign"]
         )
         rows[f"directed_return_{window}s_bps"] = rows[f"return_{window}s_bps"] * rows["side_sign"]
-        book_directional_columns = (
+        directional_columns = (
             f"book_pressure_imbalance_{window}s",
             f"book_depth_imbalance_change_{window}s",
             f"book_microprice_displacement_change_bps_{window}s",
+            f"liquidation_net_qty_{window}s",
+            f"liquidation_net_notional_{window}s",
         )
-        for column in book_directional_columns:
+        for column in directional_columns:
             if column in rows.columns:
                 rows[f"directed_{column}"] = rows[column] * rows["side_sign"]
     if "depth_imbalance" in rows.columns:
@@ -139,6 +155,10 @@ def build_research_rows(
         rows["directed_microprice_displacement_bps"] = (
             rows["microprice_displacement_bps"] * rows["side_sign"]
         )
+    if "mark_index_basis_bps" in rows.columns:
+        rows["directed_mark_index_basis_bps"] = rows["mark_index_basis_bps"] * rows["side_sign"]
+    if "funding_rate" in rows.columns:
+        rows["directed_funding_rate"] = -rows["funding_rate"] * rows["side_sign"]
     rows["target"] = rows["paid_expected_before_stop"].astype(np.int8)
     return rows.sort_values(
         ["decision_time_ms", "side", "horizon_seconds"], kind="stable"
@@ -152,6 +172,8 @@ def build_research_partition(
     utc_date: date,
     config: ResearchDatasetConfig | None = None,
     book_source_root: Path | None = None,
+    mark_source_root: Path | None = None,
+    liquidation_source_root: Path | None = None,
 ) -> ResearchPartitionResult:
     dataset_config = config or ResearchDatasetConfig()
     day_start = datetime.combine(utc_date, datetime.min.time(), tzinfo=UTC)
@@ -172,6 +194,16 @@ def build_research_partition(
         if book_source_root is not None
         else None
     )
+    mark_events = (
+        load_mark_interval(mark_source_root, history_start, day_end)
+        if mark_source_root is not None
+        else None
+    )
+    liquidation_events = (
+        load_liquidation_interval(liquidation_source_root, history_start, day_end)
+        if liquidation_source_root is not None
+        else None
+    )
     history_ready = decisions - max(dataset_config.feature_windows_seconds) * 1000
     complete = (history_ready >= event_times[0]) & (
         decisions + max(dataset_config.horizons_seconds) * 1000 <= event_times[-1]
@@ -179,7 +211,14 @@ def build_research_partition(
     decisions = decisions[complete]
     if not len(decisions):
         raise ValueError(f"no complete decisions for {utc_date.isoformat()}")
-    rows = build_research_rows(trades, decisions, dataset_config, book_events=book_events)
+    rows = build_research_rows(
+        trades,
+        decisions,
+        dataset_config,
+        book_events=book_events,
+        mark_events=mark_events,
+        liquidation_events=liquidation_events,
+    )
     partition_dir = output_root / f"date={utc_date.isoformat()}"
     partition_dir.mkdir(parents=True, exist_ok=True)
     output_path = partition_dir / "research_rows.parquet"
@@ -285,6 +324,66 @@ def load_book_interval(
     )
 
 
+def load_mark_interval(
+    source_root: Path, interval_start: datetime, interval_end: datetime
+) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    cursor = interval_start.date()
+    while cursor <= interval_end.date():
+        partition_dir = source_root / f"date={cursor.isoformat()}"
+        parquet_path = partition_dir / "events.parquet"
+        jsonl_path = partition_dir / "events.jsonl.gz"
+        if parquet_path.exists():
+            table = pq.read_table(
+                parquet_path,
+                columns=["event_time", "price", "index_price", "funding_rate"],
+            )
+            frame = table.to_pandas()
+        elif jsonl_path.exists():
+            frame = _read_mark_wal_jsonl(jsonl_path)
+        else:
+            cursor += timedelta(days=1)
+            continue
+        frame = _prepare_mark_frame(frame, interval_start, interval_end)
+        if not frame.empty:
+            frames.append(frame)
+        cursor += timedelta(days=1)
+    if not frames:
+        raise FileNotFoundError("no mark-price partitions overlap the interval")
+    return pd.concat(frames, ignore_index=True).sort_values("event_time_ms", kind="stable")
+
+
+def load_liquidation_interval(
+    source_root: Path, interval_start: datetime, interval_end: datetime
+) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    cursor = interval_start.date()
+    while cursor <= interval_end.date():
+        partition_dir = source_root / f"date={cursor.isoformat()}"
+        parquet_path = partition_dir / "events.parquet"
+        jsonl_path = partition_dir / "events.jsonl.gz"
+        if parquet_path.exists():
+            table = pq.read_table(
+                parquet_path,
+                columns=["event_time", "sequence_id", "price", "quantity", "side"],
+            )
+            frame = table.to_pandas()
+        elif jsonl_path.exists():
+            frame = _read_liquidation_wal_jsonl(jsonl_path)
+        else:
+            cursor += timedelta(days=1)
+            continue
+        frame = _prepare_liquidation_frame(frame, interval_start, interval_end)
+        if not frame.empty:
+            frames.append(frame)
+        cursor += timedelta(days=1)
+    if not frames:
+        raise FileNotFoundError("no liquidation partitions overlap the interval")
+    return pd.concat(frames, ignore_index=True).sort_values(
+        ["event_time_ms", "sequence_id"], kind="stable"
+    )
+
+
 def _read_book_wal_jsonl(path: Path) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     with gzip.open(path, "rt", encoding="utf-8") as handle:
@@ -300,6 +399,44 @@ def _read_book_wal_jsonl(path: Path) -> pd.DataFrame:
                     "bid_quantity": payload.get("bid_quantity"),
                     "ask_price": payload.get("ask_price"),
                     "ask_quantity": payload.get("ask_quantity"),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _read_mark_wal_jsonl(path: Path) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    with gzip.open(path, "rt", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            payload = json.loads(line)
+            nested = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
+            rows.append(
+                {
+                    "event_time": payload.get("event_time"),
+                    "price": payload.get("price"),
+                    "index_price": nested.get("index_price"),
+                    "funding_rate": nested.get("funding_rate"),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _read_liquidation_wal_jsonl(path: Path) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    with gzip.open(path, "rt", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            payload = json.loads(line)
+            rows.append(
+                {
+                    "event_time": payload.get("event_time"),
+                    "sequence_id": payload.get("sequence_id"),
+                    "price": payload.get("price"),
+                    "quantity": payload.get("quantity"),
+                    "side": payload.get("side"),
                 }
             )
     return pd.DataFrame(rows)
@@ -345,6 +482,57 @@ def _prepare_book_frame(
             "ask_quantity",
         ]
     ]
+
+
+def _prepare_mark_frame(
+    frame: pd.DataFrame,
+    interval_start: datetime,
+    interval_end: datetime,
+) -> pd.DataFrame:
+    if frame.empty:
+        return pd.DataFrame(
+            columns=["event_time_ms", "mark_price", "index_price", "funding_rate"]
+        )
+    prepared = frame.copy()
+    prepared["event_time"] = pd.to_datetime(prepared["event_time"], utc=True)
+    prepared["event_time_ms"] = _datetime_to_epoch_ms(prepared["event_time"])
+    start_ms = int(interval_start.timestamp() * 1000)
+    end_ms = int(interval_end.timestamp() * 1000)
+    prepared = prepared[
+        (prepared["event_time_ms"] >= start_ms) & (prepared["event_time_ms"] <= end_ms)
+    ]
+    mark_column = "mark_price" if "mark_price" in prepared.columns else "price"
+    prepared["mark_price"] = pd.to_numeric(prepared[mark_column], errors="raise")
+    prepared["index_price"] = pd.to_numeric(prepared["index_price"], errors="raise")
+    prepared["funding_rate"] = pd.to_numeric(prepared["funding_rate"], errors="raise")
+    return prepared[["event_time_ms", "mark_price", "index_price", "funding_rate"]]
+
+
+def _prepare_liquidation_frame(
+    frame: pd.DataFrame,
+    interval_start: datetime,
+    interval_end: datetime,
+) -> pd.DataFrame:
+    if frame.empty:
+        return pd.DataFrame(
+            columns=["event_time_ms", "sequence_id", "price", "quantity", "side"]
+        )
+    prepared = frame.copy()
+    prepared["event_time"] = pd.to_datetime(prepared["event_time"], utc=True)
+    prepared["event_time_ms"] = _datetime_to_epoch_ms(prepared["event_time"])
+    start_ms = int(interval_start.timestamp() * 1000)
+    end_ms = int(interval_end.timestamp() * 1000)
+    prepared = prepared[
+        (prepared["event_time_ms"] >= start_ms) & (prepared["event_time_ms"] <= end_ms)
+    ]
+    if "sequence_id" in prepared.columns:
+        prepared["sequence_id"] = pd.to_numeric(prepared["sequence_id"], errors="coerce").fillna(0)
+    else:
+        prepared["sequence_id"] = 0
+    prepared["price"] = pd.to_numeric(prepared.get("price", 0), errors="coerce").fillna(0)
+    prepared["quantity"] = pd.to_numeric(prepared["quantity"], errors="raise")
+    prepared["side"] = prepared["side"].astype(str).str.upper()
+    return prepared[["event_time_ms", "sequence_id", "price", "quantity", "side"]]
 
 
 def _require_complete_book_features(features: pd.DataFrame, *, max_staleness_ms: int) -> None:

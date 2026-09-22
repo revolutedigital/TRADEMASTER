@@ -13,6 +13,8 @@ from app.services.research.research_dataset import (
     ResearchDatasetConfig,
     build_research_rows,
     load_book_interval,
+    load_liquidation_interval,
+    load_mark_interval,
     load_trade_interval,
 )
 
@@ -85,6 +87,50 @@ def test_build_research_rows_can_require_fresh_book_features() -> None:
     )
 
 
+def test_build_research_rows_can_include_mark_and_liquidation_features() -> None:
+    trades = _trade_frame()
+    mark_events = pd.DataFrame(
+        {
+            "event_time_ms": [4_900],
+            "mark_price": [101.0],
+            "index_price": [100.0],
+            "funding_rate": [0.0002],
+        }
+    )
+    liquidation_events = pd.DataFrame(
+        {
+            "event_time_ms": [4_800],
+            "sequence_id": [1],
+            "price": [100.0],
+            "quantity": [2.0],
+            "side": ["SELL"],
+        }
+    )
+    config = ResearchDatasetConfig(horizons_seconds=(2,), feature_windows_seconds=(1,))
+
+    rows = build_research_rows(
+        trades,
+        np.array([5_000]),
+        config,
+        mark_events=mark_events,
+        liquidation_events=liquidation_events,
+    )
+
+    buy = rows[rows["side"] == "BUY"].iloc[0]
+    sell = rows[rows["side"] == "SELL"].iloc[0]
+    assert buy["mark_available"] == 1
+    assert buy["mark_update_age_ms"] == 100
+    assert buy["mark_index_basis_bps"] == pytest.approx(100)
+    assert buy["directed_mark_index_basis_bps"] == pytest.approx(100)
+    assert sell["directed_mark_index_basis_bps"] == pytest.approx(-100)
+    assert buy["directed_funding_rate"] == pytest.approx(-0.0002)
+    assert sell["directed_funding_rate"] == pytest.approx(0.0002)
+    assert buy["liquidation_count_1s"] == 1
+    assert buy["liquidation_net_qty_1s"] == -2
+    assert buy["directed_liquidation_net_qty_1s"] == pytest.approx(-2)
+    assert sell["directed_liquidation_net_qty_1s"] == pytest.approx(2)
+
+
 def test_required_book_features_fail_closed_when_stale() -> None:
     config = ResearchDatasetConfig(
         horizons_seconds=(2,),
@@ -137,6 +183,62 @@ def test_load_book_interval_reads_prospective_wal_jsonl(tmp_path: Path) -> None:
 
     assert frame["event_time_ms"].tolist() == [int(event_time.timestamp() * 1000)]
     assert frame["bid_quantity"].tolist() == [2.0]
+
+
+def test_load_mark_interval_reads_prospective_wal_jsonl(tmp_path: Path) -> None:
+    event_time = datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC)
+    partition = tmp_path / "date=2026-01-01"
+    partition.mkdir(parents=True)
+    with gzip.open(partition / "events.jsonl.gz", "wt", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps(
+                {
+                    "event_time": event_time.isoformat(),
+                    "price": 101.0,
+                    "payload": {"index_price": 100.0, "funding_rate": 0.0001},
+                }
+            )
+            + "\n"
+        )
+
+    frame = load_mark_interval(
+        tmp_path,
+        datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+        datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+    )
+
+    assert frame["event_time_ms"].tolist() == [int(event_time.timestamp() * 1000)]
+    assert frame["mark_price"].tolist() == [101.0]
+    assert frame["funding_rate"].tolist() == [0.0001]
+
+
+def test_load_liquidation_interval_reads_prospective_wal_jsonl(tmp_path: Path) -> None:
+    event_time = datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC)
+    partition = tmp_path / "date=2026-01-01"
+    partition.mkdir(parents=True)
+    with gzip.open(partition / "events.jsonl.gz", "wt", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps(
+                {
+                    "event_time": event_time.isoformat(),
+                    "sequence_id": 42,
+                    "price": 100.0,
+                    "quantity": 2.0,
+                    "side": "SELL",
+                }
+            )
+            + "\n"
+        )
+
+    frame = load_liquidation_interval(
+        tmp_path,
+        datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+        datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+    )
+
+    assert frame["event_time_ms"].tolist() == [int(event_time.timestamp() * 1000)]
+    assert frame["quantity"].tolist() == [2.0]
+    assert frame["side"].tolist() == ["SELL"]
 
 
 def test_load_trade_interval_converts_event_time_to_epoch_ms(tmp_path: Path) -> None:

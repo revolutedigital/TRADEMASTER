@@ -42,8 +42,14 @@ def main() -> int:
     frame["target"] = frame[target_column].astype("int8")
     results = []
     feature_sets = ["flow", "flow_price", "flow_price_session"]
+    if _has_auxiliary_features(frame):
+        feature_sets.extend(["flow_aux", "flow_price_aux", "flow_price_aux_session"])
     if _has_book_features(frame):
         feature_sets.extend(["flow_book", "flow_price_book", "flow_price_book_session"])
+        if _has_auxiliary_features(frame):
+            feature_sets.extend(
+                ["flow_book_aux", "flow_price_book_aux", "flow_price_book_aux_session"]
+            )
     for horizon in (120, 300):
         for feature_set in feature_sets:
             result = run_calibrated_walk_forward(
@@ -88,6 +94,18 @@ def _has_book_features(frame: pd.DataFrame) -> bool:
             "spread_bps",
             "depth_imbalance",
             "microprice_displacement_bps",
+        )
+    )
+
+
+def _has_auxiliary_features(frame: pd.DataFrame) -> bool:
+    return any(
+        column in frame.columns
+        for column in (
+            "mark_available",
+            "mark_index_basis_bps",
+            "funding_rate",
+            "liquidation_net_qty_1s",
         )
     )
 

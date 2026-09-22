@@ -23,6 +23,17 @@ BOOK_FEATURE_SETS = (
     "flow_book",
     "flow_price_book",
     "flow_price_book_session",
+    "flow_book_aux",
+    "flow_price_book_aux",
+    "flow_price_book_aux_session",
+)
+AUXILIARY_FEATURE_SETS = (
+    "flow_aux",
+    "flow_price_aux",
+    "flow_price_aux_session",
+    "flow_book_aux",
+    "flow_price_book_aux",
+    "flow_price_book_aux_session",
 )
 SHA256_HEX_LENGTH = 64
 
@@ -167,18 +178,47 @@ def feature_columns(frame: pd.DataFrame, feature_set: str) -> tuple[str, ...]:
             )
         )
     )
+    auxiliary = tuple(
+        column
+        for column in frame.columns
+        if column.startswith(
+            (
+                "mark_available",
+                "mark_update_age_ms",
+                "mark_index_basis_bps",
+                "directed_mark_index_basis_bps",
+                "funding_rate",
+                "directed_funding_rate",
+                "liquidation_count_",
+                "liquidation_net_qty_",
+                "directed_liquidation_net_qty_",
+                "liquidation_abs_qty_",
+                "liquidation_net_notional_",
+                "directed_liquidation_net_notional_",
+                "liquidation_abs_notional_",
+            )
+        )
+    )
     available = {
         "flow": flow,
         "flow_price": flow + price,
         "flow_price_session": flow + price + session,
+        "flow_aux": flow + auxiliary,
+        "flow_price_aux": flow + price + auxiliary,
+        "flow_price_aux_session": flow + price + auxiliary + session,
         "flow_book": flow + book,
         "flow_price_book": flow + price + book,
         "flow_price_book_session": flow + price + book + session,
+        "flow_book_aux": flow + book + auxiliary,
+        "flow_price_book_aux": flow + price + book + auxiliary,
+        "flow_price_book_aux_session": flow + price + book + auxiliary + session,
     }
     if feature_set not in available:
         raise ValueError(f"unknown feature set: {feature_set}")
     if feature_set in BOOK_FEATURE_SETS and not book:
         raise ValueError(f"feature set {feature_set} requires book feature columns")
+    if feature_set in AUXILIARY_FEATURE_SETS and not auxiliary:
+        raise ValueError(f"feature set {feature_set} requires auxiliary feature columns")
     columns = tuple(dict.fromkeys(available[feature_set]))
     if not columns:
         raise ValueError(f"feature set {feature_set} has no available columns")
@@ -293,6 +333,10 @@ def freeze_top_p_policy(
                 "book_ask_liquidity_removed_qty_",
                 "book_spread_widening_bps_",
                 "book_spread_recovery_bps_",
+                "mark_update_age_ms",
+                "liquidation_count_",
+                "liquidation_abs_qty_",
+                "liquidation_abs_notional_",
             ],
             "scaler_mean": _float_list(scaler.mean_),
             "scaler_scale": _float_list(scaler.scale_),
@@ -671,6 +715,10 @@ def _matrix(frame: pd.DataFrame, columns: tuple[str, ...]) -> np.ndarray:
                 "book_ask_liquidity_removed_qty_",
                 "book_spread_widening_bps_",
                 "book_spread_recovery_bps_",
+                "mark_update_age_ms",
+                "liquidation_count_",
+                "liquidation_abs_qty_",
+                "liquidation_abs_notional_",
             )
         ):
             matrix[:, index] = np.log1p(np.maximum(matrix[:, index], 0))

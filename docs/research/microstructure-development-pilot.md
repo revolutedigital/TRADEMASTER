@@ -133,6 +133,8 @@ cd backend
   --end-date YYYY-MM-DD \
   --source-root data/microstructure_v1/normalized/trades \
   --book-source-root data/microstructure_v1/prospective-wal/depth \
+  --mark-source-root data/microstructure_v1/prospective-wal/mark_price \
+  --liquidation-source-root data/microstructure_v1/prospective-wal/liquidation \
   --require-book-features \
   --max-book-staleness-ms 1000
 ```
@@ -144,14 +146,19 @@ adds `book_available`, `book_update_age_ms`, `spread_bps`,
 dynamics: event count, bid/ask replenishment, bid/ask removed liquidity, net book
 pressure, spread widening/recovery, depth-imbalance change, and microprice-change
 proxies. Directional versions are emitted for imbalance, microprice displacement,
-book pressure, depth-imbalance change, and microprice-change features. If any
-decision lacks fresh book state, the partition fails instead of silently producing
-a fake “book” model.
+book pressure, depth-imbalance change, and microprice-change features. Optional
+mark/liquidation joins add mark availability, mark/index basis, funding, and
+windowed liquidation count/quantity/notional with directional liquidation
+features. If any decision lacks fresh book state, the partition fails instead of
+silently producing a fake “book” model.
 
 The top-p pilot recognizes book-specific feature families only when those columns
-exist (`flow_book`, `flow_price_book`, `flow_price_book_session`). Without real
-book columns it continues to run only the historical flow/price/session families,
-so a missing WAL join cannot be mistaken for a book-edge test.
+exist (`flow_book`, `flow_price_book`, `flow_price_book_session`). It also adds
+auxiliary sets (`flow_aux`, `flow_price_aux`, `flow_price_aux_session`, and
+book+aux variants) only when real mark/liquidation columns exist. Without real
+book or auxiliary columns it continues to run only the historical
+flow/price/session families, so a missing WAL join cannot be mistaken for a
+book-edge or liquidation/funding-edge test.
 
 Once a candidate is selected, the probability rule used for prospective shadow
 must be frozen into a deterministic artifact before any shadow partition opens:

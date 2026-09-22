@@ -107,6 +107,30 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+  /research/microstructure/experiments/{experiment_id}/testnet-eligibility:
+    get:
+      operationId: getMicrostructureTestnetEligibility
+      summary: Read research-to-Testnet metadata without granting execution access.
+      description: |
+        Crosses the experiment status, the prospective book-evidence artifact,
+        and the append-only shadow ledger. This endpoint is a release checklist
+        only: it never submits orders, activates a strategy, or authorizes
+        Testnet or LIVE execution.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ExperimentId'
+      responses:
+        '200':
+          description: Metadata-only Testnet eligibility checklist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestnetEligibility'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /research/microstructure/experiments/{experiment_id}/freeze:
     post:
       operationId: freezeMicrostructureExperiment
@@ -394,6 +418,68 @@ components:
         status_reasons:
           type: array
           items: { type: string }
+        safety:
+          $ref: '#/components/schemas/SafetyBoundary'
+        generated_at:
+          type: string
+          format: date-time
+    TestnetEligibility:
+      type: object
+      additionalProperties: false
+      required:
+        - experiment_id
+        - experiment_status
+        - eligible
+        - reasons
+        - book_evidence_contiguous_days
+        - prospective_shadow_days
+        - prospective_shadow_signal_count
+        - unresolved_failures
+        - explicit_testnet_release
+        - release_request_required
+        - evidence_artifact_available
+        - order_submission_allowed
+        - execution_authorization
+        - safety
+        - generated_at
+      properties:
+        experiment_id:
+          type: string
+          format: uuid
+        experiment_status:
+          $ref: '#/components/schemas/ExperimentStatus'
+        eligible:
+          type: boolean
+          description: Metadata-only readiness; still grants no execution access.
+        reasons:
+          type: array
+          items: { type: string }
+        book_evidence_contiguous_days:
+          type: integer
+          minimum: 0
+        prospective_shadow_days:
+          type: integer
+          minimum: 0
+        prospective_shadow_signal_count:
+          type: integer
+          minimum: 0
+        unresolved_failures:
+          type: integer
+          minimum: 0
+        explicit_testnet_release:
+          type: boolean
+          const: false
+        release_request_required:
+          type: boolean
+          const: true
+        evidence_artifact_available:
+          type: boolean
+        order_submission_allowed:
+          type: boolean
+          const: false
+        execution_authorization:
+          type: string
+          const: none
         safety:
           $ref: '#/components/schemas/SafetyBoundary'
         generated_at:

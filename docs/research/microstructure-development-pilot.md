@@ -184,3 +184,10 @@ The API endpoint `GET /api/v1/research/microstructure/evidence-gate` reads only
 that artifact. Missing, invalid, or incomplete evidence is fail-closed:
 `artifact_available=false`, `eligible=false`, `order_submission_allowed=false`,
 and `execution_authorization=none`.
+
+The research panel also exposes
+`GET /api/v1/research/microstructure/experiments/{experiment_id}/testnet-eligibility`.
+That endpoint crosses experiment status, the book-evidence artifact, and the
+append-only shadow ledger. It is still metadata only: `explicit_testnet_release`
+is always false in this read path, `release_request_required=true`, and order
+submission remains blocked.

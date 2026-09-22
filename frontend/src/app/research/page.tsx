@@ -50,6 +50,23 @@ interface EvidenceGateStatus {
   generated_at: string;
 }
 
+interface TestnetEligibility {
+  experiment_id: string;
+  experiment_status: ExperimentStatus;
+  eligible: boolean;
+  reasons: string[];
+  book_evidence_contiguous_days: number;
+  prospective_shadow_days: number;
+  prospective_shadow_signal_count: number;
+  unresolved_failures: number;
+  explicit_testnet_release: false;
+  release_request_required: true;
+  evidence_artifact_available: boolean;
+  order_submission_allowed: false;
+  execution_authorization: "none";
+  generated_at: string;
+}
+
 const statusVariant: Record<ExperimentStatus, "default" | "primary" | "danger" | "warning" | "success"> = {
   DRAFT: "default",
   FROZEN: "primary",
@@ -62,6 +79,8 @@ export default function ResearchPage() {
   const [experiments, setExperiments] = useState<Experiment[]>([]);
   const [evidenceStatus, setEvidenceStatus] = useState<EvidenceGateStatus | null>(null);
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
+  const [testnetEligibility, setTestnetEligibility] = useState<TestnetEligibility | null>(null);
+  const [testnetError, setTestnetError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,6 +88,7 @@ export default function ResearchPage() {
     setLoading(true);
     setError(null);
     setEvidenceError(null);
+    setTestnetError(null);
     try {
       const [experimentsResult, evidenceResult] = await Promise.allSettled([
         apiFetch<Experiment[]>("/api/v1/research/microstructure/experiments"),
@@ -77,7 +97,8 @@ export default function ResearchPage() {
       if (experimentsResult.status === "rejected") {
         throw experimentsResult.reason;
       }
-      setExperiments(experimentsResult.value);
+      const loadedExperiments = experimentsResult.value;
+      setExperiments(loadedExperiments);
       if (evidenceResult.status === "fulfilled") {
         setEvidenceStatus(evidenceResult.value);
       } else {
@@ -87,6 +108,24 @@ export default function ResearchPage() {
             ? evidenceResult.reason.message
             : "Falha ao carregar gate de evidência",
         );
+      }
+      if (loadedExperiments.length > 0) {
+        try {
+          setTestnetEligibility(
+            await apiFetch<TestnetEligibility>(
+              `/api/v1/research/microstructure/experiments/${loadedExperiments[0].id}/testnet-eligibility`,
+            ),
+          );
+        } catch (requestError) {
+          setTestnetEligibility(null);
+          setTestnetError(
+            requestError instanceof Error
+              ? requestError.message
+              : "Falha ao carregar checklist Testnet",
+          );
+        }
+      } else {
+        setTestnetEligibility(null);
       }
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Falha ao carregar evidências");
@@ -135,6 +174,7 @@ export default function ResearchPage() {
       </div>
 
       <EvidenceGatePanel status={evidenceStatus} error={evidenceError} longestBookStreak={longestBookStreak} />
+      <TestnetEligibilityPanel status={testnetEligibility} error={testnetError} hasExperiments={experiments.length > 0} />
 
       {loading ? (
         <div className="flex justify-center py-16"><Spinner size="lg" /></div>
@@ -176,6 +216,52 @@ export default function ResearchPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function TestnetEligibilityPanel({
+  status,
+  error,
+  hasExperiments,
+}: {
+  status: TestnetEligibility | null;
+  error: string | null;
+  hasExperiments: boolean;
+}) {
+  const checklistReady = status?.eligible === true;
+  const visibleReason = error ?? status?.reasons[0] ?? (hasExperiments ? null : "nenhum_experimento_registrado");
+
+  return (
+    <Card className={checklistReady ? "border-blue-500/30" : "border-red-500/30"}>
+      <CardContent>
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="flex gap-3">
+            <Ban className={`mt-0.5 h-5 w-5 shrink-0 ${checklistReady ? "text-blue-400" : "text-red-400"}`} />
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="font-semibold text-[var(--color-text)]">Checklist Testnet</h2>
+                <Badge variant={checklistReady ? "primary" : "danger"}>
+                  {checklistReady ? "Pronto para release manual" : "Sem release"}
+                </Badge>
+              </div>
+              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                Cruza experimento, 60 dias de book e 20–30 dias de shadow. Mesmo quando ficar pronto,
+                este painel continua sem autorização de execução e exige release explícito separado.
+              </p>
+              {visibleReason ? (
+                <p className="mt-2 font-mono text-xs text-red-300">{visibleReason}</p>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="grid min-w-72 grid-cols-3 gap-3 text-sm">
+            <GateMetric label="Book" value={`${status?.book_evidence_contiguous_days ?? 0}/60`} />
+            <GateMetric label="Shadow" value={`${status?.prospective_shadow_days ?? 0}/20`} />
+            <GateMetric label="Falhas" value={status?.unresolved_failures ?? 0} />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

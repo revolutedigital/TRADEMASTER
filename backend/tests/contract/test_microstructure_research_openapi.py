@@ -31,6 +31,7 @@ def test_microstructure_spec_is_openapi_31_and_research_only() -> None:
         "/research/microstructure/evidence-gate",
         "/research/microstructure/experiments",
         "/research/microstructure/experiments/{experiment_id}",
+        "/research/microstructure/experiments/{experiment_id}/testnet-eligibility",
         "/research/microstructure/experiments/{experiment_id}/freeze",
         "/research/microstructure/experiments/{experiment_id}/report",
     }
@@ -83,6 +84,17 @@ def test_microstructure_spec_publishes_the_book_evidence_artifact_contract() -> 
     assert "safety" in status["required"]
     assert gate["required_complete_days"]["const"] == 60
     assert gate["manifest_sha256"]["pattern"] == "^[a-f0-9]{64}$"
+
+
+def test_microstructure_spec_publishes_metadata_only_testnet_eligibility() -> None:
+    eligibility = _load_spec()["components"]["schemas"]["TestnetEligibility"]
+    properties = eligibility["properties"]
+
+    assert eligibility["additionalProperties"] is False
+    assert properties["explicit_testnet_release"]["const"] is False
+    assert properties["release_request_required"]["const"] is True
+    assert properties["order_submission_allowed"]["const"] is False
+    assert properties["execution_authorization"]["const"] == "none"
 
 
 def test_preregistration_hash_matches_the_frozen_document() -> None:

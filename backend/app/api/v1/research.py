@@ -19,6 +19,7 @@ from app.schemas.research_experiment import (
     EvidenceGateStatusResponse,
     ExperimentReportResponse,
     ExperimentResponse,
+    TestnetEligibilityResponse,
 )
 from app.services.data.research_registry import (
     BurnedDataConflict,
@@ -29,6 +30,7 @@ from app.services.data.research_registry import (
     research_registry,
 )
 from app.services.market.microstructure_wal_audit import build_evidence_gate_status
+from app.services.research.testnet_release_gate import evaluate_testnet_eligibility
 
 
 router = APIRouter()
@@ -38,6 +40,60 @@ router = APIRouter()
 async def get_evidence_gate_status(
     _user: dict = Depends(require_auth),
 ) -> EvidenceGateStatusResponse:
+    return _read_evidence_gate_status()
+
+
+@router.get(
+    "/experiments/{experiment_id}/testnet-eligibility",
+    response_model=TestnetEligibilityResponse,
+)
+async def get_testnet_eligibility(
+    experiment_id: str,
+    db: AsyncSession = Depends(get_db),
+    _user: dict = Depends(require_auth),
+) -> TestnetEligibilityResponse:
+    experiment = await research_experiment_repository.get(db, experiment_id)
+    if experiment is None:
+        raise HTTPException(status_code=404, detail="Research experiment was not found")
+
+    evidence_status = _read_evidence_gate_status()
+    shadow_decision_times = await research_experiment_repository.list_shadow_decision_times(
+        db,
+        experiment_id,
+    )
+    prospective_shadow_days = _count_distinct_utc_days(shadow_decision_times)
+    unresolved_failures = len(evidence_status.status_reasons)
+    eligibility = evaluate_testnet_eligibility(
+        experiment,
+        book_evidence_contiguous_days=(
+            evidence_status.book_evidence_gate.longest_complete_streak_days
+            if evidence_status.artifact_available
+            else 0
+        ),
+        prospective_shadow_days=prospective_shadow_days,
+        unresolved_failures=unresolved_failures,
+        explicit_testnet_release=False,
+    )
+    return TestnetEligibilityResponse(
+        experiment_id=experiment.id,
+        experiment_status=experiment.status,
+        eligible=eligibility.eligible,
+        reasons=list(eligibility.reasons),
+        book_evidence_contiguous_days=eligibility.book_evidence_contiguous_days,
+        prospective_shadow_days=eligibility.prospective_shadow_days,
+        prospective_shadow_signal_count=len(shadow_decision_times),
+        unresolved_failures=unresolved_failures,
+        explicit_testnet_release=False,
+        release_request_required=True,
+        evidence_artifact_available=evidence_status.artifact_available,
+        order_submission_allowed=False,
+        execution_authorization="none",
+        safety=_safety(),
+        generated_at=datetime.now(UTC),
+    )
+
+
+def _read_evidence_gate_status() -> EvidenceGateStatusResponse:
     artifact_path = Path(settings.microstructure_evidence_status_path)
     if not artifact_path.exists():
         return _fallback_evidence_gate_status("evidence_gate_artifact_missing")
@@ -48,7 +104,6 @@ async def get_evidence_gate_status(
         return _fallback_evidence_gate_status(
             f"evidence_gate_artifact_unreadable:{type(error).__name__}"
         )
-
 
 @router.post("/experiments", response_model=ExperimentResponse, status_code=status.HTTP_201_CREATED)
 async def create_experiment(
@@ -198,3 +253,12 @@ def _fallback_evidence_gate_status(reason: str) -> EvidenceGateStatusResponse:
         status_reasons=(reason,),
     )
     return EvidenceGateStatusResponse.model_validate(payload)
+
+
+def _count_distinct_utc_days(values: list[datetime]) -> int:
+    return len(
+        {
+            (value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)).date()
+            for value in values
+        }
+    )

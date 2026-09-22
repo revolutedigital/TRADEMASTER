@@ -124,6 +124,26 @@ class EvidenceGateStatusResponse(BaseModel):
     generated_at: datetime
 
 
+class TestnetEligibilityResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    experiment_id: str
+    experiment_status: ExperimentStatus
+    eligible: bool
+    reasons: list[str]
+    book_evidence_contiguous_days: int = Field(ge=0)
+    prospective_shadow_days: int = Field(ge=0)
+    prospective_shadow_signal_count: int = Field(ge=0)
+    unresolved_failures: int = Field(ge=0)
+    explicit_testnet_release: Literal[False]
+    release_request_required: Literal[True]
+    evidence_artifact_available: bool
+    order_submission_allowed: Literal[False]
+    execution_authorization: Literal["none"]
+    safety: SafetyBoundary
+    generated_at: datetime
+
+
 class ExperimentResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

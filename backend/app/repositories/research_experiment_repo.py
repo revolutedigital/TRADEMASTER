@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +12,7 @@ from app.models.research_experiment import (
     ResearchExperiment,
     ResearchExperimentEvent,
     ResearchHypothesisAttempt,
+    ResearchShadowSignal,
 )
 
 
@@ -68,6 +71,18 @@ class ResearchExperimentRepository:
             select(ResearchHypothesisAttempt)
             .where(ResearchHypothesisAttempt.experiment_id == experiment_id)
             .order_by(ResearchHypothesisAttempt.id)
+        )
+        return list(result.scalars().all())
+
+    async def list_shadow_decision_times(
+        self,
+        db: AsyncSession,
+        experiment_id: str,
+    ) -> list[datetime]:
+        result = await db.execute(
+            select(ResearchShadowSignal.decision_time)
+            .where(ResearchShadowSignal.experiment_id == experiment_id)
+            .order_by(ResearchShadowSignal.decision_time)
         )
         return list(result.scalars().all())
 

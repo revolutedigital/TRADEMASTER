@@ -128,6 +128,13 @@ cd backend
   --wal-root data/microstructure_v1/prospective-wal \
   --output-root data/microstructure_v1/normalized/trades
 
+./.venv/bin/python scripts/research/build_microstructure_dataset.py \
+  --market spot \
+  --kinds aggTrades \
+  --start-date YYYY-MM-DD \
+  --end-date YYYY-MM-DD \
+  --root data/microstructure_v1
+
 ./.venv/bin/python scripts/research/build_research_dataset.py \
   --start-date YYYY-MM-DD \
   --end-date YYYY-MM-DD \
@@ -135,14 +142,17 @@ cd backend
   --book-source-root data/microstructure_v1/prospective-wal/depth \
   --mark-source-root data/microstructure_v1/prospective-wal/mark_price \
   --liquidation-source-root data/microstructure_v1/prospective-wal/liquidation \
-  --spot-source-root data/microstructure_v1/normalized/spot-trades \
+  --spot-source-root data/microstructure_v1/normalized/spot-aggTrades \
   --require-book-features \
   --max-book-staleness-ms 1000
 ```
 
 The first command converts recorder `trade/date=*/events.jsonl.gz` WAL files
 into the same immutable parquet schema used by the replay. The second command
-adds `book_available`, `book_update_age_ms`, `spread_bps`,
+downloads and normalizes Binance Spot public archive `aggTrades` into
+`normalized/spot-aggTrades`; spot timestamps are preserved at the archive's
+millisecond/microsecond precision. The third command adds `book_available`,
+`book_update_age_ms`, `spread_bps`,
 `depth_imbalance`, `microprice_displacement_bps`, and short-window top-of-book
 dynamics: event count, bid/ask replenishment, bid/ask removed liquidity, net book
 pressure, spread widening/recovery, depth-imbalance change, and microprice-change

@@ -60,6 +60,31 @@ def test_normalize_aggregate_trades_and_write_manifest(tmp_path: Path) -> None:
     assert normalized_path.with_suffix(".manifest.json").exists()
 
 
+def test_normalize_spot_aggregate_trades_with_microsecond_timestamp(tmp_path: Path) -> None:
+    content = _zip_csv("1,100.0,2.0,10,11,1767225600000123,true,true\n")
+    archive_path = tmp_path / "source.zip"
+    archive_path.write_bytes(content)
+    normalized_path = tmp_path / "events.parquet"
+
+    manifest = normalize_trade_archive(
+        archive_path=archive_path,
+        normalized_path=normalized_path,
+        source_url="https://data.binance.vision/data/spot/daily/aggTrades/BTCUSDT/example.zip",
+        source_sha256=hashlib.sha256(content).hexdigest(),
+        symbol="BTCUSDT",
+        kind="aggTrades",
+        utc_date=date(2026, 1, 1),
+        product="spot",
+    )
+
+    normalized = pd.read_parquet(normalized_path)
+    assert normalized["product"].tolist() == ["spot"]
+    assert normalized["event_time"].iloc[0] == pd.Timestamp("2026-01-01T00:00:00.000123Z")
+    assert normalized["quote_quantity"].tolist() == [200.0]
+    assert manifest.product == "spot"
+    assert manifest.event_type == MarketEventType.AGG_TRADE
+
+
 def test_duplicate_sequences_are_quarantined(tmp_path: Path) -> None:
     content = _zip_csv(
         "1,100.0,2.0,10,11,1767225600000,true\n1,101.0,1.5,12,12,1767225600100,false\n"
@@ -147,6 +172,21 @@ async def test_downloader_verifies_checksum_and_writes_atomically(tmp_path: Path
     assert observed_hash == checksum
     assert destination.read_bytes() == content
     assert not destination.with_suffix(".zip.part").exists()
+
+
+def test_spot_downloader_uses_spot_public_archive_base() -> None:
+    client = BinancePublicArchiveClient(market="spot")
+
+    url = client.archive_url(
+        symbol="BTCUSDT",
+        kind="aggTrades",
+        utc_date=date(2026, 1, 1),
+    )
+
+    assert url == (
+        "https://data.binance.vision/data/spot/daily/aggTrades/"
+        "BTCUSDT/BTCUSDT-aggTrades-2026-01-01.zip"
+    )
 
 
 def test_canonical_event_rejects_crossed_quote() -> None:

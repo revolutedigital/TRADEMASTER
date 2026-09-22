@@ -20,10 +20,15 @@ from app.schemas.microstructure import DatasetPartitionManifest, MarketEventType
 
 
 ArchiveKind = Literal["aggTrades", "trades"]
-ARCHIVE_BASE_URL = "https://data.binance.vision/data/futures/um/daily"
+ArchiveProduct = Literal["usdm_perpetual", "spot"]
+ARCHIVE_BASE_URLS: dict[ArchiveProduct, str] = {
+    "usdm_perpetual": "https://data.binance.vision/data/futures/um/daily",
+    "spot": "https://data.binance.vision/data/spot/daily",
+}
+ARCHIVE_BASE_URL = ARCHIVE_BASE_URLS["usdm_perpetual"]
 FUTURES_MARKET_URL = "https://fapi.binance.com"
-ARCHIVE_COLUMNS: dict[ArchiveKind, tuple[str, ...]] = {
-    "aggTrades": (
+ARCHIVE_COLUMNS: dict[tuple[ArchiveProduct, ArchiveKind], tuple[str, ...]] = {
+    ("usdm_perpetual", "aggTrades"): (
         "sequence_id",
         "price",
         "quantity",
@@ -32,13 +37,32 @@ ARCHIVE_COLUMNS: dict[ArchiveKind, tuple[str, ...]] = {
         "event_timestamp",
         "is_buyer_maker",
     ),
-    "trades": (
+    ("usdm_perpetual", "trades"): (
         "sequence_id",
         "price",
         "quantity",
         "quote_quantity",
         "event_timestamp",
         "is_buyer_maker",
+    ),
+    ("spot", "aggTrades"): (
+        "sequence_id",
+        "price",
+        "quantity",
+        "first_sequence_id",
+        "last_sequence_id",
+        "event_timestamp",
+        "is_buyer_maker",
+        "is_best_match",
+    ),
+    ("spot", "trades"): (
+        "sequence_id",
+        "price",
+        "quantity",
+        "quote_quantity",
+        "event_timestamp",
+        "is_buyer_maker",
+        "is_best_match",
     ),
 }
 
@@ -53,17 +77,33 @@ class BinancePublicArchiveClient:
     def __init__(
         self,
         *,
-        archive_base_url: str = ARCHIVE_BASE_URL,
+        market: ArchiveProduct = "usdm_perpetual",
+        archive_base_url: str | None = None,
         market_base_url: str = FUTURES_MARKET_URL,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
-        self._archive_base_url = archive_base_url.rstrip("/")
+        self._archive_base_url_override = archive_base_url is not None
+        self._archive_base_url = (archive_base_url or ARCHIVE_BASE_URLS[market]).rstrip("/")
+        self._market = market
         self._market_base_url = market_base_url.rstrip("/")
         self._transport = transport
 
-    def archive_url(self, *, symbol: str, kind: ArchiveKind, utc_date: date) -> str:
+    def archive_url(
+        self,
+        *,
+        symbol: str,
+        kind: ArchiveKind,
+        utc_date: date,
+        market: ArchiveProduct | None = None,
+    ) -> str:
+        selected_market = market or self._market
+        base_url = (
+            self._archive_base_url
+            if self._archive_base_url_override
+            else ARCHIVE_BASE_URLS[selected_market].rstrip("/")
+        )
         filename = f"{symbol.upper()}-{kind}-{utc_date.isoformat()}.zip"
-        return f"{self._archive_base_url}/{kind}/{symbol.upper()}/{filename}"
+        return f"{base_url}/{kind}/{symbol.upper()}/{filename}"
 
     async def download_daily_archive(
         self,
@@ -72,8 +112,14 @@ class BinancePublicArchiveClient:
         kind: ArchiveKind,
         utc_date: date,
         destination: Path,
+        market: ArchiveProduct | None = None,
     ) -> tuple[Path, str, str]:
-        source_url = self.archive_url(symbol=symbol, kind=kind, utc_date=utc_date)
+        source_url = self.archive_url(
+            symbol=symbol,
+            kind=kind,
+            utc_date=utc_date,
+            market=market,
+        )
         checksum_url = f"{source_url}.CHECKSUM"
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(120),
@@ -251,6 +297,7 @@ def normalize_trade_archive(
     symbol: str,
     kind: ArchiveKind,
     utc_date: date,
+    product: ArchiveProduct = "usdm_perpetual",
     chunk_rows: int = 250_000,
 ) -> DatasetPartitionManifest:
     """Normalize one verified archive without loading the whole day into memory."""
@@ -260,7 +307,7 @@ def normalize_trade_archive(
     except ImportError as error:
         raise RuntimeError("The research extra with pyarrow is required") from error
 
-    columns = ARCHIVE_COLUMNS[kind]
+    columns = ARCHIVE_COLUMNS[(product, kind)]
     event_type = MarketEventType.AGG_TRADE if kind == "aggTrades" else MarketEventType.TRADE
     normalized_path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = normalized_path.with_suffix(f"{normalized_path.suffix}.part")
@@ -293,7 +340,12 @@ def normalize_trade_archive(
                 dtype=str,
             )
             for raw_chunk in chunks:
-                chunk = _normalize_trade_chunk(raw_chunk, kind=kind, symbol=symbol)
+                chunk = _normalize_trade_chunk(
+                    raw_chunk,
+                    kind=kind,
+                    symbol=symbol,
+                    product=product,
+                )
                 if chunk.empty:
                     continue
                 sequence_ids = chunk["sequence_id"].to_numpy(dtype=np.int64)
@@ -339,7 +391,7 @@ def normalize_trade_archive(
     quality_status = "VALID" if sequence_gap_count == 0 else "VALID_WITH_SEQUENCE_GAPS"
     manifest = DatasetPartitionManifest(
         venue="binance",
-        product="usdm_perpetual",
+        product=product,
         symbol=symbol.upper(),
         event_type=event_type,
         utc_date=utc_date.isoformat(),
@@ -498,9 +550,10 @@ def _normalize_trade_chunk(
     *,
     kind: ArchiveKind,
     symbol: str,
+    product: ArchiveProduct,
 ) -> pd.DataFrame:
     chunk = raw_chunk.copy()
-    for column in ARCHIVE_COLUMNS[kind]:
+    for column in ARCHIVE_COLUMNS[(product, kind)]:
         if column == "is_buyer_maker":
             continue
         chunk[column] = pd.to_numeric(chunk[column], errors="coerce")
@@ -510,7 +563,7 @@ def _normalize_trade_chunk(
     normalized = pd.DataFrame(
         {
             "venue": "binance",
-            "product": "usdm_perpetual",
+            "product": product,
             "symbol": symbol.upper(),
             "event_type": "AGG_TRADE" if kind == "aggTrades" else "TRADE",
             "event_time": pd.to_datetime(timestamp_values, unit=timestamp_unit, utc=True),

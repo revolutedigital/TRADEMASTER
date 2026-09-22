@@ -335,9 +335,10 @@ check, or if the prospective shadow report is missing, dry-run, incomplete, or
 non-positive under stress costs, the gate records the concrete reason and fails
 closed. A prospective shadow report is complete only when it is committed
 (`committed=true`, `dry_run=false`), its `outcome_count` matches `signal_count`,
-`complete=true`, and every listed outcome has a unique `signal_id`, finite
-expected/stress bps, a 64-character `label_sha256`, and no execution/order
-identifier.
+`complete=true`, its `decision_day_count` and `outcome_day_count` prove a
+20-to-30-day prospective block, and every listed outcome has a unique
+`signal_id`, UTC `decision_time`, finite expected/stress bps, a 64-character
+`label_sha256`, and no execution/order identifier.
 
 The research API enforces that boundary at decision time. The endpoint
 `POST /api/v1/research/microstructure/experiments/{experiment_id}/decision`

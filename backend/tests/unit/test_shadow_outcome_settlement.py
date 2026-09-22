@@ -116,9 +116,12 @@ def test_settlement_report_marks_outcome_completeness() -> None:
     assert report["dry_run"] is False
     assert report["signal_count"] == 1
     assert report["outcome_count"] == 1
+    assert report["decision_day_count"] == 1
+    assert report["outcome_day_count"] == 1
     assert report["complete"] is True
     assert report["incomplete_signal_ids"] == []
     assert len(report["outcomes"]) == 1
+    assert report["outcomes"][0]["decision_time"] == "1970-01-01T00:00:00+00:00"
 
 
 @pytest.mark.asyncio

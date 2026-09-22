@@ -171,6 +171,11 @@ def _settlement_report(
     expected_values = [settlement.expected_net_bps for settlement in settlements]
     stress_values = [settlement.stress_net_bps for settlement in settlements]
     outcome_count = len(settlements)
+    decision_dates = {
+        settlement.decision_time.astimezone(UTC).date().isoformat()
+        for settlement in settlements
+    }
+    decision_day_count = len(decision_dates)
     return {
         "research_only": True,
         "order_submission_allowed": False,
@@ -181,6 +186,8 @@ def _settlement_report(
         "policy": asdict(policy),
         "signal_count": outcome_count,
         "outcome_count": outcome_count,
+        "decision_day_count": decision_day_count,
+        "outcome_day_count": decision_day_count,
         "complete": True,
         "incomplete_signal_ids": [],
         "expected_mean_bps": _mean(expected_values),
@@ -192,6 +199,7 @@ def _settlement_report(
         "outcomes": [
             {
                 "signal_id": settlement.signal_id,
+                "decision_time": settlement.decision_time.isoformat(),
                 "would_enter": settlement.would_enter,
                 "expected_net_bps": settlement.expected_net_bps,
                 "stress_net_bps": settlement.stress_net_bps,
@@ -219,6 +227,8 @@ def _empty_report(
         "policy": asdict(policy),
         "signal_count": 0,
         "outcome_count": 0,
+        "decision_day_count": 0,
+        "outcome_day_count": 0,
         "complete": True,
         "incomplete_signal_ids": [],
         "expected_mean_bps": None,

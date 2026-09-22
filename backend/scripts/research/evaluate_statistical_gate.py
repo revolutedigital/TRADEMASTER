@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -143,6 +144,8 @@ def _read_prospective_shadow_positive(path: Path | None) -> tuple[bool, list[str
         reasons.append("prospective_shadow_report_is_dry_run")
     signal_count = _positive_int_or_zero(payload.get("signal_count"))
     outcome_count = _positive_int_or_zero(payload.get("outcome_count"))
+    decision_day_count = _positive_int_or_zero(payload.get("decision_day_count"))
+    outcome_day_count = _positive_int_or_zero(payload.get("outcome_day_count"))
     outcomes = payload.get("outcomes")
     if payload.get("complete") is not True:
         reasons.append("prospective_shadow_report_incomplete")
@@ -150,12 +153,21 @@ def _read_prospective_shadow_positive(path: Path | None) -> tuple[bool, list[str
         reasons.append("prospective_shadow_report_has_no_signals")
     if outcome_count != signal_count:
         reasons.append("prospective_shadow_outcome_count_mismatch")
+    if decision_day_count < 20:
+        reasons.append("prospective_shadow_has_fewer_than_20_days")
+    if decision_day_count > 30:
+        reasons.append("prospective_shadow_exceeds_30_days")
+    if outcome_day_count != decision_day_count:
+        reasons.append("prospective_shadow_outcome_day_count_mismatch")
     if not isinstance(outcomes, list):
         reasons.append("prospective_shadow_outcomes_missing")
     elif len(outcomes) != signal_count:
         reasons.append("prospective_shadow_outcome_list_incomplete")
     else:
-        reasons.extend(_shadow_outcome_reasons(outcomes))
+        outcome_reasons, outcome_dates = _shadow_outcome_reasons(outcomes)
+        reasons.extend(outcome_reasons)
+        if len(outcome_dates) != decision_day_count:
+            reasons.append("prospective_shadow_outcome_dates_mismatch")
     expected_mean = _finite_float(payload.get("expected_mean_bps"))
     stress_mean = _finite_float(payload.get("stress_mean_bps"))
     if expected_mean is None or expected_mean <= 0:
@@ -165,8 +177,9 @@ def _read_prospective_shadow_positive(path: Path | None) -> tuple[bool, list[str
     return not reasons, reasons
 
 
-def _shadow_outcome_reasons(outcomes: list[Any]) -> list[str]:
+def _shadow_outcome_reasons(outcomes: list[Any]) -> tuple[list[str], set[str]]:
     reasons: list[str] = []
+    outcome_dates: set[str] = set()
     seen_signal_ids: set[int] = set()
     for index, outcome in enumerate(outcomes):
         if not isinstance(outcome, dict):
@@ -188,7 +201,12 @@ def _shadow_outcome_reasons(outcomes: list[Any]) -> list[str]:
             reasons.append(f"prospective_shadow_outcome_{index}_stress_net_bps_invalid")
         if "order_id" in outcome or "execution_id" in outcome:
             reasons.append(f"prospective_shadow_outcome_{index}_contains_execution_field")
-    return reasons
+        decision_date = _outcome_decision_date(outcome.get("decision_time"))
+        if decision_date is None:
+            reasons.append(f"prospective_shadow_outcome_{index}_decision_time_invalid")
+        else:
+            outcome_dates.add(decision_date)
+    return reasons, outcome_dates
 
 
 def _positive_int_or_zero(value: object) -> int:
@@ -206,6 +224,18 @@ def _finite_float(value: object) -> float | None:
 
 def _is_sha256(value: str) -> bool:
     return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
+
+
+def _outcome_decision_date(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(UTC).date().isoformat()
 
 
 if __name__ == "__main__":

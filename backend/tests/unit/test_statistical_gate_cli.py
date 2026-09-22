@@ -78,6 +78,8 @@ def test_prospective_shadow_report_fails_closed_when_outcomes_are_incomplete(tmp
     report_path = tmp_path / "shadow.json"
     report = _shadow_report()
     report["outcome_count"] = 1
+    report["decision_day_count"] = 1
+    report["outcome_day_count"] = 1
     report["complete"] = False
     report["outcomes"] = report["outcomes"][:1]
     report_path.write_text(json.dumps(report), encoding="utf-8")
@@ -88,6 +90,7 @@ def test_prospective_shadow_report_fails_closed_when_outcomes_are_incomplete(tmp
     assert "prospective_shadow_report_incomplete" in reasons
     assert "prospective_shadow_outcome_count_mismatch" in reasons
     assert "prospective_shadow_outcome_list_incomplete" in reasons
+    assert "prospective_shadow_has_fewer_than_20_days" in reasons
 
 
 def test_prospective_shadow_report_fails_closed_on_malformed_outcome(tmp_path) -> None:
@@ -109,26 +112,21 @@ def test_prospective_shadow_report_fails_closed_on_malformed_outcome(tmp_path) -
     assert "prospective_shadow_outcome_1_label_sha256_invalid" in reasons
     assert "prospective_shadow_outcome_1_expected_net_bps_invalid" in reasons
     assert "prospective_shadow_outcome_1_contains_execution_field" in reasons
+    assert "prospective_shadow_outcome_dates_mismatch" in reasons
 
 
 def _shadow_report() -> dict[str, object]:
     outcomes = [
         {
-            "signal_id": 1,
+            "signal_id": day + 1,
+            "decision_time": f"2026-01-{day + 1:02d}T12:00:00+00:00",
             "would_enter": True,
             "expected_net_bps": 1.2,
             "stress_net_bps": 0.4,
             "label_sha256": "a" * 64,
             "policy_name": "wide",
-        },
-        {
-            "signal_id": 2,
-            "would_enter": True,
-            "expected_net_bps": 1.4,
-            "stress_net_bps": 0.6,
-            "label_sha256": "b" * 64,
-            "policy_name": "wide",
-        },
+        }
+        for day in range(20)
     ]
     return {
         "research_only": True,
@@ -138,8 +136,10 @@ def _shadow_report() -> dict[str, object]:
         "dry_run": False,
         "signal_count": len(outcomes),
         "outcome_count": len(outcomes),
+        "decision_day_count": 20,
+        "outcome_day_count": 20,
         "complete": True,
-        "expected_mean_bps": 1.3,
-        "stress_mean_bps": 0.5,
+        "expected_mean_bps": 1.2,
+        "stress_mean_bps": 0.4,
         "outcomes": outcomes,
     }

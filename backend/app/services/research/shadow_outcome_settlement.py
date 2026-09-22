@@ -26,6 +26,7 @@ class ShadowOutcomeSettlement:
     """Outcome evidence derived from replay, not from an exchange order."""
 
     signal_id: int
+    decision_time: datetime
     would_enter: bool
     expected_net_bps: float
     stress_net_bps: float
@@ -69,6 +70,7 @@ def settle_shadow_signal(
     )
     return ShadowOutcomeSettlement(
         signal_id=signal.id,
+        decision_time=_normalize_utc(signal.decision_time),
         would_enter=True,
         expected_net_bps=managed_trade.expected_net_bps,
         stress_net_bps=managed_trade.stress_net_bps,
@@ -157,6 +159,7 @@ def _no_entry_settlement(
     )
     return ShadowOutcomeSettlement(
         signal_id=signal.id,
+        decision_time=_normalize_utc(signal.decision_time),
         would_enter=False,
         expected_net_bps=0.0,
         stress_net_bps=0.0,

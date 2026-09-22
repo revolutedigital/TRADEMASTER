@@ -140,9 +140,13 @@ cd backend
 The first command converts recorder `trade/date=*/events.jsonl.gz` WAL files
 into the same immutable parquet schema used by the replay. The second command
 adds `book_available`, `book_update_age_ms`, `spread_bps`,
-`depth_imbalance`, `microprice_displacement_bps`, and side-oriented versions of
-imbalance and microprice displacement. If any decision lacks fresh book state, the
-partition fails instead of silently producing a fake “book” model.
+`depth_imbalance`, `microprice_displacement_bps`, and short-window top-of-book
+dynamics: event count, bid/ask replenishment, bid/ask removed liquidity, net book
+pressure, spread widening/recovery, depth-imbalance change, and microprice-change
+proxies. Directional versions are emitted for imbalance, microprice displacement,
+book pressure, depth-imbalance change, and microprice-change features. If any
+decision lacks fresh book state, the partition fails instead of silently producing
+a fake “book” model.
 
 The top-p pilot recognizes book-specific feature families only when those columns
 exist (`flow_book`, `flow_price_book`, `flow_price_book_session`). Without real

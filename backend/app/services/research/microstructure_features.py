@@ -13,12 +13,29 @@ from app.schemas.microstructure import MarketEventType, MicrostructureEvent
 
 
 TRADE_WINDOWS_SECONDS = (1, 5, 30, 60)
-BOOK_FEATURE_COLUMNS = (
+BASE_BOOK_FEATURE_COLUMNS = (
     "book_available",
     "book_update_age_ms",
     "spread_bps",
     "depth_imbalance",
     "microprice_displacement_bps",
+)
+BOOK_WINDOW_FEATURE_PREFIXES = (
+    "book_event_count",
+    "book_bid_replenishment_qty",
+    "book_ask_replenishment_qty",
+    "book_bid_liquidity_removed_qty",
+    "book_ask_liquidity_removed_qty",
+    "book_pressure_imbalance",
+    "book_spread_widening_bps",
+    "book_spread_recovery_bps",
+    "book_depth_imbalance_change",
+    "book_microprice_displacement_change_bps",
+)
+BOOK_FEATURE_COLUMNS = BASE_BOOK_FEATURE_COLUMNS + tuple(
+    f"{prefix}_{window}s"
+    for window in TRADE_WINDOWS_SECONDS
+    for prefix in BOOK_WINDOW_FEATURE_PREFIXES
 )
 
 
@@ -40,6 +57,7 @@ class CausalMicrostructureFeatureEngine:
         self._liquidations: deque[tuple[int, float]] = deque()
         self._last_event_time_ms: int | None = None
         self._book: tuple[int, float, float, float, float] | None = None
+        self._book_events: deque[tuple[int, float, float, float, float]] = deque()
         self._mark_price: float | None = None
         self._index_price: float | None = None
         self._funding_rate: float | None = None
@@ -83,6 +101,7 @@ class CausalMicrostructureFeatureEngine:
                     float(event.ask_price),
                     float(event.ask_quantity),
                 )
+                self._book_events.append(self._book)
         elif event.event_type == MarketEventType.MARK_PRICE and event.price is not None:
             self._mark_price = event.price
             payload = event.payload or {}
@@ -121,12 +140,14 @@ class CausalMicrostructureFeatureEngine:
             self._trades.popleft()
         while self._liquidations and self._liquidations[0][0] < cutoff:
             self._liquidations.popleft()
+        while self._book_events and self._book_events[0][0] < cutoff:
+            self._book_events.popleft()
 
     def _book_features(self, decision_time_ms: int) -> dict[str, float]:
         if self._book is None:
-            return _empty_book_feature_row()
+            return _empty_book_feature_row(self._windows)
         event_time_ms, bid, bid_quantity, ask, ask_quantity = self._book
-        return _book_feature_row(
+        values = _book_feature_row(
             decision_time_ms=decision_time_ms,
             event_time_ms=event_time_ms,
             bid=bid,
@@ -134,6 +155,11 @@ class CausalMicrostructureFeatureEngine:
             ask=ask,
             ask_quantity=ask_quantity,
         )
+        for window in self._windows:
+            cutoff = decision_time_ms - window * 1000
+            window_events = [event for event in self._book_events if event[0] >= cutoff]
+            values.update(_book_window_feature_row(window_events, window=window))
+        return values
 
 
 def materialize_trade_flow_features(
@@ -211,12 +237,17 @@ def materialize_trade_flow_features(
 def materialize_book_features(
     book_events: pd.DataFrame,
     decision_times_ms: np.ndarray,
+    *,
+    windows_seconds: tuple[int, ...] = TRADE_WINDOWS_SECONDS,
 ) -> pd.DataFrame:
     """Vectorized top-of-book features using only the latest quote before each decision."""
+    if not windows_seconds or any(window <= 0 for window in windows_seconds):
+        raise ValueError("feature windows must be positive")
+    windows = tuple(sorted(set(windows_seconds)))
     decisions = np.asarray(decision_times_ms, dtype=np.int64)
     if decisions.ndim != 1 or (np.diff(decisions) < 0).any():
         raise ValueError("decision times must be a monotonic vector")
-    output = _empty_book_feature_frame(decisions)
+    output = _empty_book_feature_frame(decisions, windows)
     required = {
         "event_time_ms",
         "bid_price",
@@ -242,45 +273,41 @@ def materialize_book_features(
     asks = ordered["ask_price"].to_numpy(dtype=np.float64)
     ask_quantities = ordered["ask_quantity"].to_numpy(dtype=np.float64)
     _validate_book_arrays(bids, bid_quantities, asks, ask_quantities)
+    spread_bps, depth_imbalance, microprice_displacement_bps = _book_state_arrays(
+        bids,
+        bid_quantities,
+        asks,
+        ask_quantities,
+    )
+    book_deltas = _book_liquidity_delta_arrays(bids, bid_quantities, asks, ask_quantities)
 
     latest_indices = np.searchsorted(times, decisions, side="right") - 1
     available = latest_indices >= 0
     safe_indices = np.maximum(latest_indices, 0)
     selected_times = times[safe_indices]
-    selected_bids = bids[safe_indices]
-    selected_bid_quantities = bid_quantities[safe_indices]
-    selected_asks = asks[safe_indices]
-    selected_ask_quantities = ask_quantities[safe_indices]
-    midpoint = (selected_bids + selected_asks) / 2
-    total_quantity = selected_bid_quantities + selected_ask_quantities
-    microprice = np.divide(
-        selected_asks * selected_bid_quantities + selected_bids * selected_ask_quantities,
-        total_quantity,
-        out=midpoint.copy(),
-        where=total_quantity > 0,
-    )
     output["book_available"] = available.astype(np.float64)
     output["book_update_age_ms"] = np.where(available, decisions - selected_times, 0.0)
-    output["spread_bps"] = np.where(
-        available,
-        (selected_asks - selected_bids) / midpoint * 10_000,
-        0.0,
-    )
-    output["depth_imbalance"] = np.where(
-        available,
-        np.divide(
-            selected_bid_quantities - selected_ask_quantities,
-            total_quantity,
-            out=np.zeros(len(decisions), dtype=np.float64),
-            where=total_quantity > 0,
-        ),
-        0.0,
-    )
+    output["spread_bps"] = np.where(available, spread_bps[safe_indices], 0.0)
+    output["depth_imbalance"] = np.where(available, depth_imbalance[safe_indices], 0.0)
     output["microprice_displacement_bps"] = np.where(
         available,
-        (microprice / midpoint - 1) * 10_000,
+        microprice_displacement_bps[safe_indices],
         0.0,
     )
+    for window in windows:
+        output.update(
+            _materialize_book_window_features(
+                times=times,
+                decisions=decisions,
+                latest_indices=latest_indices,
+                available=available,
+                spread_bps=spread_bps,
+                depth_imbalance=depth_imbalance,
+                microprice_displacement_bps=microprice_displacement_bps,
+                deltas=book_deltas,
+                window=window,
+            )
+        )
     return pd.DataFrame(output)
 
 
@@ -319,15 +346,26 @@ def _prefix_sum(values: np.ndarray) -> np.ndarray:
     return np.concatenate((np.zeros(1, dtype=np.float64), np.cumsum(values)))
 
 
-def _empty_book_feature_row() -> dict[str, float]:
-    return {column: 0.0 for column in BOOK_FEATURE_COLUMNS}
+def _empty_book_feature_row(windows_seconds: tuple[int, ...]) -> dict[str, float]:
+    return {column: 0.0 for column in _book_feature_columns(windows_seconds)}
 
 
-def _empty_book_feature_frame(decisions: np.ndarray) -> dict[str, np.ndarray]:
+def _empty_book_feature_frame(
+    decisions: np.ndarray,
+    windows_seconds: tuple[int, ...],
+) -> dict[str, np.ndarray]:
     output = {"decision_time_ms": decisions}
-    for column in BOOK_FEATURE_COLUMNS:
+    for column in _book_feature_columns(windows_seconds):
         output[column] = np.zeros(len(decisions), dtype=np.float64)
     return output
+
+
+def _book_feature_columns(windows_seconds: tuple[int, ...]) -> tuple[str, ...]:
+    return BASE_BOOK_FEATURE_COLUMNS + tuple(
+        f"{prefix}_{window}s"
+        for window in sorted(set(windows_seconds))
+        for prefix in BOOK_WINDOW_FEATURE_PREFIXES
+    )
 
 
 def _book_feature_row(
@@ -339,21 +377,303 @@ def _book_feature_row(
     ask: float,
     ask_quantity: float,
 ) -> dict[str, float]:
-    midpoint = (bid + ask) / 2
-    total_quantity = bid_quantity + ask_quantity
-    imbalance = (bid_quantity - ask_quantity) / total_quantity if total_quantity else 0.0
-    microprice = (
-        (ask * bid_quantity + bid * ask_quantity) / total_quantity
-        if total_quantity
-        else midpoint
+    spread, imbalance, microprice_displacement = _book_state_values(
+        bid,
+        bid_quantity,
+        ask,
+        ask_quantity,
     )
     return {
         "book_available": 1.0,
         "book_update_age_ms": float(decision_time_ms - event_time_ms),
-        "spread_bps": (ask - bid) / midpoint * 10_000,
+        "spread_bps": spread,
         "depth_imbalance": imbalance,
-        "microprice_displacement_bps": (microprice / midpoint - 1) * 10_000,
+        "microprice_displacement_bps": microprice_displacement,
     }
+
+
+def _book_window_feature_row(
+    events: list[tuple[int, float, float, float, float]],
+    *,
+    window: int,
+) -> dict[str, float]:
+    prefix = f"{window}s"
+    if not events:
+        return _empty_book_window_feature_row(prefix)
+
+    spreads = []
+    imbalances = []
+    microprice_displacements = []
+    for _, bid, bid_quantity, ask, ask_quantity in events:
+        spread, imbalance, microprice_displacement = _book_state_values(
+            bid,
+            bid_quantity,
+            ask,
+            ask_quantity,
+        )
+        spreads.append(spread)
+        imbalances.append(imbalance)
+        microprice_displacements.append(microprice_displacement)
+
+    bid_replenishment = 0.0
+    ask_replenishment = 0.0
+    bid_removed = 0.0
+    ask_removed = 0.0
+    for previous, current in zip(events, events[1:], strict=False):
+        _, previous_bid, previous_bid_quantity, previous_ask, previous_ask_quantity = previous
+        _, current_bid, current_bid_quantity, current_ask, current_ask_quantity = current
+        bid_add, bid_remove, ask_add, ask_remove = _book_liquidity_delta_values(
+            previous_bid=previous_bid,
+            previous_bid_quantity=previous_bid_quantity,
+            previous_ask=previous_ask,
+            previous_ask_quantity=previous_ask_quantity,
+            current_bid=current_bid,
+            current_bid_quantity=current_bid_quantity,
+            current_ask=current_ask,
+            current_ask_quantity=current_ask_quantity,
+        )
+        bid_replenishment += bid_add
+        bid_removed += bid_remove
+        ask_replenishment += ask_add
+        ask_removed += ask_remove
+
+    pressure_denominator = bid_replenishment + ask_replenishment + bid_removed + ask_removed
+    pressure_imbalance = (
+        (bid_replenishment + ask_removed - ask_replenishment - bid_removed)
+        / pressure_denominator
+        if pressure_denominator
+        else 0.0
+    )
+    latest_spread = spreads[-1]
+    first_spread = spreads[0]
+    return {
+        f"book_event_count_{prefix}": float(len(events)),
+        f"book_bid_replenishment_qty_{prefix}": bid_replenishment,
+        f"book_ask_replenishment_qty_{prefix}": ask_replenishment,
+        f"book_bid_liquidity_removed_qty_{prefix}": bid_removed,
+        f"book_ask_liquidity_removed_qty_{prefix}": ask_removed,
+        f"book_pressure_imbalance_{prefix}": pressure_imbalance,
+        f"book_spread_widening_bps_{prefix}": max(latest_spread - first_spread, 0.0),
+        f"book_spread_recovery_bps_{prefix}": max(first_spread - latest_spread, 0.0),
+        f"book_depth_imbalance_change_{prefix}": imbalances[-1] - imbalances[0],
+        f"book_microprice_displacement_change_bps_{prefix}": (
+            microprice_displacements[-1] - microprice_displacements[0]
+        ),
+    }
+
+
+def _empty_book_window_feature_row(prefix: str) -> dict[str, float]:
+    return {f"{feature}_{prefix}": 0.0 for feature in BOOK_WINDOW_FEATURE_PREFIXES}
+
+
+def _materialize_book_window_features(
+    *,
+    times: np.ndarray,
+    decisions: np.ndarray,
+    latest_indices: np.ndarray,
+    available: np.ndarray,
+    spread_bps: np.ndarray,
+    depth_imbalance: np.ndarray,
+    microprice_displacement_bps: np.ndarray,
+    deltas: dict[str, np.ndarray],
+    window: int,
+) -> dict[str, np.ndarray]:
+    left = np.searchsorted(times, decisions - window * 1000, side="left")
+    right = np.where(available, latest_indices + 1, 0)
+    counts = np.where(available & (left < right), right - left, 0).astype(np.float64)
+    safe_first = np.minimum(left, len(times) - 1)
+    safe_latest = np.maximum(latest_indices, 0)
+    has_window_events = counts > 0
+    prefix = f"{window}s"
+
+    bid_replenishment = _window_sum_without_boundary_delta(
+        deltas["bid_replenishment"],
+        left,
+        right,
+        has_window_events,
+    )
+    ask_replenishment = _window_sum_without_boundary_delta(
+        deltas["ask_replenishment"],
+        left,
+        right,
+        has_window_events,
+    )
+    bid_removed = _window_sum_without_boundary_delta(
+        deltas["bid_removed"],
+        left,
+        right,
+        has_window_events,
+    )
+    ask_removed = _window_sum_without_boundary_delta(
+        deltas["ask_removed"],
+        left,
+        right,
+        has_window_events,
+    )
+    pressure_denominator = bid_replenishment + ask_replenishment + bid_removed + ask_removed
+    pressure_imbalance = np.divide(
+        bid_replenishment + ask_removed - ask_replenishment - bid_removed,
+        pressure_denominator,
+        out=np.zeros(len(decisions), dtype=np.float64),
+        where=pressure_denominator > 0,
+    )
+
+    first_spread = spread_bps[safe_first]
+    latest_spread = spread_bps[safe_latest]
+    first_imbalance = depth_imbalance[safe_first]
+    latest_imbalance = depth_imbalance[safe_latest]
+    first_microprice = microprice_displacement_bps[safe_first]
+    latest_microprice = microprice_displacement_bps[safe_latest]
+    return {
+        f"book_event_count_{prefix}": counts,
+        f"book_bid_replenishment_qty_{prefix}": bid_replenishment,
+        f"book_ask_replenishment_qty_{prefix}": ask_replenishment,
+        f"book_bid_liquidity_removed_qty_{prefix}": bid_removed,
+        f"book_ask_liquidity_removed_qty_{prefix}": ask_removed,
+        f"book_pressure_imbalance_{prefix}": np.where(has_window_events, pressure_imbalance, 0.0),
+        f"book_spread_widening_bps_{prefix}": np.where(
+            has_window_events,
+            np.maximum(latest_spread - first_spread, 0.0),
+            0.0,
+        ),
+        f"book_spread_recovery_bps_{prefix}": np.where(
+            has_window_events,
+            np.maximum(first_spread - latest_spread, 0.0),
+            0.0,
+        ),
+        f"book_depth_imbalance_change_{prefix}": np.where(
+            has_window_events,
+            latest_imbalance - first_imbalance,
+            0.0,
+        ),
+        f"book_microprice_displacement_change_bps_{prefix}": np.where(
+            has_window_events,
+            latest_microprice - first_microprice,
+            0.0,
+        ),
+    }
+
+
+def _window_sum_without_boundary_delta(
+    values: np.ndarray,
+    left: np.ndarray,
+    right: np.ndarray,
+    has_window_events: np.ndarray,
+) -> np.ndarray:
+    prefix = _prefix_sum(values)
+    adjusted_left = np.minimum(left + 1, right)
+    totals = prefix[right] - prefix[adjusted_left]
+    return np.where(has_window_events, totals, 0.0)
+
+
+def _book_state_arrays(
+    bids: np.ndarray,
+    bid_quantities: np.ndarray,
+    asks: np.ndarray,
+    ask_quantities: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    midpoint = (bids + asks) / 2
+    total_quantity = bid_quantities + ask_quantities
+    microprice = np.divide(
+        asks * bid_quantities + bids * ask_quantities,
+        total_quantity,
+        out=midpoint.copy(),
+        where=total_quantity > 0,
+    )
+    return (
+        (asks - bids) / midpoint * 10_000,
+        np.divide(
+            bid_quantities - ask_quantities,
+            total_quantity,
+            out=np.zeros(len(bids), dtype=np.float64),
+            where=total_quantity > 0,
+        ),
+        (microprice / midpoint - 1) * 10_000,
+    )
+
+
+def _book_state_values(
+    bid: float,
+    bid_quantity: float,
+    ask: float,
+    ask_quantity: float,
+) -> tuple[float, float, float]:
+    spread, imbalance, microprice_displacement = _book_state_arrays(
+        np.array([bid], dtype=np.float64),
+        np.array([bid_quantity], dtype=np.float64),
+        np.array([ask], dtype=np.float64),
+        np.array([ask_quantity], dtype=np.float64),
+    )
+    return float(spread[0]), float(imbalance[0]), float(microprice_displacement[0])
+
+
+def _book_liquidity_delta_arrays(
+    bids: np.ndarray,
+    bid_quantities: np.ndarray,
+    asks: np.ndarray,
+    ask_quantities: np.ndarray,
+) -> dict[str, np.ndarray]:
+    bid_replenishment = np.zeros(len(bids), dtype=np.float64)
+    bid_removed = np.zeros(len(bids), dtype=np.float64)
+    ask_replenishment = np.zeros(len(bids), dtype=np.float64)
+    ask_removed = np.zeros(len(bids), dtype=np.float64)
+    for index in range(1, len(bids)):
+        bid_add, bid_remove, ask_add, ask_remove = _book_liquidity_delta_values(
+            previous_bid=float(bids[index - 1]),
+            previous_bid_quantity=float(bid_quantities[index - 1]),
+            previous_ask=float(asks[index - 1]),
+            previous_ask_quantity=float(ask_quantities[index - 1]),
+            current_bid=float(bids[index]),
+            current_bid_quantity=float(bid_quantities[index]),
+            current_ask=float(asks[index]),
+            current_ask_quantity=float(ask_quantities[index]),
+        )
+        bid_replenishment[index] = bid_add
+        bid_removed[index] = bid_remove
+        ask_replenishment[index] = ask_add
+        ask_removed[index] = ask_remove
+    return {
+        "bid_replenishment": bid_replenishment,
+        "bid_removed": bid_removed,
+        "ask_replenishment": ask_replenishment,
+        "ask_removed": ask_removed,
+    }
+
+
+def _book_liquidity_delta_values(
+    *,
+    previous_bid: float,
+    previous_bid_quantity: float,
+    previous_ask: float,
+    previous_ask_quantity: float,
+    current_bid: float,
+    current_bid_quantity: float,
+    current_ask: float,
+    current_ask_quantity: float,
+) -> tuple[float, float, float, float]:
+    if current_bid > previous_bid:
+        bid_replenishment = current_bid_quantity
+        bid_removed = 0.0
+    elif current_bid < previous_bid:
+        bid_replenishment = 0.0
+        bid_removed = previous_bid_quantity
+    else:
+        bid_delta = current_bid_quantity - previous_bid_quantity
+        bid_replenishment = max(bid_delta, 0.0)
+        bid_removed = max(-bid_delta, 0.0)
+
+    if current_ask < previous_ask:
+        ask_replenishment = current_ask_quantity
+        ask_removed = 0.0
+    elif current_ask > previous_ask:
+        ask_replenishment = 0.0
+        ask_removed = previous_ask_quantity
+    else:
+        ask_delta = current_ask_quantity - previous_ask_quantity
+        ask_replenishment = max(ask_delta, 0.0)
+        ask_removed = max(-ask_delta, 0.0)
+
+    return bid_replenishment, bid_removed, ask_replenishment, ask_removed
 
 
 def _validate_book_arrays(

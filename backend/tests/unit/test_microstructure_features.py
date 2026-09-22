@@ -30,15 +30,21 @@ def make_trade(offset_ms: int, price: float, quantity: float, maker: bool):
     )
 
 
-def make_book(offset_ms: int, bid_quantity: float, ask_quantity: float):
+def make_book(
+    offset_ms: int,
+    bid_quantity: float,
+    ask_quantity: float,
+    bid_price: float = 99.0,
+    ask_price: float = 101.0,
+):
     return MicrostructureEvent(
         product="usdm_perpetual",
         symbol="BTCUSDT",
         event_type=MarketEventType.DEPTH,
         event_time=NOW + timedelta(milliseconds=offset_ms),
-        bid_price=99,
+        bid_price=bid_price,
         bid_quantity=bid_quantity,
-        ask_price=101,
+        ask_price=ask_price,
         ask_quantity=ask_quantity,
     )
 
@@ -112,6 +118,72 @@ def test_offline_book_features_are_causal_and_match_online_snapshot() -> None:
     )
     assert offline.iloc[1]["depth_imbalance"] == pytest.approx(0.5)
     assert offline.iloc[2]["depth_imbalance"] == pytest.approx(-0.5)
+
+
+def test_book_window_dynamics_are_causal_and_match_online_snapshot() -> None:
+    base_ms = int(NOW.timestamp() * 1000)
+    book_events = pd.DataFrame(
+        {
+            "event_time_ms": np.array([base_ms, base_ms + 500, base_ms + 900], dtype=np.int64),
+            "sequence_id": [1, 2, 3],
+            "bid_price": [99.0, 99.0, 99.0],
+            "bid_quantity": [5.0, 8.0, 6.0],
+            "ask_price": [101.0, 101.0, 101.0],
+            "ask_quantity": [5.0, 3.0, 7.0],
+        }
+    )
+    decision_times = np.array([base_ms + 750, base_ms + 1000], dtype=np.int64)
+    offline = materialize_book_features(book_events, decision_times, windows_seconds=(1,))
+
+    engine = CausalMicrostructureFeatureEngine(windows_seconds=(1,))
+    engine.consume(make_book(0, bid_quantity=5, ask_quantity=5))
+    engine.consume(make_book(500, bid_quantity=8, ask_quantity=3))
+    first_online = engine.snapshot(base_ms + 750).values
+    engine.consume(make_book(900, bid_quantity=6, ask_quantity=7))
+    second_online = engine.snapshot(base_ms + 1000).values
+
+    for key in (
+        "book_event_count_1s",
+        "book_bid_replenishment_qty_1s",
+        "book_ask_replenishment_qty_1s",
+        "book_bid_liquidity_removed_qty_1s",
+        "book_ask_liquidity_removed_qty_1s",
+        "book_pressure_imbalance_1s",
+        "book_depth_imbalance_change_1s",
+        "book_microprice_displacement_change_bps_1s",
+    ):
+        assert offline.iloc[0][key] == pytest.approx(first_online[key])
+        assert offline.iloc[1][key] == pytest.approx(second_online[key])
+
+    assert offline.iloc[0]["book_event_count_1s"] == 2
+    assert offline.iloc[0]["book_pressure_imbalance_1s"] == pytest.approx(1.0)
+    assert offline.iloc[1]["book_event_count_1s"] == 3
+    assert offline.iloc[1]["book_pressure_imbalance_1s"] == pytest.approx(-1 / 11)
+
+
+def test_book_window_spread_recovery_uses_only_quotes_inside_window() -> None:
+    base_ms = int(NOW.timestamp() * 1000)
+    offline = materialize_book_features(
+        pd.DataFrame(
+            {
+                "event_time_ms": np.array(
+                    [base_ms - 1_500, base_ms - 800, base_ms - 100],
+                    dtype=np.int64,
+                ),
+                "sequence_id": [1, 2, 3],
+                "bid_price": [99.0, 98.0, 99.5],
+                "bid_quantity": [5.0, 5.0, 5.0],
+                "ask_price": [101.0, 102.0, 100.5],
+                "ask_quantity": [5.0, 5.0, 5.0],
+            }
+        ),
+        np.array([base_ms], dtype=np.int64),
+        windows_seconds=(1,),
+    ).iloc[0]
+
+    assert offline["book_event_count_1s"] == 2
+    assert offline["book_spread_recovery_bps_1s"] > 0
+    assert offline["book_spread_widening_bps_1s"] == 0
 
 
 def test_book_microprice_mark_basis_and_liquidation_are_causal() -> None:

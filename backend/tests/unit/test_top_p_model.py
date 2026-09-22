@@ -81,6 +81,15 @@ def test_book_feature_sets_include_directed_microstructure_columns() -> None:
             "directed_depth_imbalance": [0.2],
             "microprice_displacement_bps": [0.4],
             "directed_microprice_displacement_bps": [0.4],
+            "book_event_count_1s": [3.0],
+            "book_bid_replenishment_qty_1s": [2.0],
+            "book_ask_liquidity_removed_qty_1s": [1.0],
+            "book_pressure_imbalance_1s": [0.5],
+            "directed_book_pressure_imbalance_1s": [0.5],
+            "book_depth_imbalance_change_1s": [0.1],
+            "directed_book_depth_imbalance_change_1s": [0.1],
+            "book_microprice_displacement_change_bps_1s": [0.2],
+            "directed_book_microprice_displacement_change_bps_1s": [0.2],
             "hour_sin": [0.0],
             "hour_cos": [1.0],
             "side_sign": [1.0],
@@ -91,6 +100,9 @@ def test_book_feature_sets_include_directed_microstructure_columns() -> None:
 
     assert "directed_depth_imbalance" in columns
     assert "directed_microprice_displacement_bps" in columns
+    assert "directed_book_pressure_imbalance_1s" in columns
+    assert "directed_book_depth_imbalance_change_1s" in columns
+    assert "directed_book_microprice_displacement_change_bps_1s" in columns
     assert "side_sign" in columns
 
 

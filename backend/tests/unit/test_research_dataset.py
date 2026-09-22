@@ -77,6 +77,12 @@ def test_build_research_rows_can_require_fresh_book_features() -> None:
     assert buy["book_update_age_ms"] == 100
     assert buy["directed_depth_imbalance"] == pytest.approx(buy["depth_imbalance"])
     assert sell["directed_depth_imbalance"] == pytest.approx(-sell["depth_imbalance"])
+    assert buy["directed_book_pressure_imbalance_1s"] == pytest.approx(
+        buy["book_pressure_imbalance_1s"]
+    )
+    assert sell["directed_book_pressure_imbalance_1s"] == pytest.approx(
+        -sell["book_pressure_imbalance_1s"]
+    )
 
 
 def test_required_book_features_fail_closed_when_stale() -> None:

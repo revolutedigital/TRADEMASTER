@@ -91,7 +91,11 @@ def build_research_rows(
     if book_events is not None or dataset_config.require_book_features:
         if book_events is None:
             raise ValueError("book features are required but no book events were provided")
-        book_features = materialize_book_features(book_events, decisions)
+        book_features = materialize_book_features(
+            book_events,
+            decisions,
+            windows_seconds=dataset_config.feature_windows_seconds,
+        )
         if dataset_config.require_book_features:
             _require_complete_book_features(
                 book_features,
@@ -121,6 +125,14 @@ def build_research_rows(
             rows[f"flow_imbalance_{window}s"] * rows["side_sign"]
         )
         rows[f"directed_return_{window}s_bps"] = rows[f"return_{window}s_bps"] * rows["side_sign"]
+        book_directional_columns = (
+            f"book_pressure_imbalance_{window}s",
+            f"book_depth_imbalance_change_{window}s",
+            f"book_microprice_displacement_change_bps_{window}s",
+        )
+        for column in book_directional_columns:
+            if column in rows.columns:
+                rows[f"directed_{column}"] = rows[column] * rows["side_sign"]
     if "depth_imbalance" in rows.columns:
         rows["directed_depth_imbalance"] = rows["depth_imbalance"] * rows["side_sign"]
     if "microprice_displacement_bps" in rows.columns:

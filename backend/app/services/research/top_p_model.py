@@ -119,11 +119,24 @@ def feature_columns(frame: pd.DataFrame, feature_set: str) -> tuple[str, ...]:
             (
                 "book_available",
                 "book_update_age_ms",
+                "book_event_count_",
+                "book_bid_replenishment_qty_",
+                "book_ask_replenishment_qty_",
+                "book_bid_liquidity_removed_qty_",
+                "book_ask_liquidity_removed_qty_",
                 "spread_bps",
                 "depth_imbalance",
                 "directed_depth_imbalance",
                 "microprice_displacement_bps",
                 "directed_microprice_displacement_bps",
+                "book_pressure_imbalance_",
+                "directed_book_pressure_imbalance_",
+                "book_spread_widening_bps_",
+                "book_spread_recovery_bps_",
+                "book_depth_imbalance_change_",
+                "directed_book_depth_imbalance_change_",
+                "book_microprice_displacement_change_bps_",
+                "directed_book_microprice_displacement_change_bps_",
             )
         )
     )
@@ -246,6 +259,13 @@ def freeze_top_p_policy(
                 "trade_count_",
                 "quote_volume_",
                 "mean_interarrival_ms_",
+                "book_event_count_",
+                "book_bid_replenishment_qty_",
+                "book_ask_replenishment_qty_",
+                "book_bid_liquidity_removed_qty_",
+                "book_ask_liquidity_removed_qty_",
+                "book_spread_widening_bps_",
+                "book_spread_recovery_bps_",
             ],
             "scaler_mean": _float_list(scaler.mean_),
             "scaler_scale": _float_list(scaler.scale_),
@@ -523,7 +543,20 @@ def _matrix(frame: pd.DataFrame, columns: tuple[str, ...]) -> np.ndarray:
     if not np.isfinite(matrix).all():
         raise ValueError("model features must be finite")
     for index, column in enumerate(columns):
-        if column.startswith(("trade_count_", "quote_volume_", "mean_interarrival_ms_")):
+        if column.startswith(
+            (
+                "trade_count_",
+                "quote_volume_",
+                "mean_interarrival_ms_",
+                "book_event_count_",
+                "book_bid_replenishment_qty_",
+                "book_ask_replenishment_qty_",
+                "book_bid_liquidity_removed_qty_",
+                "book_ask_liquidity_removed_qty_",
+                "book_spread_widening_bps_",
+                "book_spread_recovery_bps_",
+            )
+        ):
             matrix[:, index] = np.log1p(np.maximum(matrix[:, index], 0))
     return matrix
 

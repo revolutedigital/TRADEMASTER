@@ -161,10 +161,11 @@ export default function ResearchPage() {
   const [testnetError, setTestnetError] = useState<string | null>(null);
   const [experimentReport, setExperimentReport] = useState<ExperimentReport | null>(null);
   const [reportError, setReportError] = useState<string | null>(null);
+  const [selectedExperimentId, setSelectedExperimentId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (preferredExperimentId?: string | null) => {
     setLoading(true);
     setError(null);
     setEvidenceError(null);
@@ -180,6 +181,13 @@ export default function ResearchPage() {
       }
       const loadedExperiments = experimentsResult.value;
       setExperiments(loadedExperiments);
+      const nextSelectedExperimentId = (
+        preferredExperimentId
+        && loadedExperiments.some((experiment) => experiment.id === preferredExperimentId)
+      )
+        ? preferredExperimentId
+        : (loadedExperiments[0]?.id ?? null);
+      setSelectedExperimentId(nextSelectedExperimentId);
       if (evidenceResult.status === "fulfilled") {
         setEvidenceStatus(evidenceResult.value);
       } else {
@@ -190,14 +198,13 @@ export default function ResearchPage() {
             : "Falha ao carregar gate de evidência",
         );
       }
-      if (loadedExperiments.length > 0) {
-        const firstExperimentId = loadedExperiments[0].id;
+      if (nextSelectedExperimentId) {
         const [eligibilityResult, reportResult] = await Promise.allSettled([
           apiFetch<TestnetEligibility>(
-            `/api/v1/research/microstructure/experiments/${firstExperimentId}/testnet-eligibility`,
+            `/api/v1/research/microstructure/experiments/${nextSelectedExperimentId}/testnet-eligibility`,
           ),
           apiFetch<ExperimentReport>(
-            `/api/v1/research/microstructure/experiments/${firstExperimentId}/report`,
+            `/api/v1/research/microstructure/experiments/${nextSelectedExperimentId}/report`,
           ),
         ]);
         if (eligibilityResult.status === "fulfilled") {
@@ -264,7 +271,7 @@ export default function ResearchPage() {
         title="Pesquisa de Microestrutura"
         description="Evidência auditável de sinais BTCUSDT. Este painel não possui controles de execução."
         actions={
-          <Button variant="ghost" size="sm" onClick={() => void load()} disabled={loading}>
+          <Button variant="ghost" size="sm" onClick={() => void load(selectedExperimentId)} disabled={loading}>
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             Atualizar
           </Button>
@@ -300,7 +307,10 @@ export default function ResearchPage() {
       ) : (
         <div className="space-y-3">
           {experiments.map((experiment) => (
-            <Card key={experiment.id}>
+            <Card
+              key={experiment.id}
+              className={experiment.id === selectedExperimentId ? "border-blue-500/40" : undefined}
+            >
               <CardContent>
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <div>
@@ -312,9 +322,21 @@ export default function ResearchPage() {
                       Experimento: {shortHash(experiment.experiment_sha256)}
                     </p>
                   </div>
-                  <div className="flex gap-6 text-sm">
+                  <div className="flex flex-wrap items-center gap-4 text-sm">
                     <div><p className="text-[var(--color-text-faint)]">Partições</p><p className="font-semibold text-[var(--color-text)]">{experiment.dataset_partitions.length}</p></div>
                     <div><p className="text-[var(--color-text-faint)]">Criado</p><p className="font-semibold text-[var(--color-text)]">{new Date(experiment.created_at).toLocaleDateString("pt-BR")}</p></div>
+                    <Button
+                      variant={experiment.id === selectedExperimentId ? "primary" : "ghost"}
+                      size="sm"
+                      onClick={() => {
+                        setSelectedExperimentId(experiment.id);
+                        void load(experiment.id);
+                      }}
+                      disabled={loading}
+                      aria-current={experiment.id === selectedExperimentId ? "true" : undefined}
+                    >
+                      {experiment.id === selectedExperimentId ? "Selecionado" : "Ver relatório"}
+                    </Button>
                   </div>
                 </div>
               </CardContent>
@@ -398,7 +420,7 @@ function ExperimentReportPanel({
                 </Badge>
               </div>
               <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                Métricas consolidadas do primeiro experimento listado. Report hash:{" "}
+                Métricas consolidadas do experimento selecionado. Report hash:{" "}
                 <span className="font-mono text-xs">{shortHash(report?.artifact_sha256)}</span>
               </p>
               <GateReasonList title="Razões do relatório" reasons={visibleReasons} tone="warning" />

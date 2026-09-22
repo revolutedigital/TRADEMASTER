@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 const mockApiFetch = vi.hoisted(() => vi.fn());
 const mockPathname = vi.hoisted(() => "/research");
@@ -38,6 +38,14 @@ const experiment = {
     execution_authorization: "none",
   },
   created_at: "2026-03-22T12:00:00Z",
+};
+
+const alternateExperiment = {
+  ...experiment,
+  id: "exp_microstructure_v2",
+  name: "Microstructure WAL v2",
+  status: "FROZEN",
+  experiment_sha256: "def456abc123def456abc123",
 };
 
 const evidenceGate = {
@@ -177,12 +185,27 @@ const experimentReport = {
   generated_at: "2026-03-22T12:12:00Z",
 };
 
+const alternateTestnetEligibility = {
+  ...testnetEligibility,
+  experiment_id: "exp_microstructure_v2",
+  experiment_status: "FROZEN",
+  reasons: ["experiment_status_is_not_approved"],
+};
+
+const alternateExperimentReport = {
+  ...experimentReport,
+  experiment_id: "exp_microstructure_v2",
+  status: "FROZEN",
+  decision_reasons: ["alternate_selected"],
+  artifact_sha256: "alternate_report_hash",
+};
+
 describe("ResearchPage", () => {
   beforeEach(() => {
     mockApiFetch.mockReset();
     mockApiFetch.mockImplementation((path: string) => {
       if (path === "/api/v1/research/microstructure/experiments") {
-        return Promise.resolve([experiment]);
+        return Promise.resolve([experiment, alternateExperiment]);
       }
       if (path === "/api/v1/research/microstructure/evidence-gate") {
         return Promise.resolve(evidenceGate);
@@ -192,6 +215,12 @@ describe("ResearchPage", () => {
       }
       if (path === "/api/v1/research/microstructure/experiments/exp_microstructure_v1/report") {
         return Promise.resolve(experimentReport);
+      }
+      if (path === "/api/v1/research/microstructure/experiments/exp_microstructure_v2/testnet-eligibility") {
+        return Promise.resolve(alternateTestnetEligibility);
+      }
+      if (path === "/api/v1/research/microstructure/experiments/exp_microstructure_v2/report") {
+        return Promise.resolve(alternateExperimentReport);
       }
       return Promise.reject(new Error(`Unexpected path: ${path}`));
     });
@@ -227,5 +256,20 @@ describe("ResearchPage", () => {
     expect(screen.getAllByText("60/60").length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("Comprar")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /ordem|comprar|vender/i })).not.toBeInTheDocument();
+  });
+
+  it("loads the selected experiment report instead of always using the first experiment", async () => {
+    render(<ResearchPage />);
+
+    expect(await screen.findByText("Microstructure WAL v2")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Ver relatório" }));
+
+    expect(await screen.findByText(/alternate_selected/)).toBeInTheDocument();
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      "/api/v1/research/microstructure/experiments/exp_microstructure_v2/testnet-eligibility",
+    );
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      "/api/v1/research/microstructure/experiments/exp_microstructure_v2/report",
+    );
   });
 });

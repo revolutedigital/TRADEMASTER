@@ -114,6 +114,46 @@ def test_evidence_gate_status_accepts_iso_dates_in_artifact() -> None:
     assert parsed.book_evidence_gate.incomplete_days == [date(2026, 1, 1)]
 
 
+async def test_partition_open_api_is_idempotent_and_research_only(db: AsyncSession) -> None:
+    await _seed_shadow_experiment(db, opened=False)
+
+    first = await research.open_experiment_partition(
+        "experiment",
+        "PROSPECTIVE_SHADOW",
+        db=db,
+        _user={"sub": "operator"},
+    )
+    second = await research.open_experiment_partition(
+        "experiment",
+        "PROSPECTIVE_SHADOW",
+        db=db,
+        _user={"sub": "operator"},
+    )
+
+    assert first.id == second.id
+    assert first.opened_at == second.opened_at
+    assert first.role == "PROSPECTIVE_SHADOW"
+    assert first.safety.order_submission_allowed is False
+    assert first.safety.execution_authorization == "none"
+
+    signal = await research.record_shadow_signal(
+        "experiment",
+        RecordShadowSignalRequest(
+            decision_time=datetime.now(UTC),
+            side="BUY",
+            horizon_seconds=300,
+            probability=0.8,
+            threshold=0.7,
+            model_sha256="d" * 64,
+            feature_vector={"flow": 0.5},
+        ),
+        db=db,
+        _user={"sub": "operator"},
+    )
+    assert signal.outcome_recorded is False
+    assert signal.safety.order_submission_allowed is False
+
+
 async def test_shadow_signal_api_records_hypothetical_signal_without_order_fields(
     db: AsyncSession,
 ) -> None:

@@ -131,6 +131,37 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+  /research/microstructure/experiments/{experiment_id}/partitions/{role}/open:
+    post:
+      operationId: openMicrostructureResearchPartition
+      summary: Irreversibly open one preregistered research partition.
+      description: |
+        Marks first access to a registered temporal partition. This is research
+        lineage only: it grants no execution access and cannot submit or
+        schedule an exchange order.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ExperimentId'
+        - name: role
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [DEVELOPMENT, TRAINING, SELECTION, AUDIT, PROSPECTIVE_SHADOW]
+      responses:
+        '200':
+          description: Partition opened or returned idempotently if already opened.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenedResearchPartition'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Experiment is not frozen, role is unknown, or data is burned.
   /research/microstructure/experiments/{experiment_id}/shadow-signals:
     post:
       operationId: recordMicrostructureShadowSignal
@@ -569,6 +600,42 @@ components:
         generated_at:
           type: string
           format: date-time
+    OpenedResearchPartition:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - experiment_id
+        - role
+        - start_at
+        - end_at
+        - manifest_sha256
+        - opened_at
+        - safety
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        experiment_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [DEVELOPMENT, TRAINING, SELECTION, AUDIT, PROSPECTIVE_SHADOW]
+        start_at:
+          type: string
+          format: date-time
+        end_at:
+          type: string
+          format: date-time
+        manifest_sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        opened_at:
+          type: string
+          format: date-time
+        safety:
+          $ref: '#/components/schemas/SafetyBoundary'
     RecordShadowSignalRequest:
       type: object
       additionalProperties: false

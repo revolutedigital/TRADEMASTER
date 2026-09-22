@@ -197,6 +197,9 @@ overwrite, missing, malformed, or non-finite `outcome_json` is fail-closed.
 
 Shadow runners can append evidence through the research API:
 
+- `POST /api/v1/research/microstructure/experiments/{experiment_id}/partitions/PROSPECTIVE_SHADOW/open`
+  marks the first access to the preregistered shadow block. This operation is
+  idempotent but irreversible in the research ledger.
 - `POST /api/v1/research/microstructure/experiments/{experiment_id}/shadow-signals`
   records a hypothetical decision after the `PROSPECTIVE_SHADOW` partition is
   explicitly opened. It stores `feature_vector_sha256`, not raw feature values.

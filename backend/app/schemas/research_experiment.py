@@ -10,6 +10,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 ExperimentStatus = Literal["DRAFT", "FROZEN", "REJECTED", "INCONCLUSIVE", "APPROVED"]
 WalAuditStatus = Literal["VALID", "PARTIAL", "MISSING", "INVALID"]
+DatasetPartitionRole = Literal[
+    "DEVELOPMENT",
+    "TRAINING",
+    "SELECTION",
+    "AUDIT",
+    "PROSPECTIVE_SHADOW",
+]
 
 
 class ProductContract(BaseModel):
@@ -38,7 +45,7 @@ class CostProfile(BaseModel):
 class DatasetPartition(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    role: Literal["DEVELOPMENT", "TRAINING", "SELECTION", "AUDIT", "PROSPECTIVE_SHADOW"]
+    role: DatasetPartitionRole
     start_at: datetime
     end_at: datetime
     manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -147,6 +154,19 @@ class TestnetEligibilityResponse(BaseModel):
     execution_authorization: Literal["none"]
     safety: SafetyBoundary
     generated_at: datetime
+
+
+class OpenedPartitionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    experiment_id: str
+    role: DatasetPartitionRole
+    start_at: datetime
+    end_at: datetime
+    manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    opened_at: datetime
+    safety: SafetyBoundary
 
 
 class RecordShadowSignalRequest(BaseModel):

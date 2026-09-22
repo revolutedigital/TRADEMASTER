@@ -14,13 +14,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.dependencies import get_db, require_auth
-from app.models.research_experiment import ResearchExperiment, ResearchShadowSignal
+from app.models.research_experiment import ResearchDataUse, ResearchExperiment, ResearchShadowSignal
 from app.repositories.research_experiment_repo import research_experiment_repository
 from app.schemas.research_experiment import (
     CreateExperimentRequest,
+    DatasetPartitionRole,
     EvidenceGateStatusResponse,
     ExperimentReportResponse,
     ExperimentResponse,
+    OpenedPartitionResponse,
     RecordShadowOutcomeRequest,
     RecordShadowSignalRequest,
     ShadowSignalResponse,
@@ -106,6 +108,25 @@ async def get_testnet_eligibility(
         safety=_safety(),
         generated_at=datetime.now(UTC),
     )
+
+
+@router.post(
+    "/experiments/{experiment_id}/partitions/{role}/open",
+    response_model=OpenedPartitionResponse,
+)
+async def open_experiment_partition(
+    experiment_id: str,
+    role: Annotated[DatasetPartitionRole, ApiPath()],
+    db: AsyncSession = Depends(get_db),
+    _user: dict = Depends(require_auth),
+) -> OpenedPartitionResponse:
+    try:
+        partition = await research_registry.open_partition(db, experiment_id, role=role)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except (ResearchRegistryError, BurnedDataConflict) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return _serialize_opened_partition(partition)
 
 
 @router.post(
@@ -348,6 +369,21 @@ def _serialize_shadow_signal(signal: ResearchShadowSignal) -> ShadowSignalRespon
     )
 
 
+def _serialize_opened_partition(partition: ResearchDataUse) -> OpenedPartitionResponse:
+    if partition.opened_at is None:
+        raise HTTPException(status_code=409, detail="Research partition was not opened")
+    return OpenedPartitionResponse(
+        id=partition.id,
+        experiment_id=partition.experiment_id,
+        role=partition.role,
+        start_at=_as_utc_datetime(partition.start_at),
+        end_at=_as_utc_datetime(partition.end_at),
+        manifest_sha256=partition.manifest_sha256,
+        opened_at=_as_utc_datetime(partition.opened_at),
+        safety=_safety(),
+    )
+
+
 def _parse_shadow_outcome(signal: ResearchShadowSignal) -> dict[str, object] | None:
     if signal.outcome_json is None:
         return None
@@ -410,6 +446,10 @@ def _summarize_shadow_outcomes(signals: list[ResearchShadowSignal]) -> dict[str,
 
 def _utc_day(value: datetime):
     return (value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)).date()
+
+
+def _as_utc_datetime(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 def _finite_float(value: object) -> float | None:

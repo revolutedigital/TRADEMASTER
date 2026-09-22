@@ -32,6 +32,7 @@ def test_microstructure_spec_is_openapi_31_and_research_only() -> None:
         "/research/microstructure/experiments",
         "/research/microstructure/experiments/{experiment_id}",
         "/research/microstructure/experiments/{experiment_id}/testnet-eligibility",
+        "/research/microstructure/experiments/{experiment_id}/partitions/{role}/open",
         "/research/microstructure/experiments/{experiment_id}/shadow-signals",
         "/research/microstructure/shadow-signals/{signal_id}/outcome",
         "/research/microstructure/experiments/{experiment_id}/freeze",
@@ -112,6 +113,15 @@ def test_microstructure_spec_publishes_research_only_shadow_signal_contract() ->
     assert "safety" in shadow_signal["required"]
     assert "order_id" not in shadow_signal["properties"]
     assert "execution_authorization" not in shadow_signal["properties"]
+
+
+def test_microstructure_spec_publishes_partition_opening_as_research_only() -> None:
+    partition = _load_spec()["components"]["schemas"]["OpenedResearchPartition"]
+
+    assert partition["additionalProperties"] is False
+    assert "opened_at" in partition["required"]
+    assert "safety" in partition["required"]
+    assert "order_id" not in partition["properties"]
 
 
 def test_preregistration_hash_matches_the_frozen_document() -> None:

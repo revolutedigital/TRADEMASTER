@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Activity, Ban, Database, RefreshCw, ShieldCheck } from "lucide-react";
+import { Activity, AlertTriangle, Ban, Database, RefreshCw, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -25,6 +25,31 @@ interface Experiment {
   created_at: string;
 }
 
+interface EvidenceGateStatus {
+  artifact_available: boolean;
+  audited_start_date: string | null;
+  audited_end_date: string | null;
+  audited_days: number;
+  latest_daily_status: "VALID" | "PARTIAL" | "MISSING" | "INVALID" | null;
+  latest_daily_manifest_sha256: string | null;
+  book_evidence_gate: {
+    eligible: boolean;
+    required_complete_days: 60;
+    complete_days: number;
+    longest_complete_streak_days: number;
+    streak_start: string | null;
+    streak_end: string | null;
+    reasons: string[];
+  };
+  status_reasons: string[];
+  safety: {
+    research_only: true;
+    order_submission_allowed: false;
+    execution_authorization: "none";
+  };
+  generated_at: string;
+}
+
 const statusVariant: Record<ExperimentStatus, "default" | "primary" | "danger" | "warning" | "success"> = {
   DRAFT: "default",
   FROZEN: "primary",
@@ -35,14 +60,34 @@ const statusVariant: Record<ExperimentStatus, "default" | "primary" | "danger" |
 
 export default function ResearchPage() {
   const [experiments, setExperiments] = useState<Experiment[]>([]);
+  const [evidenceStatus, setEvidenceStatus] = useState<EvidenceGateStatus | null>(null);
+  const [evidenceError, setEvidenceError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setEvidenceError(null);
     try {
-      setExperiments(await apiFetch<Experiment[]>("/api/v1/research/microstructure/experiments"));
+      const [experimentsResult, evidenceResult] = await Promise.allSettled([
+        apiFetch<Experiment[]>("/api/v1/research/microstructure/experiments"),
+        apiFetch<EvidenceGateStatus>("/api/v1/research/microstructure/evidence-gate"),
+      ]);
+      if (experimentsResult.status === "rejected") {
+        throw experimentsResult.reason;
+      }
+      setExperiments(experimentsResult.value);
+      if (evidenceResult.status === "fulfilled") {
+        setEvidenceStatus(evidenceResult.value);
+      } else {
+        setEvidenceStatus(null);
+        setEvidenceError(
+          evidenceResult.reason instanceof Error
+            ? evidenceResult.reason.message
+            : "Falha ao carregar gate de evidência",
+        );
+      }
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Falha ao carregar evidências");
     } finally {
@@ -56,6 +101,7 @@ export default function ResearchPage() {
 
   const approved = experiments.filter((experiment) => experiment.status === "APPROVED").length;
   const rejected = experiments.filter((experiment) => experiment.status === "REJECTED").length;
+  const longestBookStreak = evidenceStatus?.book_evidence_gate.longest_complete_streak_days ?? 0;
 
   return (
     <div className="space-y-6">
@@ -87,6 +133,8 @@ export default function ResearchPage() {
         <Card><CardContent><Metric icon={ShieldCheck} label="Aprovados" value={approved} tone="text-emerald-400" /></CardContent></Card>
         <Card><CardContent><Metric icon={Ban} label="Rejeitados" value={rejected} tone="text-red-400" /></CardContent></Card>
       </div>
+
+      <EvidenceGatePanel status={evidenceStatus} error={evidenceError} longestBookStreak={longestBookStreak} />
 
       {loading ? (
         <div className="flex justify-center py-16"><Spinner size="lg" /></div>
@@ -131,7 +179,66 @@ export default function ResearchPage() {
   );
 }
 
-function Metric({ icon: Icon, label, value, tone = "text-[var(--color-text)]" }: { icon: typeof Activity; label: string; value: number; tone?: string }) {
+function EvidenceGatePanel({
+  status,
+  error,
+  longestBookStreak,
+}: {
+  status: EvidenceGateStatus | null;
+  error: string | null;
+  longestBookStreak: number;
+}) {
+  const gate = status?.book_evidence_gate;
+  const gateReady = gate?.eligible === true;
+  const badgeVariant = gateReady ? "success" : "warning";
+  const visibleReason = error ?? status?.status_reasons[0] ?? gate?.reasons[0] ?? null;
+
+  return (
+    <Card className={gateReady ? "border-emerald-500/30" : "border-amber-500/30"}>
+      <CardContent>
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="flex gap-3">
+            {gateReady ? (
+              <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
+            ) : (
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
+            )}
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="font-semibold text-[var(--color-text)]">Gate de book/WAL prospectivo</h2>
+                <Badge variant={badgeVariant}>{gateReady ? "Elegível" : "Travado"}</Badge>
+              </div>
+              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                Exige 60 dias UTC completos e consecutivos de book antes de qualquer canário Testnet.
+                O painel só lê artefato offline; não escaneia dados brutos nem possui botão de execução.
+              </p>
+              {visibleReason ? (
+                <p className="mt-2 font-mono text-xs text-amber-300">{visibleReason}</p>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="grid min-w-72 grid-cols-3 gap-3 text-sm">
+            <GateMetric label="Streak" value={`${longestBookStreak}/60`} />
+            <GateMetric label="Dias auditados" value={status?.audited_days ?? 0} />
+            <GateMetric label="Último dia" value={status?.latest_daily_status ?? "n/a"} />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function GateMetric({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3">
+      <p className="text-xs text-[var(--color-text-faint)]">{label}</p>
+      <p className="mt-1 font-semibold tabular-nums text-[var(--color-text)]">{value}</p>
+    </div>
+  );
+}
+
+function Metric({ icon: Icon, label, value, tone = "text-[var(--color-text)]" }: { icon: typeof Activity; label: string; value: number | string; tone?: string }) {
   return (
     <div className="flex items-center justify-between">
       <div><p className="text-sm text-[var(--color-text-muted)]">{label}</p><p className={`mt-1 text-2xl font-bold tabular-nums ${tone}`}>{value}</p></div>

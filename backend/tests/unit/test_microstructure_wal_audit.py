@@ -11,6 +11,7 @@ from app.schemas.microstructure import MarketEventType, MicrostructureEvent
 from app.services.market.microstructure_wal_audit import (
     DailyCompletenessPolicy,
     ProspectiveWalAuditor,
+    build_evidence_gate_status,
     count_complete_days,
     evaluate_book_evidence_gate,
 )
@@ -239,6 +240,46 @@ def test_book_evidence_gate_approves_only_complete_contiguous_window(tmp_path: P
     assert gate.streak_start == date(2026, 1, 1)
     assert gate.streak_end == date(2026, 1, 3)
     assert len(gate.manifest_sha256) == 64
+
+
+def test_build_evidence_gate_status_is_small_and_research_only(tmp_path: Path) -> None:
+    utc_date = date(2026, 1, 1)
+    start = datetime(2026, 1, 1, 0, 1, tzinfo=UTC)
+    end = datetime(2026, 1, 1, 23, 59, tzinfo=UTC)
+    _write_events(
+        tmp_path,
+        [
+            _event(MarketEventType.TRADE, start),
+            _event(MarketEventType.TRADE, end),
+            _event(MarketEventType.DEPTH, start),
+            _event(MarketEventType.DEPTH, end),
+            _event(MarketEventType.MARK_PRICE, start),
+            _event(MarketEventType.MARK_PRICE, end),
+        ],
+    )
+    audit = ProspectiveWalAuditor(
+        tmp_path,
+        policy=DailyCompletenessPolicy(
+            min_rows_by_type={
+                MarketEventType.TRADE: 1,
+                MarketEventType.DEPTH: 1,
+                MarketEventType.MARK_PRICE: 1,
+            },
+            max_receive_gap_seconds_by_type={},
+        ),
+    ).audit_date(utc_date)
+
+    status = build_evidence_gate_status((audit,), required_complete_days=60)
+
+    assert status["audited_days"] == 1
+    assert status["latest_daily_status"] == "VALID"
+    assert status["book_evidence_gate"]["eligible"] is False
+    assert status["safety"] == {
+        "research_only": True,
+        "order_submission_allowed": False,
+        "execution_authorization": "none",
+    }
+    assert "daily_audits" not in status
 
 
 def _event(

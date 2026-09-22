@@ -533,6 +533,39 @@ def evaluate_book_evidence_gate(
     )
 
 
+def build_evidence_gate_status(
+    audits: Iterable[DailyWalAudit],
+    *,
+    required_complete_days: int = MIN_BOOK_EVIDENCE_DAYS,
+    artifact_available: bool = True,
+    status_reasons: Iterable[str] = (),
+    generated_at: datetime | None = None,
+) -> dict[str, Any]:
+    """Build the small dashboard artifact from already-computed daily audits."""
+    ordered = tuple(sorted(audits, key=lambda audit: audit.utc_date))
+    gate = evaluate_book_evidence_gate(
+        ordered,
+        required_complete_days=required_complete_days,
+    )
+    latest = ordered[-1] if ordered else None
+    return {
+        "artifact_available": artifact_available,
+        "audited_start_date": ordered[0].utc_date.isoformat() if ordered else None,
+        "audited_end_date": ordered[-1].utc_date.isoformat() if ordered else None,
+        "audited_days": len(ordered),
+        "latest_daily_status": latest.status if latest else None,
+        "latest_daily_manifest_sha256": latest.manifest_sha256 if latest else None,
+        "book_evidence_gate": gate.to_dict(),
+        "status_reasons": list(status_reasons),
+        "safety": {
+            "research_only": True,
+            "order_submission_allowed": False,
+            "execution_authorization": "none",
+        },
+        "generated_at": (generated_at or datetime.now(UTC)).isoformat(),
+    }
+
+
 def _longest_complete_streak(
     audits: Iterable[DailyWalAudit],
 ) -> tuple[int, date | None, date | None]:

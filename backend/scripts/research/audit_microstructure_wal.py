@@ -16,12 +16,16 @@ sys.path.insert(0, str(BACKEND_ROOT))
 from app.services.market.microstructure_wal_audit import BookEvidenceGate, DailyWalAudit
 from app.services.market.microstructure_wal_audit import (
     ProspectiveWalAuditor,
+    build_evidence_gate_status,
     count_complete_days,
     evaluate_book_evidence_gate,
 )
 
 
 DEFAULT_ROOT = REPO_ROOT / "backend" / "data" / "microstructure_v1" / "prospective-wal"
+DEFAULT_STATUS_PATH = (
+    BACKEND_ROOT / "data" / "microstructure_v1" / "prospective-audits" / "evidence-gate-status.json"
+)
 
 
 def main() -> int:
@@ -33,6 +37,13 @@ def main() -> int:
     parser.add_argument("--format", choices=("text", "json"), default="text")
     parser.add_argument("--fail-on-incomplete", action="store_true")
     parser.add_argument("--required-complete-days", type=int, default=60)
+    parser.add_argument(
+        "--write-status",
+        nargs="?",
+        type=Path,
+        const=DEFAULT_STATUS_PATH,
+        help="Write the small dashboard evidence-gate artifact.",
+    )
     arguments = parser.parse_args()
 
     start_date, end_date = _resolve_range(arguments.date, arguments.start_date, arguments.end_date)
@@ -42,10 +53,17 @@ def main() -> int:
         audits,
         required_complete_days=arguments.required_complete_days,
     )
+    status_payload = build_evidence_gate_status(
+        audits,
+        required_complete_days=arguments.required_complete_days,
+    )
+    if arguments.write_status is not None:
+        _write_json_file(arguments.write_status, status_payload)
     if arguments.format == "json":
         _write_stdout(
             json.dumps(
                 {
+                    "evidence_gate_status": status_payload,
                     "book_evidence_gate": gate.to_dict(),
                     "daily_audits": [audit.to_dict() for audit in audits],
                 },
@@ -121,6 +139,11 @@ def _print_text(audits: Sequence[DailyWalAudit], *, gate: BookEvidenceGate) -> N
 
 def _write_stdout(line: str) -> None:
     sys.stdout.write(f"{line}\n")
+
+
+def _write_json_file(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

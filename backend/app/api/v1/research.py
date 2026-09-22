@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.dependencies import get_db, require_auth
 from app.models.research_experiment import ResearchExperiment
 from app.repositories.research_experiment_repo import research_experiment_repository
 from app.schemas.research_experiment import (
     CreateExperimentRequest,
+    EvidenceGateStatusResponse,
     ExperimentReportResponse,
     ExperimentResponse,
 )
@@ -24,9 +28,26 @@ from app.services.data.research_registry import (
     ResearchRegistryError,
     research_registry,
 )
+from app.services.market.microstructure_wal_audit import build_evidence_gate_status
 
 
 router = APIRouter()
+
+
+@router.get("/evidence-gate", response_model=EvidenceGateStatusResponse)
+async def get_evidence_gate_status(
+    _user: dict = Depends(require_auth),
+) -> EvidenceGateStatusResponse:
+    artifact_path = Path(settings.microstructure_evidence_status_path)
+    if not artifact_path.exists():
+        return _fallback_evidence_gate_status("evidence_gate_artifact_missing")
+    try:
+        payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+        return EvidenceGateStatusResponse.model_validate(payload)
+    except (OSError, json.JSONDecodeError, ValidationError) as error:
+        return _fallback_evidence_gate_status(
+            f"evidence_gate_artifact_unreadable:{type(error).__name__}"
+        )
 
 
 @router.post("/experiments", response_model=ExperimentResponse, status_code=status.HTTP_201_CREATED)
@@ -168,3 +189,12 @@ def _safety() -> dict[str, object]:
         "order_submission_allowed": False,
         "execution_authorization": "none",
     }
+
+
+def _fallback_evidence_gate_status(reason: str) -> EvidenceGateStatusResponse:
+    payload = build_evidence_gate_status(
+        (),
+        artifact_available=False,
+        status_reasons=(reason,),
+    )
+    return EvidenceGateStatusResponse.model_validate(payload)

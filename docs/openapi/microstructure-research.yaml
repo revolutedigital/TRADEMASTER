@@ -13,6 +13,25 @@ info:
 servers:
   - url: /api/v1
 paths:
+  /research/microstructure/evidence-gate:
+    get:
+      operationId: getMicrostructureEvidenceGate
+      summary: Read the prospective book-evidence gate artifact.
+      description: |
+        Returns the last offline WAL audit summary used by the dashboard. The
+        endpoint reads a small immutable artifact and never scans raw market
+        data, submits orders, activates strategies, or grants execution access.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current book-evidence gate status for the research panel.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidenceGateStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /research/microstructure/experiments:
     post:
       operationId: createMicrostructureExperiment
@@ -288,6 +307,98 @@ components:
           type: array
           const: [1, 2, 5, 10]
           items: { type: integer }
+    BookEvidenceGate:
+      type: object
+      additionalProperties: false
+      required:
+        - eligible
+        - required_complete_days
+        - audited_days
+        - complete_days
+        - longest_complete_streak_days
+        - streak_start
+        - streak_end
+        - incomplete_days
+        - manifest_sha256
+        - reasons
+        - safety
+      properties:
+        eligible:
+          type: boolean
+        required_complete_days:
+          type: integer
+          const: 60
+        audited_days:
+          type: integer
+          minimum: 0
+        complete_days:
+          type: integer
+          minimum: 0
+        longest_complete_streak_days:
+          type: integer
+          minimum: 0
+        streak_start:
+          type: [string, 'null']
+          format: date
+        streak_end:
+          type: [string, 'null']
+          format: date
+        incomplete_days:
+          type: array
+          items:
+            type: string
+            format: date
+        manifest_sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        reasons:
+          type: array
+          items: { type: string }
+        safety:
+          $ref: '#/components/schemas/SafetyBoundary'
+    EvidenceGateStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - artifact_available
+        - audited_start_date
+        - audited_end_date
+        - audited_days
+        - latest_daily_status
+        - latest_daily_manifest_sha256
+        - book_evidence_gate
+        - status_reasons
+        - safety
+        - generated_at
+      properties:
+        artifact_available:
+          type: boolean
+          description: False means the dashboard is showing an explicit ineligible placeholder.
+        audited_start_date:
+          type: [string, 'null']
+          format: date
+        audited_end_date:
+          type: [string, 'null']
+          format: date
+        audited_days:
+          type: integer
+          minimum: 0
+        latest_daily_status:
+          type: [string, 'null']
+          enum: [VALID, PARTIAL, MISSING, INVALID, null]
+        latest_daily_manifest_sha256:
+          type: [string, 'null']
+          pattern: '^[a-f0-9]{64}$'
+        book_evidence_gate:
+          $ref: '#/components/schemas/BookEvidenceGate'
+        status_reasons:
+          type: array
+          items: { type: string }
+        safety:
+          $ref: '#/components/schemas/SafetyBoundary'
+        generated_at:
+          type: string
+          format: date-time
     CreateExperimentRequest:
       type: object
       additionalProperties: false

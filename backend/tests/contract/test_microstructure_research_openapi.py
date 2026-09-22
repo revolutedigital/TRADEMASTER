@@ -28,6 +28,7 @@ def test_microstructure_spec_is_openapi_31_and_research_only() -> None:
 
     paths = set(spec["paths"])
     assert paths == {
+        "/research/microstructure/evidence-gate",
         "/research/microstructure/experiments",
         "/research/microstructure/experiments/{experiment_id}",
         "/research/microstructure/experiments/{experiment_id}/freeze",
@@ -70,6 +71,18 @@ def test_microstructure_spec_publishes_the_approval_gate() -> None:
     cost = _load_spec()["components"]["schemas"]["CostProfile"]["properties"]
     assert cost["stress_roundtrip_bps"]["minimum"] == 20
     assert cost["default_order_style"]["const"] == "marketable_taker"
+
+
+def test_microstructure_spec_publishes_the_book_evidence_artifact_contract() -> None:
+    schemas = _load_spec()["components"]["schemas"]
+    status = schemas["EvidenceGateStatus"]
+    gate = schemas["BookEvidenceGate"]["properties"]
+
+    assert status["additionalProperties"] is False
+    assert "book_evidence_gate" in status["required"]
+    assert "safety" in status["required"]
+    assert gate["required_complete_days"]["const"] == 60
+    assert gate["manifest_sha256"]["pattern"] == "^[a-f0-9]{64}$"
 
 
 def test_preregistration_hash_matches_the_frozen_document() -> None:

@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 ExperimentStatus = Literal["DRAFT", "FROZEN", "REJECTED", "INCONCLUSIVE", "APPROVED"]
+WalAuditStatus = Literal["VALID", "PARTIAL", "MISSING", "INVALID"]
 
 
 class ProductContract(BaseModel):
@@ -90,6 +91,37 @@ class SafetyBoundary(BaseModel):
     research_only: Literal[True] = True
     order_submission_allowed: Literal[False] = False
     execution_authorization: Literal["none"] = "none"
+
+
+class BookEvidenceGateResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    eligible: bool
+    required_complete_days: Literal[60]
+    audited_days: int = Field(ge=0)
+    complete_days: int = Field(ge=0)
+    longest_complete_streak_days: int = Field(ge=0)
+    streak_start: date | None
+    streak_end: date | None
+    incomplete_days: list[date]
+    manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    reasons: list[str]
+    safety: SafetyBoundary = Field(default_factory=SafetyBoundary)
+
+
+class EvidenceGateStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    artifact_available: bool
+    audited_start_date: date | None
+    audited_end_date: date | None
+    audited_days: int = Field(ge=0)
+    latest_daily_status: WalAuditStatus | None
+    latest_daily_manifest_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    book_evidence_gate: BookEvidenceGateResponse
+    status_reasons: list[str]
+    safety: SafetyBoundary = Field(default_factory=SafetyBoundary)
+    generated_at: datetime
 
 
 class ExperimentResponse(BaseModel):

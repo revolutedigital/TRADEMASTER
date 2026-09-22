@@ -92,6 +92,12 @@ class Settings(BaseSettings):
     testnet_canary_max_portfolio_exposure: float = Field(default=0.20, gt=0, le=0.20)
     testnet_canary_max_single_asset_exposure: float = Field(default=0.05, gt=0, le=0.05)
 
+    # Research-only microstructure evidence. The API reads this small artifact
+    # instead of scanning raw WAL gzip files from a dashboard request.
+    microstructure_evidence_status_path: str = (
+        "data/microstructure_v1/prospective-audits/evidence-gate-status.json"
+    )
+
     # Webhook alerts (Slack/Discord/custom — optional)
     risk_alert_webhook_url: str = ""
     trade_alert_webhook_url: str = ""

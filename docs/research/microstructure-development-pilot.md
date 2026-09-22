@@ -425,6 +425,14 @@ required streams `TRADE, DEPTH, MARK_PRICE, SPOT_TRADE`,
 `order_submission_allowed=false`, `execution_authorization=none`, and
 `research_only=true`.
 
+To avoid repeating the stale-source failure, the backend Railway source was
+reconnected to the active `feat/forex-rebuild` branch after deployment
+`3dcc26a0-f47f-4fb0-ab2e-ee7267ecd55d`. Railway opened deployment
+`ecc5c1fe-8aa1-4c7a-9e01-8309555c9f52` and skipped it because no watched source
+changes were detected. A follow-up service check still showed backend
+`SUCCESS`, and the in-container evidence-gate read continued to return the
+private recorder artifact with the same research-only safety boundary.
+
 The research panel also exposes
 `GET /api/v1/research/microstructure/experiments/{experiment_id}/testnet-eligibility`.
 That endpoint crosses experiment status, the book-evidence artifact, and the

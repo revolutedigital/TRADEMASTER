@@ -12,7 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.api.v1 import research
 from app.models.base import Base
-from app.models.research_experiment import ResearchDataUse, ResearchExperiment, ResearchShadowSignal
+from app.models.research_experiment import (
+    ResearchDataUse,
+    ResearchExperiment,
+    ResearchHypothesisAttempt,
+    ResearchShadowSignal,
+)
 from app.schemas.research_experiment import (
     RecordExperimentDecisionRequest,
     RecordShadowOutcomeRequest,
@@ -621,6 +626,20 @@ async def test_experiment_report_exposes_evidence_and_shadow_metrics(
                 feature_vector_sha256="f" * 64,
                 outcome_json=json.dumps({"expected_net_bps": 4.0, "stress_net_bps": 3.0}),
             ),
+            ResearchHypothesisAttempt(
+                experiment_id="experiment",
+                kind="FEATURE_SET",
+                fingerprint_sha256="1" * 64,
+                definition_json=json.dumps({"feature_set": "flow_price_book_aux_session"}),
+                status="REGISTERED",
+            ),
+            ResearchHypothesisAttempt(
+                experiment_id="experiment",
+                kind="TOP_P_TAIL",
+                fingerprint_sha256="2" * 64,
+                definition_json=json.dumps({"tail_fraction": 0.05}),
+                status="EVALUATED",
+            ),
         ]
     )
     await db.flush()
@@ -641,6 +660,12 @@ async def test_experiment_report_exposes_evidence_and_shadow_metrics(
     assert response["metrics"]["shadow"]["stress_mean_bps"] == 2.0
     assert response["metrics"]["shadow"]["complete"] is True
     assert response["metrics"]["shadow"]["positive"] is True
+    assert response["metrics"]["hypothesis_ledger"]["attempt_count"] == 2
+    assert response["metrics"]["hypothesis_ledger"]["attempts"][0]["kind"] == "FEATURE_SET"
+    assert (
+        response["metrics"]["hypothesis_ledger"]["attempts"][0]["definition"]["feature_set"]
+        == "flow_price_book_aux_session"
+    )
     assert response["metrics"]["testnet_boundary"]["order_submission_allowed"] is False
     assert response["safety"]["execution_authorization"] == "none"
 

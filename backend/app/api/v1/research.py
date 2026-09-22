@@ -427,6 +427,7 @@ async def get_experiment_report(
     if experiment.status == "DRAFT":
         raise HTTPException(status_code=409, detail="Draft experiment has no frozen report")
     evidence_status = _read_evidence_gate_status()
+    hypotheses = await research_experiment_repository.list_hypotheses(db, experiment.id)
     shadow_signals = await research_experiment_repository.list_shadow_signals(db, experiment.id)
     shadow_summary = _summarize_shadow_outcomes(shadow_signals)
     testnet_release = await _get_testnet_release(db, experiment.id)
@@ -452,6 +453,18 @@ async def get_experiment_report(
                 and shadow_summary["outcome_signal_count"] == shadow_summary["signal_count"]
                 and shadow_summary["outcome_days"] == shadow_summary["decision_days"]
             ),
+        },
+        "hypothesis_ledger": {
+            "attempt_count": len(hypotheses),
+            "attempts": [
+                {
+                    "kind": hypothesis.kind,
+                    "status": hypothesis.status,
+                    "fingerprint_sha256": hypothesis.fingerprint_sha256,
+                    "definition": json.loads(hypothesis.definition_json),
+                }
+                for hypothesis in hypotheses
+            ],
         },
         "testnet_boundary": {
             "release_request_required": not explicit_testnet_release,

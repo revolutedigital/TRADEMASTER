@@ -93,6 +93,14 @@ interface ExperimentReport {
       positive?: boolean;
       complete?: boolean;
     };
+    hypothesis_ledger?: {
+      attempt_count?: number;
+      attempts?: Array<{
+        kind: string;
+        status: string;
+        fingerprint_sha256: string;
+      }>;
+    };
     testnet_boundary?: {
       order_submission_allowed: false;
       execution_authorization: "none";
@@ -285,6 +293,8 @@ function ExperimentReportPanel({
 }) {
   const shadow = report?.metrics.shadow;
   const book = report?.metrics.book_evidence;
+  const hypothesisLedger = report?.metrics.hypothesis_ledger;
+  const visibleAttempts = hypothesisLedger?.attempts?.slice(0, 3) ?? [];
   const visibleReason = error ?? (hasExperiments ? null : "nenhum_experimento_registrado");
 
   return (
@@ -315,8 +325,20 @@ function ExperimentReportPanel({
             <GateMetric label="Shadow" value={`${shadow?.outcome_signal_count ?? 0}/${shadow?.signal_count ?? 0}`} />
             <GateMetric label="Expected" value={formatBps(shadow?.expected_mean_bps)} />
             <GateMetric label="Stress" value={formatBps(shadow?.stress_mean_bps)} />
+            <GateMetric label="Hipóteses" value={hypothesisLedger?.attempt_count ?? 0} />
           </div>
         </div>
+        {visibleAttempts.length > 0 ? (
+          <div className="mt-4 grid gap-2 text-xs text-[var(--color-text-muted)] md:grid-cols-3">
+            {visibleAttempts.map((attempt) => (
+              <div key={attempt.fingerprint_sha256} className="rounded-lg border border-slate-800/80 p-2">
+                <div className="font-medium text-[var(--color-text)]">{attempt.kind}</div>
+                <div className="mt-1">{attempt.status}</div>
+                <div className="mt-1 font-mono">{shortHash(attempt.fingerprint_sha256)}</div>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );

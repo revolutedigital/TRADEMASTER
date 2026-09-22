@@ -240,6 +240,19 @@ the gross mean stayed close to zero and the 12 bps round-trip friction became th
 net loss. A stop at the entry price is not financial breakeven: after fees and
 slippage it realizes approximately -12 bps.
 
+The statistical gate must read the top-p pilot report instead of assuming
+calibration passed:
+
+```bash
+cd backend
+./.venv/bin/python scripts/research/evaluate_statistical_gate.py \
+  --portfolio-root data/microstructure_v1/reports/trailing-pilot-stress-target \
+  --top-p-report data/microstructure_v1/reports/top-p-pilot-stress.json
+```
+
+If the top-p report is missing or any result lacks a positive monotonicity check,
+the gate records the concrete reason and fails closed.
+
 ## Decision and next evidence gate
 
 The trade-flow-only candidate is rejected. It must not be extended into an audit,

@@ -37,6 +37,33 @@ class TopPTailMetrics:
 
 
 @dataclass(frozen=True)
+class TopPMonotonicityComparison:
+    narrower_tail_fraction: float
+    wider_tail_fraction: float
+    narrower_selected_count: int
+    wider_selected_count: int
+    narrower_target_rate: float
+    wider_target_rate: float
+    one_sided_z_margin: float
+    passed: bool
+    reason: str | None
+
+
+@dataclass(frozen=True)
+class TopPMonotonicityReport:
+    passed: bool
+    comparisons: tuple[TopPMonotonicityComparison, ...]
+    reasons: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "passed": self.passed,
+            "comparisons": [asdict(comparison) for comparison in self.comparisons],
+            "reasons": list(self.reasons),
+        }
+
+
+@dataclass(frozen=True)
 class WalkForwardFoldResult:
     fold: int
     train_end_date: str
@@ -502,6 +529,7 @@ def summarize_walk_forward(result: WalkForwardResult) -> dict[str, object]:
             "target_rate": weighted_rate,
             "mean_lift": float(np.mean([row.lift_over_base for row in tail_rows])),
         }
+    monotonicity = evaluate_top_p_monotonicity(result)
     return {
         "horizon_seconds": result.horizon_seconds,
         "feature_set": result.feature_set,
@@ -510,7 +538,35 @@ def summarize_walk_forward(result: WalkForwardResult) -> dict[str, object]:
         "mean_roc_auc": float(np.mean([fold.roc_auc for fold in folds])),
         "mean_calibration_error": float(np.mean([fold.calibration_mean_error for fold in folds])),
         "tails": tail_summary,
+        "top_p_monotonic": monotonicity.passed,
+        "top_p_monotonicity": monotonicity.to_dict(),
     }
+
+
+def evaluate_top_p_monotonicity(
+    result: WalkForwardResult,
+    *,
+    confidence_z: float = 1.6448536269514722,
+) -> TopPMonotonicityReport:
+    """Check the preregistered tail ordering without pretending tiny samples are certain."""
+    if confidence_z < 0:
+        raise ValueError("confidence_z cannot be negative")
+    aggregate = _aggregate_tail_metrics(result)
+    comparisons = tuple(
+        _compare_top_p_tails(
+            aggregate,
+            narrower_tail_fraction=narrower,
+            wider_tail_fraction=wider,
+            confidence_z=confidence_z,
+        )
+        for narrower, wider in ((0.01, 0.05), (0.05, 0.10))
+    )
+    reasons = tuple(comparison.reason for comparison in comparisons if comparison.reason)
+    return TopPMonotonicityReport(
+        passed=not reasons,
+        comparisons=comparisons,
+        reasons=reasons,
+    )
 
 
 def _top_p_metrics(
@@ -536,6 +592,66 @@ def _top_p_metrics(
             )
         )
     return tuple(rows)
+
+
+def _aggregate_tail_metrics(
+    result: WalkForwardResult,
+) -> dict[float, tuple[int, float, float]]:
+    aggregate: dict[float, tuple[int, float, float]] = {}
+    for tail in TOP_P_TAILS:
+        metrics = [
+            metric
+            for fold in result.folds
+            for metric in fold.tails
+            if metric.tail_fraction == tail
+        ]
+        selected_count = sum(metric.selected_count for metric in metrics)
+        success_estimate = sum(metric.target_rate * metric.selected_count for metric in metrics)
+        target_rate = success_estimate / selected_count if selected_count else 0.0
+        aggregate[tail] = (selected_count, success_estimate, target_rate)
+    return aggregate
+
+
+def _compare_top_p_tails(
+    aggregate: dict[float, tuple[int, float, float]],
+    *,
+    narrower_tail_fraction: float,
+    wider_tail_fraction: float,
+    confidence_z: float,
+) -> TopPMonotonicityComparison:
+    narrower_count, _, narrower_rate = aggregate[narrower_tail_fraction]
+    wider_count, _, wider_rate = aggregate[wider_tail_fraction]
+    reason = None
+    if narrower_count == 0:
+        reason = f"top_{narrower_tail_fraction:.0%}_selected_no_rows"
+    elif wider_count == 0:
+        reason = f"top_{wider_tail_fraction:.0%}_selected_no_rows"
+    standard_error = (
+        math.sqrt(
+            narrower_rate * (1 - narrower_rate) / max(narrower_count, 1)
+            + wider_rate * (1 - wider_rate) / max(wider_count, 1)
+        )
+        if reason is None
+        else 0.0
+    )
+    one_sided_margin = confidence_z * standard_error
+    passed = reason is None and narrower_rate + one_sided_margin >= wider_rate
+    if reason is None and not passed:
+        reason = (
+            f"top_{narrower_tail_fraction:.0%}_underperforms_top_"
+            f"{wider_tail_fraction:.0%}"
+        )
+    return TopPMonotonicityComparison(
+        narrower_tail_fraction=narrower_tail_fraction,
+        wider_tail_fraction=wider_tail_fraction,
+        narrower_selected_count=narrower_count,
+        wider_selected_count=wider_count,
+        narrower_target_rate=narrower_rate,
+        wider_target_rate=wider_rate,
+        one_sided_z_margin=one_sided_margin,
+        passed=passed,
+        reason=reason,
+    )
 
 
 def _matrix(frame: pd.DataFrame, columns: tuple[str, ...]) -> np.ndarray:

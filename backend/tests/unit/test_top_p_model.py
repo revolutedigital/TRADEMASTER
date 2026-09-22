@@ -5,6 +5,10 @@ import pandas as pd
 import pytest
 
 from app.services.research.top_p_model import (
+    TopPTailMetrics,
+    WalkForwardFoldResult,
+    WalkForwardResult,
+    evaluate_top_p_monotonicity,
     feature_columns,
     freeze_top_p_policy,
     frozen_top_p_would_enter,
@@ -52,6 +56,8 @@ def test_calibrated_walk_forward_is_temporal_and_reports_all_tails() -> None:
     assert len(result.folds[0].tails) == 4
     assert summary["fold_count"] == 3
     assert summary["mean_roc_auc"] > 0.7
+    assert "top_p_monotonic" in summary
+    assert "top_p_monotonicity" in summary
 
 
 def test_book_feature_sets_require_real_book_columns() -> None:
@@ -198,6 +204,39 @@ def test_frozen_top_p_policy_scores_feature_vectors_without_sklearn_state() -> N
     assert frozen_top_p_would_enter(artifact, feature_vector) is (
         probability >= artifact["probability_threshold"]
     )
+
+
+def test_top_p_monotonicity_detects_clear_tail_inversion() -> None:
+    result = WalkForwardResult(
+        horizon_seconds=120,
+        feature_set="flow",
+        feature_columns=("flow_imbalance_1s",),
+        folds=(
+            WalkForwardFoldResult(
+                fold=1,
+                train_end_date="2026-01-03",
+                calibration_date="2026-01-04",
+                test_date="2026-01-05",
+                test_count=1_000,
+                base_rate=0.5,
+                brier_score=0.2,
+                log_loss=0.6,
+                roc_auc=0.7,
+                calibration_mean_error=0.0,
+                tails=(
+                    TopPTailMetrics(0.01, 0.9, 100, 0.10, 0.2),
+                    TopPTailMetrics(0.02, 0.8, 100, 0.20, 0.4),
+                    TopPTailMetrics(0.05, 0.7, 100, 0.80, 1.6),
+                    TopPTailMetrics(0.10, 0.6, 200, 0.70, 1.4),
+                ),
+            ),
+        ),
+    )
+
+    report = evaluate_top_p_monotonicity(result)
+
+    assert report.passed is False
+    assert "top_1%_underperforms_top_5%" in report.reasons
 
 
 def test_frozen_top_p_policy_requires_complete_feature_vector() -> None:

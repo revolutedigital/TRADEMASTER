@@ -56,6 +56,21 @@ def test_positive_but_short_history_is_inconclusive() -> None:
     assert not result.conditions["minimum_20_days"]
 
 
+def test_top_p_monotonicity_is_required_for_approval() -> None:
+    result = evaluate_statistical_gate(
+        trades(20, 10, 2, 1),
+        attempted_hypotheses=1,
+        temporal_fold_count=3,
+        top_p_monotonic=False,
+        prospective_positive=True,
+        pbo=0.1,
+        bootstrap_samples=1_000,
+    )
+
+    assert result.decision == GateDecision.INCONCLUSIVE
+    assert result.conditions["top_p_monotonic"] is False
+
+
 def test_block_bootstrap_and_pbo_are_deterministic() -> None:
     frame = trades(6, 10, 2, 1)
     assert (

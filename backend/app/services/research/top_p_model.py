@@ -35,6 +35,20 @@ AUXILIARY_FEATURE_SETS = (
     "flow_price_book_aux",
     "flow_price_book_aux_session",
 )
+TOP_P_FEATURE_SETS = (
+    "flow",
+    "flow_price",
+    "flow_price_session",
+    "flow_aux",
+    "flow_price_aux",
+    "flow_price_aux_session",
+    "flow_book",
+    "flow_price_book",
+    "flow_price_book_session",
+    "flow_book_aux",
+    "flow_price_book_aux",
+    "flow_price_book_aux_session",
+)
 LOG1P_NONNEGATIVE_PREFIXES = (
     "trade_count_",
     "quote_volume_",

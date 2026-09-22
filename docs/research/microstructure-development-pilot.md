@@ -186,7 +186,7 @@ cd backend
   --output data/microstructure_v1/models/frozen-shadow-policy.json \
   --target stress \
   --horizon-seconds 300 \
-  --feature-set flow_price_book_session \
+  --feature-set flow_price_book_aux_session \
   --tail-fraction 0.05 \
   --calibration-date YYYY-MM-DD
 ```

@@ -5,6 +5,9 @@ import pandas as pd
 import pytest
 
 from app.services.research.top_p_model import (
+    AUXILIARY_FEATURE_SETS,
+    BOOK_FEATURE_SETS,
+    TOP_P_FEATURE_SETS,
     TopPTailMetrics,
     WalkForwardFoldResult,
     WalkForwardResult,
@@ -17,6 +20,16 @@ from app.services.research.top_p_model import (
     summarize_walk_forward,
     verify_frozen_top_p_policy,
 )
+from scripts.research.freeze_top_p_policy import _build_parser
+
+
+def test_freeze_policy_cli_accepts_every_top_p_feature_set() -> None:
+    parser = _build_parser()
+    feature_action = next(action for action in parser._actions if action.dest == "feature_set")
+
+    assert tuple(feature_action.choices) == TOP_P_FEATURE_SETS
+    assert set(BOOK_FEATURE_SETS).issubset(feature_action.choices)
+    assert set(AUXILIARY_FEATURE_SETS).issubset(feature_action.choices)
 
 
 def test_calibrated_walk_forward_is_temporal_and_reports_all_tails() -> None:

@@ -15,10 +15,10 @@ BACKEND_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = BACKEND_ROOT.parent
 sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.services.research.top_p_model import freeze_top_p_policy
+from app.services.research.top_p_model import TOP_P_FEATURE_SETS, freeze_top_p_policy
 
 
-def main() -> int:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--dataset-root",
@@ -30,14 +30,7 @@ def main() -> int:
     parser.add_argument("--horizon-seconds", type=int, choices=(120, 300), required=True)
     parser.add_argument(
         "--feature-set",
-        choices=(
-            "flow",
-            "flow_price",
-            "flow_price_session",
-            "flow_book",
-            "flow_price_book",
-            "flow_price_book_session",
-        ),
+        choices=TOP_P_FEATURE_SETS,
         required=True,
     )
     parser.add_argument(
@@ -48,6 +41,11 @@ def main() -> int:
     )
     parser.add_argument("--calibration-date", type=date.fromisoformat, required=True)
     parser.add_argument("--embargo-seconds", type=int, default=300)
+    return parser
+
+
+def main() -> int:
+    parser = _build_parser()
     arguments = parser.parse_args()
 
     paths = sorted(arguments.dataset_root.glob("date=*/research_rows.parquet"))

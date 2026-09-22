@@ -14,6 +14,7 @@ from app.services.research.shadow_policy_runner import (
     ShadowPolicyRunnerError,
     record_frozen_top_p_shadow_batch,
     record_frozen_top_p_shadow_decision,
+    record_frozen_top_p_shadow_selection,
     record_frozen_top_p_shadow_signal,
     score_frozen_top_p_shadow_frame,
 )
@@ -143,6 +144,45 @@ async def test_frozen_policy_shadow_batch_records_entries_idempotently(
     assert {signal.side for signal in signals} == {"BUY", "SELL"}
     assert all(signal.would_enter for signal in signals)
     assert all(signal.model_sha256 == artifact["model_sha256"] for signal in signals)
+    assert first.order_submission_allowed is False
+    assert first.execution_authorization == "none"
+
+
+@pytest.mark.asyncio
+async def test_frozen_policy_shadow_selection_records_prescored_online_entries_idempotently(
+    db: AsyncSession,
+) -> None:
+    partition_start = datetime(2026, 1, 1, tzinfo=UTC)
+    await _seed_shadow_experiment(
+        db,
+        partition_start=partition_start,
+        partition_end=partition_start + timedelta(days=30),
+    )
+    artifact = _artifact()
+    selection = score_frozen_top_p_shadow_frame(_shadow_frame(), artifact=artifact)
+
+    first = await record_frozen_top_p_shadow_selection(
+        db,
+        experiment_id="experiment",
+        selection=selection,
+    )
+    second = await record_frozen_top_p_shadow_selection(
+        db,
+        experiment_id="experiment",
+        selection=selection,
+    )
+
+    signals = (await db.execute(select(ResearchShadowSignal))).scalars().all()
+    assert first.scored_rows == 3
+    assert first.selected_count == 2
+    assert first.recorded_count == 2
+    assert first.skipped_existing_count == 0
+    assert second.recorded_count == 0
+    assert second.skipped_existing_count == 2
+    assert len(signals) == 2
+    assert {signal.feature_vector_sha256 for signal in signals} == {
+        decision.feature_vector_sha256 for decision in selection.decisions
+    }
     assert first.order_submission_allowed is False
     assert first.execution_authorization == "none"
 

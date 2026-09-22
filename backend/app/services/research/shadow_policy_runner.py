@@ -338,6 +338,123 @@ async def record_frozen_top_p_shadow_batch(
     )
 
 
+async def record_frozen_top_p_shadow_selection(
+    db: AsyncSession,
+    *,
+    experiment_id: str,
+    selection: FrozenTopPShadowSelection,
+    limit: int | None = None,
+    recorder: ResearchShadowRecorder = research_shadow_recorder,
+) -> ShadowPolicyBatchResult:
+    """Append an already-scored online frozen top-p selection idempotently."""
+    if limit is not None and limit <= 0:
+        raise ShadowPolicyRunnerError("selection limit must be positive")
+    if selection.order_submission_allowed:
+        raise ShadowPolicyRunnerError("online shadow selection cannot allow order submission")
+    if selection.execution_authorization != "none":
+        raise ShadowPolicyRunnerError("online shadow selection cannot carry execution authorization")
+    decisions = selection.decisions[:limit] if limit is not None else selection.decisions
+    existing_by_horizon: dict[int, set[tuple[int, str, int]]] = {}
+    recorded_count = 0
+    skipped_existing_count = 0
+    for decision in decisions:
+        normalized_decision = await _validate_selection_decision(
+            db,
+            experiment_id=experiment_id,
+            selection=selection,
+            decision=decision,
+        )
+        existing = existing_by_horizon.get(normalized_decision.horizon_seconds)
+        if existing is None:
+            existing = await _existing_shadow_keys(
+                db,
+                experiment_id=experiment_id,
+                horizon_seconds=normalized_decision.horizon_seconds,
+            )
+            existing_by_horizon[normalized_decision.horizon_seconds] = existing
+        key = (
+            _decision_time_key_ms(normalized_decision.decision_time),
+            normalized_decision.side,
+            normalized_decision.horizon_seconds,
+        )
+        if key in existing:
+            existing_signal = await _find_existing_shadow_signal(
+                db,
+                experiment_id=experiment_id,
+                decision_time=normalized_decision.decision_time,
+                side=normalized_decision.side,
+                horizon_seconds=normalized_decision.horizon_seconds,
+            )
+            if existing_signal is None:
+                raise ShadowPolicyRunnerError("existing shadow key has no matching signal row")
+            _raise_if_existing_signal_conflicts(existing_signal, normalized_decision)
+            skipped_existing_count += 1
+            continue
+        await recorder.record(
+            db,
+            experiment_id=experiment_id,
+            decision_time=normalized_decision.decision_time,
+            side=normalized_decision.side,
+            horizon_seconds=normalized_decision.horizon_seconds,
+            probability=normalized_decision.probability,
+            threshold=normalized_decision.threshold,
+            model_sha256=normalized_decision.model_sha256,
+            feature_vector=normalized_decision.feature_vector,
+        )
+        existing.add(key)
+        recorded_count += 1
+    return ShadowPolicyBatchResult(
+        model_sha256=selection.model_sha256,
+        scored_rows=selection.scored_rows,
+        selected_count=selection.selected_count,
+        recorded_count=recorded_count,
+        skipped_existing_count=skipped_existing_count,
+    )
+
+
+async def _validate_selection_decision(
+    db: AsyncSession,
+    *,
+    experiment_id: str,
+    selection: FrozenTopPShadowSelection,
+    decision: FrozenTopPShadowDecision,
+) -> FrozenTopPShadowDecision:
+    if decision.model_sha256 != selection.model_sha256:
+        raise ShadowPolicyRunnerError("selection decision has a different model hash")
+    if decision.feature_vector_sha256 != _sha256(decision.feature_vector):
+        raise ShadowPolicyRunnerError("selection decision has a different feature vector hash")
+    try:
+        validated = await validate_shadow_signal_recording(
+            db,
+            experiment_id=experiment_id,
+            decision_time=decision.decision_time,
+            side=decision.side,
+            horizon_seconds=decision.horizon_seconds,
+            probability=decision.probability,
+            threshold=decision.threshold,
+            model_sha256=decision.model_sha256,
+            feature_vector=decision.feature_vector,
+        )
+    except (TypeError, ValueError) as error:
+        raise ShadowPolicyRunnerError(str(error)) from error
+    normalized_decision = FrozenTopPShadowDecision(
+        decision_time=validated.decision_time,
+        side=validated.side,
+        horizon_seconds=validated.horizon_seconds,
+        probability=validated.probability,
+        threshold=validated.threshold,
+        would_enter=validated.probability >= validated.threshold,
+        model_sha256=validated.model_sha256,
+        feature_vector_sha256=validated.feature_vector_sha256,
+        feature_vector=decision.feature_vector,
+    )
+    if normalized_decision.feature_vector_sha256 != decision.feature_vector_sha256:
+        raise ShadowPolicyRunnerError("selection decision feature hash changed after validation")
+    if normalized_decision.would_enter != decision.would_enter:
+        raise ShadowPolicyRunnerError("selection decision entry flag changed after validation")
+    return normalized_decision
+
+
 async def _existing_shadow_keys(
     db: AsyncSession,
     *,

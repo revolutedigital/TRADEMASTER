@@ -271,6 +271,36 @@ database write, use
 `app.services.research.online_shadow_policy.score_online_frozen_top_p_shadow_events`;
 it produces the same frozen top-p decision objects without touching the ledger.
 
+For operational online replay from normalized archive/WAL partitions, use the
+dry-run-first CLI. It rebuilds chronological `MicrostructureEvent` objects,
+derives causal online features, scores both sides on a fixed clock, and prints
+the entries that would be appended:
+
+```bash
+cd backend
+./.venv/bin/python scripts/research/run_online_shadow_policy.py \
+  --experiment-id EXPERIMENT_ID \
+  --policy-artifact data/microstructure_v1/models/frozen-shadow-policy.json \
+  --start YYYY-MM-DDTHH:MM:SSZ \
+  --end YYYY-MM-DDTHH:MM:SSZ \
+  --decision-stride-seconds 5
+```
+
+The default `--trade-root` points to the local normalized Binance USD-M archive
+(`data/microstructure_v1/normalized/aggTrades`) for dry-run evidence. For a
+prospective recorder WAL, pass `--wal-root data/microstructure_v1/prospective-wal`
+or explicit roots such as `--trade-root .../normalized/trades`,
+`--book-root .../prospective-wal/depth`, `--mark-root .../prospective-wal/mark_price`,
+`--liquidation-root .../prospective-wal/liquidation`, and
+`--spot-root .../prospective-wal/spot_trade`. The CLI fails closed when the
+frozen artifact requires book, mark/funding, liquidation, or spot/perp columns
+and the corresponding root/data is missing, so a book/aux model cannot be scored
+with silent zeroed evidence. Re-running with `--commit` appends only through
+`record_frozen_top_p_shadow_selection`, skips matching existing
+`(decision_time, side, horizon)` signals, validates the opened
+`PROSPECTIVE_SHADOW` window, and still reports
+`order_submission_allowed=false`, `execution_authorization=none`.
+
 For partition batches, use the dry-run-first CLI. Without `--commit`, it only
 scores the frozen policy and prints the selected shadow entries:
 

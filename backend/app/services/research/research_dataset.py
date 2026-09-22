@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import gzip
 import json
 import os
 from dataclasses import asdict, dataclass
@@ -16,6 +17,7 @@ import pyarrow.parquet as pq
 from app.services.backtest.event_replay import OrderSide
 from app.services.research.microstructure_features import (
     TRADE_WINDOWS_SECONDS,
+    materialize_book_features,
     materialize_trade_flow_features,
 )
 from app.services.research.path_labels import EventPathLabeler, PathLabelConfig
@@ -29,6 +31,8 @@ class ResearchDatasetConfig:
     stress_cost_bps: float = 24.0
     initial_stop_bps: float = 20.0
     feature_windows_seconds: tuple[int, ...] = TRADE_WINDOWS_SECONDS
+    require_book_features: bool = False
+    max_book_staleness_ms: int = 1_000
 
     def path_label_config(self) -> PathLabelConfig:
         return PathLabelConfig(
@@ -57,9 +61,13 @@ def build_research_rows(
     trades: pd.DataFrame,
     decision_times_ms: np.ndarray,
     config: ResearchDatasetConfig | None = None,
+    *,
+    book_events: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Build side/horizon rows; all event data must include the full label horizon."""
     dataset_config = config or ResearchDatasetConfig()
+    if dataset_config.max_book_staleness_ms < 0:
+        raise ValueError("max book staleness cannot be negative")
     required = {
         "event_time_ms",
         "sequence_id",
@@ -80,6 +88,16 @@ def build_research_rows(
         decisions,
         windows_seconds=dataset_config.feature_windows_seconds,
     )
+    if book_events is not None or dataset_config.require_book_features:
+        if book_events is None:
+            raise ValueError("book features are required but no book events were provided")
+        book_features = materialize_book_features(book_events, decisions)
+        if dataset_config.require_book_features:
+            _require_complete_book_features(
+                book_features,
+                max_staleness_ms=dataset_config.max_book_staleness_ms,
+            )
+        features = features.merge(book_features, on="decision_time_ms", how="left")
     labeler = EventPathLabeler(
         times,
         sequences,
@@ -103,6 +121,12 @@ def build_research_rows(
             rows[f"flow_imbalance_{window}s"] * rows["side_sign"]
         )
         rows[f"directed_return_{window}s_bps"] = rows[f"return_{window}s_bps"] * rows["side_sign"]
+    if "depth_imbalance" in rows.columns:
+        rows["directed_depth_imbalance"] = rows["depth_imbalance"] * rows["side_sign"]
+    if "microprice_displacement_bps" in rows.columns:
+        rows["directed_microprice_displacement_bps"] = (
+            rows["microprice_displacement_bps"] * rows["side_sign"]
+        )
     rows["target"] = rows["paid_expected_before_stop"].astype(np.int8)
     return rows.sort_values(
         ["decision_time_ms", "side", "horizon_seconds"], kind="stable"
@@ -115,6 +139,7 @@ def build_research_partition(
     output_root: Path,
     utc_date: date,
     config: ResearchDatasetConfig | None = None,
+    book_source_root: Path | None = None,
 ) -> ResearchPartitionResult:
     dataset_config = config or ResearchDatasetConfig()
     day_start = datetime.combine(utc_date, datetime.min.time(), tzinfo=UTC)
@@ -130,6 +155,11 @@ def build_research_partition(
         dtype=np.int64,
     )
     event_times = trades["event_time_ms"].to_numpy(dtype=np.int64)
+    book_events = (
+        load_book_interval(book_source_root, history_start, day_end)
+        if book_source_root is not None
+        else None
+    )
     history_ready = decisions - max(dataset_config.feature_windows_seconds) * 1000
     complete = (history_ready >= event_times[0]) & (
         decisions + max(dataset_config.horizons_seconds) * 1000 <= event_times[-1]
@@ -137,7 +167,7 @@ def build_research_partition(
     decisions = decisions[complete]
     if not len(decisions):
         raise ValueError(f"no complete decisions for {utc_date.isoformat()}")
-    rows = build_research_rows(trades, decisions, dataset_config)
+    rows = build_research_rows(trades, decisions, dataset_config, book_events=book_events)
     partition_dir = output_root / f"date={utc_date.isoformat()}"
     partition_dir.mkdir(parents=True, exist_ok=True)
     output_path = partition_dir / "research_rows.parquet"
@@ -190,7 +220,9 @@ def load_trade_interval(
                 ],
             )
             frame = table.to_pandas()
-            frame["event_time_ms"] = frame["event_time"].astype("int64", copy=False)
+            frame["event_time_ms"] = _datetime_to_epoch_ms(
+                pd.to_datetime(frame["event_time"], utc=True)
+            )
             start_ms = int(interval_start.timestamp() * 1000)
             end_ms = int(interval_end.timestamp() * 1000)
             frame = frame[(frame["event_time_ms"] >= start_ms) & (frame["event_time_ms"] <= end_ms)]
@@ -201,6 +233,121 @@ def load_trade_interval(
     return pd.concat(frames, ignore_index=True).sort_values(
         ["event_time_ms", "sequence_id"], kind="stable"
     )
+
+
+def load_book_interval(
+    source_root: Path, interval_start: datetime, interval_end: datetime
+) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    cursor = interval_start.date()
+    while cursor <= interval_end.date():
+        partition_dir = source_root / f"date={cursor.isoformat()}"
+        parquet_path = partition_dir / "events.parquet"
+        jsonl_path = partition_dir / "events.jsonl.gz"
+        if parquet_path.exists():
+            table = pq.read_table(
+                parquet_path,
+                columns=[
+                    "event_time",
+                    "sequence_id",
+                    "bid_price",
+                    "bid_quantity",
+                    "ask_price",
+                    "ask_quantity",
+                ],
+            )
+            frame = table.to_pandas()
+        elif jsonl_path.exists():
+            frame = _read_book_wal_jsonl(jsonl_path)
+        else:
+            cursor += timedelta(days=1)
+            continue
+        frame = _prepare_book_frame(frame, interval_start, interval_end)
+        if not frame.empty:
+            frames.append(frame)
+        cursor += timedelta(days=1)
+    if not frames:
+        raise FileNotFoundError("no top-of-book partitions overlap the interval")
+    return pd.concat(frames, ignore_index=True).sort_values(
+        ["event_time_ms", "sequence_id"], kind="stable"
+    )
+
+
+def _read_book_wal_jsonl(path: Path) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    with gzip.open(path, "rt", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            payload = json.loads(line)
+            rows.append(
+                {
+                    "event_time": payload.get("event_time"),
+                    "sequence_id": payload.get("sequence_id"),
+                    "bid_price": payload.get("bid_price"),
+                    "bid_quantity": payload.get("bid_quantity"),
+                    "ask_price": payload.get("ask_price"),
+                    "ask_quantity": payload.get("ask_quantity"),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _prepare_book_frame(
+    frame: pd.DataFrame,
+    interval_start: datetime,
+    interval_end: datetime,
+) -> pd.DataFrame:
+    if frame.empty:
+        return pd.DataFrame(
+            columns=[
+                "event_time_ms",
+                "sequence_id",
+                "bid_price",
+                "bid_quantity",
+                "ask_price",
+                "ask_quantity",
+            ]
+        )
+    prepared = frame.copy()
+    prepared["event_time"] = pd.to_datetime(prepared["event_time"], utc=True)
+    prepared["event_time_ms"] = _datetime_to_epoch_ms(prepared["event_time"])
+    start_ms = int(interval_start.timestamp() * 1000)
+    end_ms = int(interval_end.timestamp() * 1000)
+    prepared = prepared[
+        (prepared["event_time_ms"] >= start_ms) & (prepared["event_time_ms"] <= end_ms)
+    ]
+    for column in ("bid_price", "bid_quantity", "ask_price", "ask_quantity"):
+        prepared[column] = pd.to_numeric(prepared[column], errors="raise")
+    if "sequence_id" in prepared.columns:
+        prepared["sequence_id"] = pd.to_numeric(prepared["sequence_id"], errors="coerce").fillna(0)
+    else:
+        prepared["sequence_id"] = 0
+    return prepared[
+        [
+            "event_time_ms",
+            "sequence_id",
+            "bid_price",
+            "bid_quantity",
+            "ask_price",
+            "ask_quantity",
+        ]
+    ]
+
+
+def _require_complete_book_features(features: pd.DataFrame, *, max_staleness_ms: int) -> None:
+    unavailable_count = int((features["book_available"] < 1).sum())
+    stale_count = int((features["book_update_age_ms"] > max_staleness_ms).sum())
+    if unavailable_count or stale_count:
+        raise ValueError(
+            "book features are incomplete: "
+            f"{unavailable_count} decisions without book, "
+            f"{stale_count} decisions older than {max_staleness_ms}ms"
+        )
+
+
+def _datetime_to_epoch_ms(values: pd.Series) -> pd.Series:
+    return pd.to_datetime(values, utc=True).dt.as_unit("ms").astype("int64")
 
 
 def _sha256(path: Path) -> str:

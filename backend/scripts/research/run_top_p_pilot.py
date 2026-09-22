@@ -4,17 +4,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import pandas as pd
+
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = BACKEND_ROOT.parent
+sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.services.research.top_p_model import (
     run_calibrated_walk_forward,
     summarize_walk_forward,
 )
-
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def main() -> int:
@@ -39,8 +41,11 @@ def main() -> int:
     )
     frame["target"] = frame[target_column].astype("int8")
     results = []
+    feature_sets = ["flow", "flow_price", "flow_price_session"]
+    if _has_book_features(frame):
+        feature_sets.extend(["flow_book", "flow_price_book", "flow_price_book_session"])
     for horizon in (120, 300):
-        for feature_set in ("flow", "flow_price", "flow_price_session"):
+        for feature_set in feature_sets:
             result = run_calibrated_walk_forward(
                 frame,
                 horizon_seconds=horizon,
@@ -73,6 +78,18 @@ def main() -> int:
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps([result["summary"] for result in results], indent=2))  # noqa: T201
     return 0
+
+
+def _has_book_features(frame: pd.DataFrame) -> bool:
+    return any(
+        column in frame.columns
+        for column in (
+            "book_available",
+            "spread_bps",
+            "depth_imbalance",
+            "microprice_displacement_bps",
+        )
+    )
 
 
 if __name__ == "__main__":

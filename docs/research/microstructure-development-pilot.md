@@ -110,6 +110,37 @@ also drifted across days: a threshold calibrated as top 1% selected more than 1%
 on later test days. The selection policy therefore needs regime-aware prospective
 calibration rather than a permanent raw-probability cutoff.
 
+### Book-aware dataset path
+
+The historical development result above was intentionally trade-flow-only because
+Binance aggregate-trade archives do not contain executable top-of-book state. The
+research dataset builder now has a separate path for the prospective WAL depth
+stream: it can join causal top-of-book features at each decision time using only
+the latest quote observed at or before that decision.
+
+Book-dependent materialization must be run fail-closed:
+
+```bash
+cd backend
+./.venv/bin/python scripts/research/build_research_dataset.py \
+  --start-date YYYY-MM-DD \
+  --end-date YYYY-MM-DD \
+  --source-root data/microstructure_v1/normalized/aggTrades \
+  --book-source-root data/microstructure_v1/prospective-wal/depth \
+  --require-book-features \
+  --max-book-staleness-ms 1000
+```
+
+This adds `book_available`, `book_update_age_ms`, `spread_bps`,
+`depth_imbalance`, `microprice_displacement_bps`, and side-oriented versions of
+imbalance and microprice displacement. If any decision lacks fresh book state, the
+partition fails instead of silently producing a fake “book” model.
+
+The top-p pilot recognizes book-specific feature families only when those columns
+exist (`flow_book`, `flow_price_book`, `flow_price_book_session`). Without real
+book columns it continues to run only the historical flow/price/session families,
+so a missing WAL join cannot be mistaken for a book-edge test.
+
 ## Portfolio replay result
 
 The replay enforced 100 ms latency, one net position, true ordered trade paths,

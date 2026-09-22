@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
+
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = BACKEND_ROOT.parent
+sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.services.backtest.trailing_portfolio import (
     V1_TRAILING_POLICIES,
@@ -20,9 +25,6 @@ from app.services.research.top_p_model import (
     TOP_P_TAILS,
     run_calibrated_walk_forward_with_predictions,
 )
-
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def main() -> int:
@@ -53,13 +55,16 @@ def main() -> int:
         parser.error("no research dataset partitions found")
     frame = pd.concat((pd.read_parquet(path) for path in paths), ignore_index=True)
     frame["target"] = frame["paid_stress_before_stop"].astype("int8")
+    model_feature_set = (
+        "flow_price_book_session" if _has_book_features(frame) else "flow_price_session"
+    )
     prediction_frames = []
     model_folds = []
     for horizon in (120, 300):
         result, predictions = run_calibrated_walk_forward_with_predictions(
             frame,
             horizon_seconds=horizon,
-            feature_set="flow_price_session",
+            feature_set=model_feature_set,
         )
         prediction_frames.append(predictions)
         model_folds.extend(fold.test_date for fold in result.folds)
@@ -101,6 +106,7 @@ def main() -> int:
         "order_submission_allowed": False,
         "experiment_stage": "development_pilot",
         "model_target": "paid_stress_before_stop",
+        "model_feature_set": model_feature_set,
         "warning": (
             "Feature set and management policy are being compared on development folds. "
             "These results are not an untouched audit and cannot approve trading."
@@ -126,6 +132,18 @@ def main() -> int:
         )
     )
     return 0
+
+
+def _has_book_features(frame: pd.DataFrame) -> bool:
+    return any(
+        column in frame.columns
+        for column in (
+            "book_available",
+            "spread_bps",
+            "depth_imbalance",
+            "microprice_displacement_bps",
+        )
+    )
 
 
 if __name__ == "__main__":

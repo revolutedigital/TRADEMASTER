@@ -13,6 +13,13 @@ from app.schemas.microstructure import MarketEventType, MicrostructureEvent
 
 
 TRADE_WINDOWS_SECONDS = (1, 5, 30, 60)
+BOOK_FEATURE_COLUMNS = (
+    "book_available",
+    "book_update_age_ms",
+    "spread_bps",
+    "depth_imbalance",
+    "microprice_displacement_bps",
+)
 
 
 @dataclass(frozen=True)
@@ -32,7 +39,7 @@ class CausalMicrostructureFeatureEngine:
         self._trades: deque[tuple[int, float, float, float, float]] = deque()
         self._liquidations: deque[tuple[int, float]] = deque()
         self._last_event_time_ms: int | None = None
-        self._book: tuple[float, float, float, float] | None = None
+        self._book: tuple[int, float, float, float, float] | None = None
         self._mark_price: float | None = None
         self._index_price: float | None = None
         self._funding_rate: float | None = None
@@ -70,6 +77,7 @@ class CausalMicrostructureFeatureEngine:
                 )
             ):
                 self._book = (
+                    timestamp_ms,
                     float(event.bid_price),
                     float(event.bid_quantity),
                     float(event.ask_price),
@@ -101,7 +109,7 @@ class CausalMicrostructureFeatureEngine:
                 if timestamp >= cutoff
             ]
             values[f"liquidation_net_qty_{window}s"] = float(sum(liquidations))
-        values.update(self._book_features())
+        values.update(self._book_features(decision_time_ms))
         values["mark_index_basis_bps"] = _basis_bps(self._mark_price, self._index_price)
         values["funding_rate"] = self._funding_rate or 0.0
         values["hour_sin"], values["hour_cos"] = _cyclical_hour(decision_time_ms)
@@ -114,29 +122,18 @@ class CausalMicrostructureFeatureEngine:
         while self._liquidations and self._liquidations[0][0] < cutoff:
             self._liquidations.popleft()
 
-    def _book_features(self) -> dict[str, float]:
+    def _book_features(self, decision_time_ms: int) -> dict[str, float]:
         if self._book is None:
-            return {
-                "book_available": 0.0,
-                "spread_bps": 0.0,
-                "depth_imbalance": 0.0,
-                "microprice_displacement_bps": 0.0,
-            }
-        bid, bid_quantity, ask, ask_quantity = self._book
-        midpoint = (bid + ask) / 2
-        total_quantity = bid_quantity + ask_quantity
-        imbalance = (bid_quantity - ask_quantity) / total_quantity if total_quantity else 0.0
-        microprice = (
-            (ask * bid_quantity + bid * ask_quantity) / total_quantity
-            if total_quantity
-            else midpoint
+            return _empty_book_feature_row()
+        event_time_ms, bid, bid_quantity, ask, ask_quantity = self._book
+        return _book_feature_row(
+            decision_time_ms=decision_time_ms,
+            event_time_ms=event_time_ms,
+            bid=bid,
+            bid_quantity=bid_quantity,
+            ask=ask,
+            ask_quantity=ask_quantity,
         )
-        return {
-            "book_available": 1.0,
-            "spread_bps": (ask - bid) / midpoint * 10_000,
-            "depth_imbalance": imbalance,
-            "microprice_displacement_bps": (microprice / midpoint - 1) * 10_000,
-        }
 
 
 def materialize_trade_flow_features(
@@ -211,6 +208,82 @@ def materialize_trade_flow_features(
     return pd.DataFrame(output)
 
 
+def materialize_book_features(
+    book_events: pd.DataFrame,
+    decision_times_ms: np.ndarray,
+) -> pd.DataFrame:
+    """Vectorized top-of-book features using only the latest quote before each decision."""
+    decisions = np.asarray(decision_times_ms, dtype=np.int64)
+    if decisions.ndim != 1 or (np.diff(decisions) < 0).any():
+        raise ValueError("decision times must be a monotonic vector")
+    output = _empty_book_feature_frame(decisions)
+    required = {
+        "event_time_ms",
+        "bid_price",
+        "bid_quantity",
+        "ask_price",
+        "ask_quantity",
+    }
+    missing = required - set(book_events.columns)
+    if missing:
+        raise ValueError(f"book frame is missing columns: {sorted(missing)}")
+    if book_events.empty:
+        return output
+
+    sort_columns = ["event_time_ms"]
+    if "sequence_id" in book_events.columns:
+        sort_columns.append("sequence_id")
+    ordered = book_events.sort_values(sort_columns, kind="stable")
+    times = ordered["event_time_ms"].to_numpy(dtype=np.int64)
+    if (np.diff(times) < 0).any():
+        raise ValueError("book events must be chronological")
+    bids = ordered["bid_price"].to_numpy(dtype=np.float64)
+    bid_quantities = ordered["bid_quantity"].to_numpy(dtype=np.float64)
+    asks = ordered["ask_price"].to_numpy(dtype=np.float64)
+    ask_quantities = ordered["ask_quantity"].to_numpy(dtype=np.float64)
+    _validate_book_arrays(bids, bid_quantities, asks, ask_quantities)
+
+    latest_indices = np.searchsorted(times, decisions, side="right") - 1
+    available = latest_indices >= 0
+    safe_indices = np.maximum(latest_indices, 0)
+    selected_times = times[safe_indices]
+    selected_bids = bids[safe_indices]
+    selected_bid_quantities = bid_quantities[safe_indices]
+    selected_asks = asks[safe_indices]
+    selected_ask_quantities = ask_quantities[safe_indices]
+    midpoint = (selected_bids + selected_asks) / 2
+    total_quantity = selected_bid_quantities + selected_ask_quantities
+    microprice = np.divide(
+        selected_asks * selected_bid_quantities + selected_bids * selected_ask_quantities,
+        total_quantity,
+        out=midpoint.copy(),
+        where=total_quantity > 0,
+    )
+    output["book_available"] = available.astype(np.float64)
+    output["book_update_age_ms"] = np.where(available, decisions - selected_times, 0.0)
+    output["spread_bps"] = np.where(
+        available,
+        (selected_asks - selected_bids) / midpoint * 10_000,
+        0.0,
+    )
+    output["depth_imbalance"] = np.where(
+        available,
+        np.divide(
+            selected_bid_quantities - selected_ask_quantities,
+            total_quantity,
+            out=np.zeros(len(decisions), dtype=np.float64),
+            where=total_quantity > 0,
+        ),
+        0.0,
+    )
+    output["microprice_displacement_bps"] = np.where(
+        available,
+        (microprice / midpoint - 1) * 10_000,
+        0.0,
+    )
+    return pd.DataFrame(output)
+
+
 def _trade_window_features(
     trades: list[tuple[int, float, float, float, float]], window: int
 ) -> dict[str, float]:
@@ -244,6 +317,61 @@ def _trade_window_features(
 
 def _prefix_sum(values: np.ndarray) -> np.ndarray:
     return np.concatenate((np.zeros(1, dtype=np.float64), np.cumsum(values)))
+
+
+def _empty_book_feature_row() -> dict[str, float]:
+    return {column: 0.0 for column in BOOK_FEATURE_COLUMNS}
+
+
+def _empty_book_feature_frame(decisions: np.ndarray) -> dict[str, np.ndarray]:
+    output = {"decision_time_ms": decisions}
+    for column in BOOK_FEATURE_COLUMNS:
+        output[column] = np.zeros(len(decisions), dtype=np.float64)
+    return output
+
+
+def _book_feature_row(
+    *,
+    decision_time_ms: int,
+    event_time_ms: int,
+    bid: float,
+    bid_quantity: float,
+    ask: float,
+    ask_quantity: float,
+) -> dict[str, float]:
+    midpoint = (bid + ask) / 2
+    total_quantity = bid_quantity + ask_quantity
+    imbalance = (bid_quantity - ask_quantity) / total_quantity if total_quantity else 0.0
+    microprice = (
+        (ask * bid_quantity + bid * ask_quantity) / total_quantity
+        if total_quantity
+        else midpoint
+    )
+    return {
+        "book_available": 1.0,
+        "book_update_age_ms": float(decision_time_ms - event_time_ms),
+        "spread_bps": (ask - bid) / midpoint * 10_000,
+        "depth_imbalance": imbalance,
+        "microprice_displacement_bps": (microprice / midpoint - 1) * 10_000,
+    }
+
+
+def _validate_book_arrays(
+    bids: np.ndarray,
+    bid_quantities: np.ndarray,
+    asks: np.ndarray,
+    ask_quantities: np.ndarray,
+) -> None:
+    if not np.isfinite(bids).all() or not np.isfinite(asks).all():
+        raise ValueError("book prices must be finite")
+    if not np.isfinite(bid_quantities).all() or not np.isfinite(ask_quantities).all():
+        raise ValueError("book quantities must be finite")
+    if (bids <= 0).any() or (asks <= 0).any():
+        raise ValueError("book prices must be positive")
+    if (bid_quantities < 0).any() or (ask_quantities < 0).any():
+        raise ValueError("book quantities cannot be negative")
+    if (asks < bids).any():
+        raise ValueError("book asks cannot be below bids")
 
 
 def _optional_float(value: object) -> float | None:

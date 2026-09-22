@@ -16,6 +16,11 @@ from sklearn.preprocessing import StandardScaler
 
 
 TOP_P_TAILS = (0.01, 0.02, 0.05, 0.10)
+BOOK_FEATURE_SETS = (
+    "flow_book",
+    "flow_price_book",
+    "flow_price_book_session",
+)
 
 
 @dataclass(frozen=True)
@@ -86,13 +91,33 @@ def feature_columns(frame: pd.DataFrame, feature_set: str) -> tuple[str, ...]:
     session = tuple(
         column for column in ("hour_sin", "hour_cos", "side_sign") if column in frame.columns
     )
+    book = tuple(
+        column
+        for column in frame.columns
+        if column.startswith(
+            (
+                "book_available",
+                "book_update_age_ms",
+                "spread_bps",
+                "depth_imbalance",
+                "directed_depth_imbalance",
+                "microprice_displacement_bps",
+                "directed_microprice_displacement_bps",
+            )
+        )
+    )
     available = {
         "flow": flow,
         "flow_price": flow + price,
         "flow_price_session": flow + price + session,
+        "flow_book": flow + book,
+        "flow_price_book": flow + price + book,
+        "flow_price_book_session": flow + price + book + session,
     }
     if feature_set not in available:
         raise ValueError(f"unknown feature set: {feature_set}")
+    if feature_set in BOOK_FEATURE_SETS and not book:
+        raise ValueError(f"feature set {feature_set} requires book feature columns")
     columns = tuple(dict.fromkeys(available[feature_set]))
     if not columns:
         raise ValueError(f"feature set {feature_set} has no available columns")
@@ -159,6 +184,8 @@ def _run_calibrated_walk_forward(
     ).dt.date.astype(str)
     horizon_frame = horizon_frame.sort_values("decision_time_ms", kind="stable")
     columns = feature_columns(horizon_frame, feature_set)
+    if feature_set in BOOK_FEATURE_SETS:
+        _require_complete_book_frame(horizon_frame)
     dates = tuple(horizon_frame["utc_date"].drop_duplicates())
     if len(dates) < minimum_train_days + 2:
         raise ValueError("not enough UTC days for train, calibration, and test")
@@ -316,6 +343,21 @@ def _matrix(frame: pd.DataFrame, columns: tuple[str, ...]) -> np.ndarray:
         if column.startswith(("trade_count_", "quote_volume_", "mean_interarrival_ms_")):
             matrix[:, index] = np.log1p(np.maximum(matrix[:, index], 0))
     return matrix
+
+
+def _require_complete_book_frame(frame: pd.DataFrame) -> None:
+    required = {"book_available", "book_update_age_ms"}
+    missing = required - set(frame.columns)
+    if missing:
+        raise ValueError(f"book model frame is missing columns: {sorted(missing)}")
+    unavailable_count = int((frame["book_available"].to_numpy(dtype=np.float64) < 1).sum())
+    if unavailable_count:
+        raise ValueError(
+            f"book feature set requires complete book features; "
+            f"{unavailable_count} rows are unavailable"
+        )
+    if (frame["book_update_age_ms"].to_numpy(dtype=np.float64) < 0).any():
+        raise ValueError("book feature set contains quotes from the future")
 
 
 def _require_binary(target: pd.Series, split: str) -> None:

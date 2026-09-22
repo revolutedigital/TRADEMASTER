@@ -28,8 +28,11 @@ The prospective recorder was smoke-tested against the live public feed. In a
 clean 30-second run it crash-durably recorded 1,092 raw trades, 283 depth updates,
 and 24 mark-price observations in 204 KiB of gzip WAL. Redundant book-ticker
 events are not subscribed because every validated depth event already carries the
-reconstructed best bid and ask. The observed storage rate projects to roughly
-35 GiB for 60 days. Binance's zero-price, zero-quantity `trade` heartbeat is
+reconstructed best bid and ask. That three-stream sample projected roughly
+35 GiB for 60 days before `spot_trade` became mandatory; the four-stream
+collector must be remeasured after deployment, and a 50 GB volume must not be
+treated as proven sufficient for the eligible 60-day window until the spot stream
+rate is observed. Binance's zero-price, zero-quantity `trade` heartbeat is
 explicitly discarded and is not treated as a market trade.
 
 ### Prospective collection clock

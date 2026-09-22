@@ -162,3 +162,25 @@ book-evidence window plus a positive 20-to-30-day prospective shadow block,
 unresolved failure count of zero, and a later explicit Testnet release. Any new
 model or management rule is a new counted hypothesis and may not reuse an opened
 audit/prospective block as fresh confirmation.
+
+## Evidence-gate artifact for the panel
+
+The dashboard does not scan raw WAL gzip files. The WAL auditor must produce a
+small status artifact after each offline audit:
+
+```bash
+cd backend
+./.venv/bin/python scripts/research/audit_microstructure_wal.py \
+  --root data/microstructure_v1/prospective-wal \
+  --start-date YYYY-MM-DD \
+  --end-date YYYY-MM-DD \
+  --write-status \
+  --format json
+```
+
+Default artifact path:
+`backend/data/microstructure_v1/prospective-audits/evidence-gate-status.json`.
+The API endpoint `GET /api/v1/research/microstructure/evidence-gate` reads only
+that artifact. Missing, invalid, or incomplete evidence is fail-closed:
+`artifact_available=false`, `eligible=false`, `order_submission_allowed=false`,
+and `execution_authorization=none`.

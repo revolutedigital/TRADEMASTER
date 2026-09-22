@@ -379,6 +379,15 @@ mounted recorder volume. The background refresh audits only complete UTC days
 ending at yesterday; today's partial collection can be inspected manually, but it
 does not count toward the 60-day book-evidence gate.
 
+Deployment `031473e8-d8b6-43e0-97cd-c2d2a382f657` activated the background
+artifact refresh. The first production artifact was written at
+`2026-09-22T06:48:08.715131Z`, audited 60 complete UTC days
+(`2026-07-24` through `2026-09-21`), and correctly kept
+`eligible=false`, `complete_days=0`, required streams
+`TRADE, DEPTH, MARK_PRICE, SPOT_TRADE`, `order_submission_allowed=false`, and
+`execution_authorization=none`. The same post-deploy check confirmed the four
+raw WAL streams were still growing.
+
 The research panel also exposes
 `GET /api/v1/research/microstructure/experiments/{experiment_id}/testnet-eligibility`.
 That endpoint crosses experiment status, the book-evidence artifact, and the

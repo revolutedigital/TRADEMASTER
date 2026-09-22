@@ -263,6 +263,9 @@ appends to the immutable shadow ledger only when the frozen top-p threshold is
 cleared unless `record_non_entries=true` is explicitly requested. Retries for the
 same `(decision_time, side, horizon)` are idempotent when the model and derived
 feature hash match. It has no exchange adapter and no order-submission path.
+The online feature engine keeps futures/perp trades and spot trades in separate
+state, so spot auxiliary columns (`spot_*`, `spot_perp_*`) match the offline
+research vectorization instead of contaminating the primary perp flow.
 
 For partition batches, use the dry-run-first CLI. Without `--commit`, it only
 scores the frozen policy and prints the selected shadow entries:

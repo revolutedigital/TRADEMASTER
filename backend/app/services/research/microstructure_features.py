@@ -67,8 +67,13 @@ class CausalMicrostructureFeatureEngine:
         self._windows = tuple(sorted(set(windows_seconds)))
         self._max_window_ms = self._windows[-1] * 1000
         self._trades: deque[tuple[int, float, float, float, float]] = deque()
+        self._spot_trades: deque[tuple[int, float, float, float, float]] = deque()
         self._liquidations: deque[tuple[int, float, float, float, float]] = deque()
         self._last_event_time_ms: int | None = None
+        self._last_trade_event_time_ms: int | None = None
+        self._last_trade_price: float | None = None
+        self._last_spot_event_time_ms: int | None = None
+        self._last_spot_price: float | None = None
         self._book: tuple[int, float, float, float, float] | None = None
         self._book_events: deque[tuple[int, float, float, float, float]] = deque()
         self._last_mark_event_time_ms: int | None = None
@@ -86,15 +91,21 @@ class CausalMicrostructureFeatureEngine:
                 return
             aggressor_sign = -1.0 if event.is_buyer_maker else 1.0
             quote_quantity = event.quote_quantity or event.price * event.quantity
-            self._trades.append(
-                (
-                    timestamp_ms,
-                    event.price,
-                    event.quantity,
-                    quote_quantity,
-                    aggressor_sign,
-                )
+            trade = (
+                timestamp_ms,
+                event.price,
+                event.quantity,
+                quote_quantity,
+                aggressor_sign,
             )
+            if _is_spot_product(event.product):
+                self._spot_trades.append(trade)
+                self._last_spot_event_time_ms = timestamp_ms
+                self._last_spot_price = event.price
+            else:
+                self._trades.append(trade)
+                self._last_trade_event_time_ms = timestamp_ms
+                self._last_trade_price = event.price
         elif event.event_type in {
             MarketEventType.BOOK_TICKER,
             MarketEventType.DEPTH,
@@ -145,7 +156,23 @@ class CausalMicrostructureFeatureEngine:
         for window in self._windows:
             cutoff = decision_time_ms - window * 1000
             trades = [trade for trade in self._trades if trade[0] >= cutoff]
-            values.update(_trade_window_features(trades, window))
+            trade_features = _trade_window_features(trades, window)
+            values.update(trade_features)
+            spot_trades = [trade for trade in self._spot_trades if trade[0] >= cutoff]
+            spot_features = _trade_window_features(spot_trades, window)
+            values.update(_prefix_trade_feature_values(spot_features, prefix="spot_"))
+            values[f"spot_perp_return_gap_{window}s_bps"] = (
+                values[f"spot_return_{window}s_bps"] - trade_features[f"return_{window}s_bps"]
+            )
+            values[f"spot_perp_flow_gap_{window}s"] = (
+                values[f"spot_flow_imbalance_{window}s"]
+                - trade_features[f"flow_imbalance_{window}s"]
+            )
+            values[f"spot_perp_quote_volume_ratio_{window}s"] = (
+                values[f"spot_quote_volume_{window}s"] / trade_features[f"quote_volume_{window}s"]
+                if trade_features[f"quote_volume_{window}s"] > 0
+                else 0.0
+            )
             liquidations = [
                 liquidation for liquidation in self._liquidations if liquidation[0] >= cutoff
             ]
@@ -163,6 +190,13 @@ class CausalMicrostructureFeatureEngine:
                 sum(liquidation[4] for liquidation in liquidations)
             )
         values.update(self._book_features(decision_time_ms))
+        values["spot_available"] = 1.0 if self._last_spot_price is not None else 0.0
+        values["spot_update_age_ms"] = (
+            float(decision_time_ms - self._last_spot_event_time_ms)
+            if self._last_spot_event_time_ms is not None
+            else 0.0
+        )
+        values["spot_perp_basis_bps"] = _basis_bps(self._last_trade_price, self._last_spot_price)
         values["mark_available"] = 1.0 if self._mark_price is not None else 0.0
         values["mark_update_age_ms"] = (
             float(decision_time_ms - self._last_mark_event_time_ms)
@@ -178,6 +212,8 @@ class CausalMicrostructureFeatureEngine:
         cutoff = timestamp_ms - self._max_window_ms
         while self._trades and self._trades[0][0] < cutoff:
             self._trades.popleft()
+        while self._spot_trades and self._spot_trades[0][0] < cutoff:
+            self._spot_trades.popleft()
         while self._liquidations and self._liquidations[0][0] < cutoff:
             self._liquidations.popleft()
         while self._book_events and self._book_events[0][0] < cutoff:
@@ -615,8 +651,23 @@ def _trade_window_features(
     }
 
 
+def _prefix_trade_feature_values(
+    values: Mapping[str, float],
+    *,
+    prefix: str,
+) -> dict[str, float]:
+    return {
+        f"{prefix}{column}": value
+        for column, value in values.items()
+    }
+
+
 def _prefix_sum(values: np.ndarray) -> np.ndarray:
     return np.concatenate((np.zeros(1, dtype=np.float64), np.cumsum(values)))
+
+
+def _is_spot_product(product: str) -> bool:
+    return product.lower() == "spot"
 
 
 def _side_sign(side: str) -> float:

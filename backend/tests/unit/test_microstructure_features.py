@@ -22,9 +22,16 @@ from app.services.research.microstructure_features import (
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
 
-def make_trade(offset_ms: int, price: float, quantity: float, maker: bool):
+def make_trade(
+    offset_ms: int,
+    price: float,
+    quantity: float,
+    maker: bool,
+    *,
+    product: str = "usdm_perpetual",
+):
     return MicrostructureEvent(
-        product="usdm_perpetual",
+        product=product,
         symbol="BTCUSDT",
         event_type=MarketEventType.TRADE,
         event_time=NOW + timedelta(milliseconds=offset_ms),
@@ -136,6 +143,30 @@ def test_spot_perp_features_are_causal_and_compute_gaps() -> None:
     )
     assert second["spot_perp_flow_gap_2s"] > 1
     assert second["spot_perp_basis_bps"] == pytest.approx((101 / 102 - 1) * 10_000)
+
+    engine = CausalMicrostructureFeatureEngine(windows_seconds=(2,))
+    engine.consume(make_trade(0, 100, 1, False, product="spot"))
+    engine.consume(make_trade(0, 100, 1, False))
+    first_online = engine.snapshot(base_ms + 500).values
+    engine.consume(make_trade(1_000, 102, 1, False, product="spot"))
+    engine.consume(make_trade(1_000, 101, 1, True))
+    second_online = engine.snapshot(base_ms + 1_000).values
+
+    for index, online in enumerate((first_online, second_online)):
+        offline_row = features.iloc[index]
+        for key in (
+            "spot_available",
+            "spot_update_age_ms",
+            "spot_trade_count_2s",
+            "spot_quote_volume_2s",
+            "spot_flow_imbalance_2s",
+            "spot_return_2s_bps",
+            "spot_perp_return_gap_2s_bps",
+            "spot_perp_flow_gap_2s",
+            "spot_perp_quote_volume_ratio_2s",
+            "spot_perp_basis_bps",
+        ):
+            assert online[key] == pytest.approx(offline_row[key])
 
 
 def test_offline_book_features_are_causal_and_match_online_snapshot() -> None:

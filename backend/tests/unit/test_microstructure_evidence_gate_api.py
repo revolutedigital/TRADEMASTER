@@ -1323,6 +1323,46 @@ async def test_approved_experiment_decision_rejects_failed_statistical_gate(
     assert error.value.detail["order_submission_allowed"] is False
 
 
+async def test_approved_experiment_decision_requires_all_statistical_gate_conditions(
+    db: AsyncSession,
+) -> None:
+    db.add(
+        ResearchExperiment(
+            id="experiment",
+            name="candidate",
+            status="FROZEN",
+            code_revision="a" * 40,
+            protocol_sha256="b" * 64,
+            product_json="{}",
+            cost_profile_json="{}",
+            approval_gate_json="{}",
+            experiment_sha256="9" * 64,
+            frozen_at=datetime(2026, 3, 1, tzinfo=UTC),
+        )
+    )
+    await db.flush()
+    statistical_gate = _approved_statistical_gate_payload()
+    statistical_gate["results"][0]["conditions"].pop("three_temporal_folds")
+
+    with pytest.raises(research.HTTPException) as error:
+        await research.record_experiment_decision(
+            "experiment",
+            RecordExperimentDecisionRequest(
+                status="APPROVED",
+                reasons=["all_statistical_gates_passed"],
+                statistical_gate=statistical_gate,
+            ),
+            db=db,
+            _user={"sub": "operator"},
+        )
+
+    assert error.value.status_code == 409
+    assert "approved_result_0_three_temporal_folds_condition_missing" in error.value.detail[
+        "reasons"
+    ]
+    assert error.value.detail["order_submission_allowed"] is False
+
+
 async def test_approved_experiment_decision_rejects_inconsistent_decision_counts(
     db: AsyncSession,
 ) -> None:

@@ -57,6 +57,20 @@ from app.services.research.testnet_release_gate import evaluate_testnet_eligibil
 
 router = APIRouter()
 
+REQUIRED_STATISTICAL_GATE_CONDITIONS = frozenset(
+    {
+        "three_temporal_folds",
+        "minimum_200_trades",
+        "minimum_20_days",
+        "positive_expected_mean",
+        "adjusted_lower_bound_positive",
+        "positive_stress_mean",
+        "top_p_monotonic",
+        "pbo_at_most_20_percent",
+        "prospective_positive",
+    }
+)
+
 
 @router.get("/evidence-gate", response_model=EvidenceGateStatusResponse)
 async def get_evidence_gate_status(
@@ -733,6 +747,11 @@ def _approved_result_reasons(
     if not isinstance(conditions, dict) or not conditions:
         reasons.append(f"{prefix}_conditions_missing")
     else:
+        missing_conditions = sorted(REQUIRED_STATISTICAL_GATE_CONDITIONS - set(conditions))
+        reasons.extend(
+            f"{prefix}_{condition}_condition_missing"
+            for condition in missing_conditions
+        )
         failed_conditions = [
             str(name)
             for name, passed in conditions.items()

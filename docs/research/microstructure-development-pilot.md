@@ -357,6 +357,9 @@ manually edited artifact cannot inflate approvals or weaken the statistical
 penalty while still looking valid. The API stores only the gate artifact hash,
 summary, and research-only boundary in the append-only decision event; it still
 does not activate Testnet or submit orders.
+The API also requires every approved result to include the full condition set
+emitted by `evaluate_statistical_gate.py`; omitting a condition such as
+`three_temporal_folds` is treated as a failed gate, not as neutral metadata.
 
 Backend deployment `8e6b7fcc-0d86-49cf-aa3e-49a132fe117d` put this approval
 gate enforcement in production on 2026-09-22. Post-deploy smoke confirmed the

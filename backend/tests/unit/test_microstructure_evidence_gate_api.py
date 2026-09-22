@@ -410,7 +410,7 @@ async def test_testnet_eligibility_remains_metadata_without_explicit_release(
                 would_enter=True,
                 model_sha256="d" * 64,
                 feature_vector_sha256="e" * 64,
-                outcome_json=json.dumps({"expected_net_bps": 1.2, "stress_net_bps": 0.4}),
+                outcome_json=_safe_shadow_outcome_json(),
             )
         )
     await db.flush()
@@ -477,7 +477,7 @@ async def test_testnet_eligibility_rejects_legacy_approved_status_without_gate_e
                 would_enter=True,
                 model_sha256="d" * 64,
                 feature_vector_sha256=f"{day_offset:064x}"[-64:],
-                outcome_json=json.dumps({"expected_net_bps": 1.2, "stress_net_bps": 0.4}),
+                outcome_json=_safe_shadow_outcome_json(),
             )
         )
     await db.flush()
@@ -552,6 +552,74 @@ async def test_testnet_eligibility_requires_positive_shadow_outcomes(
     assert response.prospective_shadow_positive is False
     assert response.approved_statistical_gate_verified is True
     assert response.prospective_shadow_expected_mean_bps is None
+    assert "prospective_shadow_outcomes_incomplete" in response.reasons
+    assert "prospective_shadow_block_not_positive" in response.reasons
+    assert response.order_submission_allowed is False
+
+
+async def test_testnet_eligibility_ignores_unsafe_or_immature_shadow_outcomes(
+    tmp_path: Path,
+    monkeypatch,
+    db: AsyncSession,
+) -> None:
+    artifact = tmp_path / "evidence-gate-status.json"
+    artifact.write_text(json.dumps(_eligible_evidence_payload()), encoding="utf-8")
+    monkeypatch.setattr(
+        research.settings,
+        "microstructure_evidence_status_path",
+        str(artifact),
+    )
+    db.add(
+        ResearchExperiment(
+            id="experiment",
+            name="candidate",
+            status="APPROVED",
+            code_revision="a" * 40,
+            protocol_sha256="b" * 64,
+            product_json="{}",
+            cost_profile_json="{}",
+            approval_gate_json="{}",
+        )
+    )
+    db.add(_approved_decision_event())
+    start = datetime(2026, 3, 2, tzinfo=UTC)
+    unsafe_outcomes = [
+        json.dumps({"expected_net_bps": 1.2, "stress_net_bps": 0.4}),
+        _safe_shadow_outcome_json(extra={"order_id": "manual-order-would-be-execution"}),
+        _safe_shadow_outcome_json(recorded_at="2026-03-02T00:01:00+00:00"),
+    ]
+    for day_offset in range(20):
+        db.add(
+            ResearchShadowSignal(
+                experiment_id="experiment",
+                decision_time=start + timedelta(days=day_offset),
+                recorded_at=start + timedelta(days=day_offset, seconds=1),
+                side="BUY",
+                horizon_seconds=300,
+                probability=0.8,
+                threshold=0.7,
+                would_enter=True,
+                model_sha256="d" * 64,
+                feature_vector_sha256=f"{day_offset:064x}"[-64:],
+                outcome_json=unsafe_outcomes[day_offset % len(unsafe_outcomes)],
+            )
+        )
+    await db.flush()
+
+    response = await research.get_testnet_eligibility(
+        "experiment",
+        db=db,
+        _user={"sub": "operator"},
+    )
+
+    assert response.eligible is False
+    assert response.prospective_shadow_days == 20
+    assert response.prospective_shadow_outcome_days == 0
+    assert response.prospective_shadow_signal_count == 20
+    assert response.prospective_shadow_outcome_signal_count == 0
+    assert response.prospective_shadow_expected_mean_bps is None
+    assert response.prospective_shadow_stress_mean_bps is None
+    assert response.prospective_shadow_positive is False
     assert "prospective_shadow_outcomes_incomplete" in response.reasons
     assert "prospective_shadow_block_not_positive" in response.reasons
     assert response.order_submission_allowed is False
@@ -646,7 +714,7 @@ async def test_research_testnet_release_requires_eligible_book_gate_even_with_60
                 would_enter=True,
                 model_sha256="d" * 64,
                 feature_vector_sha256=f"{day_offset:064x}"[-64:],
-                outcome_json=json.dumps({"expected_net_bps": 1.2, "stress_net_bps": 0.4}),
+                outcome_json=_safe_shadow_outcome_json(),
             )
         )
     await db.flush()
@@ -708,7 +776,7 @@ async def test_research_testnet_release_rejects_legacy_approved_without_gate_eve
                 would_enter=True,
                 model_sha256="d" * 64,
                 feature_vector_sha256=f"{day_offset:064x}"[-64:],
-                outcome_json=json.dumps({"expected_net_bps": 1.2, "stress_net_bps": 0.4}),
+                outcome_json=_safe_shadow_outcome_json(),
             )
         )
     await db.flush()
@@ -773,7 +841,7 @@ async def test_research_testnet_release_makes_checklist_eligible_without_executi
                 would_enter=True,
                 model_sha256="d" * 64,
                 feature_vector_sha256=f"{day_offset:064x}"[-64:],
-                outcome_json=json.dumps({"expected_net_bps": 1.2, "stress_net_bps": 0.4}),
+                outcome_json=_safe_shadow_outcome_json(),
             )
         )
     await db.flush()
@@ -863,7 +931,7 @@ async def test_testnet_eligibility_rejects_missing_outcome_for_second_signal_on_
                 would_enter=True,
                 model_sha256="d" * 64,
                 feature_vector_sha256="e" * 64,
-                outcome_json=json.dumps({"expected_net_bps": 1.2, "stress_net_bps": 0.4}),
+                outcome_json=_safe_shadow_outcome_json(),
             )
         )
     db.add(
@@ -941,7 +1009,11 @@ async def test_experiment_report_exposes_evidence_and_shadow_metrics(
                 would_enter=True,
                 model_sha256="d" * 64,
                 feature_vector_sha256="e" * 64,
-                outcome_json=json.dumps({"expected_net_bps": 2.0, "stress_net_bps": 1.0}),
+                outcome_json=_safe_shadow_outcome_json(
+                    expected_net_bps=2.0,
+                    stress_net_bps=1.0,
+                    label_sha256="e" * 64,
+                ),
             ),
             ResearchShadowSignal(
                 experiment_id="experiment",
@@ -954,7 +1026,11 @@ async def test_experiment_report_exposes_evidence_and_shadow_metrics(
                 would_enter=True,
                 model_sha256="d" * 64,
                 feature_vector_sha256="f" * 64,
-                outcome_json=json.dumps({"expected_net_bps": 4.0, "stress_net_bps": 3.0}),
+                outcome_json=_safe_shadow_outcome_json(
+                    expected_net_bps=4.0,
+                    stress_net_bps=3.0,
+                    label_sha256="f" * 64,
+                ),
             ),
             ResearchHypothesisAttempt(
                 experiment_id="experiment",
@@ -1293,6 +1369,31 @@ def _eligible_evidence_payload() -> dict[str, object]:
         "safety": safety,
         "generated_at": "2026-03-02T00:00:00+00:00",
     }
+
+
+def _safe_shadow_outcome_json(
+    *,
+    expected_net_bps: float = 1.2,
+    stress_net_bps: float = 0.4,
+    label_sha256: str = "e" * 64,
+    recorded_at: str = "2026-04-30T00:00:00+00:00",
+    extra: dict[str, object] | None = None,
+) -> str:
+    payload: dict[str, object] = {
+        "expected_net_bps": expected_net_bps,
+        "stress_net_bps": stress_net_bps,
+        "label_sha256": label_sha256,
+        "recorded_at": recorded_at,
+        "research_only": True,
+        "order_submission_allowed": False,
+        "execution_authorization": "none",
+    }
+    if extra is not None:
+        payload.update(extra)
+    return json.dumps(
+        payload,
+        sort_keys=True,
+    )
 
 
 def _approved_statistical_gate_payload() -> dict[str, object]:

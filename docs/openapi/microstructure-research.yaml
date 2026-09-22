@@ -663,10 +663,13 @@ components:
         prospective_shadow_outcome_signal_count:
           type: integer
           minimum: 0
+          description: Counts only mature, immutable replay outcomes with label hash, research-only safety boundary, and no order/execution references.
         prospective_shadow_expected_mean_bps:
           type: [number, 'null']
+          description: Mean over counted safe replay outcomes only; null when any outcome is missing or invalid.
         prospective_shadow_stress_mean_bps:
           type: [number, 'null']
+          description: Stress mean over counted safe replay outcomes only; null when any outcome is missing or invalid.
         prospective_shadow_positive:
           type: boolean
         approved_statistical_gate_verified:
@@ -835,6 +838,7 @@ components:
             type: number
     RecordShadowOutcomeRequest:
       type: object
+      description: Records a one-shot research outcome after the signal horizon matures; the server persists recorded_at plus research-only safety fields and never order identifiers.
       additionalProperties: false
       required:
         - expected_net_bps
@@ -974,6 +978,7 @@ components:
           pattern: '^[a-f0-9]{64}$'
         outcome_recorded:
           type: boolean
+          description: True only when the stored outcome is a mature research-only replay outcome with finite bps, label SHA-256, and no order/execution reference.
         expected_net_bps:
           type: [number, 'null']
         stress_net_bps:

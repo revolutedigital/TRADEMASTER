@@ -6,7 +6,7 @@ import json
 import hashlib
 import math
 from collections import Counter
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 
@@ -889,14 +889,13 @@ def _testnet_release_evidence_snapshot(
 def _parse_shadow_outcome(signal: ResearchShadowSignal) -> dict[str, object] | None:
     if signal.outcome_json is None:
         return None
-    payload = json.loads(signal.outcome_json)
+    try:
+        payload = json.loads(signal.outcome_json)
+    except json.JSONDecodeError:
+        return None
     if not isinstance(payload, dict):
         return None
-    return {
-        "expected_net_bps": payload.get("expected_net_bps"),
-        "stress_net_bps": payload.get("stress_net_bps"),
-        "label_sha256": payload.get("label_sha256"),
-    }
+    return _validated_shadow_outcome(payload, signal)
 
 
 def _summarize_shadow_outcomes(signals: list[ResearchShadowSignal]) -> dict[str, object]:
@@ -915,10 +914,11 @@ def _summarize_shadow_outcomes(signals: list[ResearchShadowSignal]) -> dict[str,
             continue
         if not isinstance(payload, dict):
             continue
-        expected_net_bps = _finite_float(payload.get("expected_net_bps"))
-        stress_net_bps = _finite_float(payload.get("stress_net_bps"))
-        if expected_net_bps is None or stress_net_bps is None:
+        outcome = _validated_shadow_outcome(payload, signal)
+        if outcome is None:
             continue
+        expected_net_bps = outcome["expected_net_bps"]
+        stress_net_bps = outcome["stress_net_bps"]
         expected_values.append(expected_net_bps)
         stress_values.append(stress_net_bps)
         outcome_days.add(_utc_day(signal.decision_time))
@@ -962,6 +962,67 @@ def _finite_float(value: object) -> float | None:
     except (TypeError, ValueError):
         return None
     return parsed if math.isfinite(parsed) else None
+
+
+def _validated_shadow_outcome(
+    payload: dict[str, object],
+    signal: ResearchShadowSignal,
+) -> dict[str, object] | None:
+    expected_net_bps = _finite_float(payload.get("expected_net_bps"))
+    stress_net_bps = _finite_float(payload.get("stress_net_bps"))
+    label_sha256 = payload.get("label_sha256")
+    recorded_at = payload.get("recorded_at")
+    if expected_net_bps is None or stress_net_bps is None:
+        return None
+    if not isinstance(label_sha256, str) or not _is_lower_sha256(label_sha256):
+        return None
+    if payload.get("research_only") is not True:
+        return None
+    if payload.get("order_submission_allowed") is not False:
+        return None
+    if payload.get("execution_authorization") != "none":
+        return None
+    if not isinstance(recorded_at, str):
+        return None
+    recorded_at_datetime = _parse_iso_datetime(recorded_at)
+    if recorded_at_datetime is None:
+        return None
+    horizon_end = _as_utc_datetime(signal.decision_time) + timedelta(
+        seconds=signal.horizon_seconds
+    )
+    if _as_utc_datetime(recorded_at_datetime) < horizon_end:
+        return None
+    if _contains_order_or_execution_reference(payload):
+        return None
+    return {
+        "expected_net_bps": expected_net_bps,
+        "stress_net_bps": stress_net_bps,
+        "label_sha256": label_sha256,
+    }
+
+
+def _is_lower_sha256(value: str) -> bool:
+    return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
+
+
+def _parse_iso_datetime(value: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _contains_order_or_execution_reference(payload: dict[str, object]) -> bool:
+    forbidden_keys = {
+        "client_order_id",
+        "exchange_order_id",
+        "execution_id",
+        "execution_report",
+        "order",
+        "order_id",
+        "orders",
+    }
+    return any(key in payload for key in forbidden_keys)
 
 
 def _mean(values: list[float]) -> float | None:

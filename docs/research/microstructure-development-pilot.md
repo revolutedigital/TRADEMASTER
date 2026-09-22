@@ -470,11 +470,13 @@ The research panel also exposes
 That endpoint crosses experiment status, the book-evidence artifact, and the
 append-only shadow ledger. It is still metadata only: order submission remains
 blocked and execution authorization remains `none`. A 20-to-30-day shadow block
-counts toward Testnet only when every shadow signal has immutable outcome
-evidence and both expected and stress mean bps are positive. Outcomes are
-recorded once through the research shadow recorder with `expected_net_bps`,
-`stress_net_bps`, and `label_sha256`; overwrite, missing, malformed, or
-non-finite `outcome_json` is fail-closed.
+counts toward Testnet only when every shadow signal has mature immutable replay
+outcome evidence and both expected and stress mean bps are positive. Outcomes
+are recorded once through the research shadow recorder with `expected_net_bps`,
+`stress_net_bps`, `label_sha256`, `recorded_at`, and the research-only safety
+boundary; overwrite, missing, malformed, immature, non-finite, unsafe, or
+order-referenced `outcome_json` is fail-closed and does not count in the
+checklist/report.
 
 An `APPROVED` value on the experiment row is not sufficient for Testnet
 eligibility. The checklist and release endpoint also require the latest

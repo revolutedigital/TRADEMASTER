@@ -909,13 +909,14 @@ components:
           items: { type: string }
         decision_counts:
           type: object
+          description: Must exactly match the number of APPROVED, REJECTED, and INCONCLUSIVE entries in `results`.
           additionalProperties:
             type: integer
             minimum: 0
         results:
           type: array
           minItems: 1
-          description: At least one result with `decision=APPROVED` and all conditions true is required for APPROVED decisions.
+          description: At least one result with `decision=APPROVED`, all conditions true, and `adjusted_one_sided_alpha = 0.05 / attempted_hypotheses` is required for APPROVED decisions.
           items:
             type: object
             additionalProperties: true

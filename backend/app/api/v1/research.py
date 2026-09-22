@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import hashlib
 import math
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
@@ -652,17 +653,52 @@ def _statistical_gate_approval_reasons(gate: StatisticalGateEvidence) -> list[st
     approved_results = [
         result for result in gate.results if str(result.get("decision", "")).upper() == "APPROVED"
     ]
+    reasons.extend(_statistical_gate_count_reasons(gate))
     if not approved_results:
         reasons.append("statistical_gate_has_no_approved_portfolio")
         return reasons
-    if int(gate.decision_counts.get("APPROVED", 0)) < len(approved_results):
-        reasons.append("statistical_gate_decision_counts_do_not_match_results")
     for index, result in enumerate(approved_results):
-        reasons.extend(_approved_result_reasons(index, result))
+        reasons.extend(_approved_result_reasons(index, result, gate.attempted_hypotheses))
     return reasons
 
 
-def _approved_result_reasons(index: int, result: dict[str, object]) -> list[str]:
+def _statistical_gate_count_reasons(gate: StatisticalGateEvidence) -> list[str]:
+    expected_counts: Counter[str] = Counter()
+    reasons: list[str] = []
+    for index, result in enumerate(gate.results):
+        decision = str(result.get("decision", "")).upper()
+        if decision not in {"APPROVED", "REJECTED", "INCONCLUSIVE"}:
+            reasons.append(f"statistical_gate_result_{index}_decision_invalid")
+            continue
+        expected_counts[decision] += 1
+
+    provided_counts: dict[str, int] = {}
+    for decision, count in gate.decision_counts.items():
+        normalized_decision = str(decision).upper()
+        if (
+            normalized_decision not in {"APPROVED", "REJECTED", "INCONCLUSIVE"}
+            or type(count) is not int
+            or count < 0
+        ):
+            reasons.append(f"statistical_gate_decision_count_{decision}_invalid")
+            continue
+        provided_counts[normalized_decision] = count
+
+    expected = {
+        decision: expected_counts[decision]
+        for decision in ("APPROVED", "REJECTED", "INCONCLUSIVE")
+        if expected_counts[decision] > 0
+    }
+    if provided_counts != expected:
+        reasons.append("statistical_gate_decision_counts_do_not_match_results")
+    return reasons
+
+
+def _approved_result_reasons(
+    index: int,
+    result: dict[str, object],
+    attempted_hypotheses: int,
+) -> list[str]:
     prefix = f"approved_result_{index}"
     reasons: list[str] = []
     if int(result.get("trade_count") or 0) < 200:
@@ -676,6 +712,15 @@ def _approved_result_reasons(index: int, result: dict[str, object]) -> list[str]
     lower_bound = _finite_float(result.get("adjusted_lower_confidence_bound_bps"))
     if lower_bound is None or lower_bound <= 0:
         reasons.append(f"{prefix}_adjusted_lower_bound_not_positive")
+    adjusted_alpha = _finite_float(result.get("adjusted_one_sided_alpha"))
+    expected_alpha = 0.05 / attempted_hypotheses
+    if adjusted_alpha is None or not math.isclose(
+        adjusted_alpha,
+        expected_alpha,
+        rel_tol=1e-9,
+        abs_tol=1e-12,
+    ):
+        reasons.append(f"{prefix}_adjusted_alpha_inconsistent")
     pbo = _finite_float(result.get("probability_of_backtest_overfitting"))
     if pbo is None or pbo > 0.20:
         reasons.append(f"{prefix}_pbo_above_20_percent")

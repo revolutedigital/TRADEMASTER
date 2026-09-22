@@ -1148,6 +1148,84 @@ async def test_approved_experiment_decision_rejects_failed_statistical_gate(
     assert error.value.detail["order_submission_allowed"] is False
 
 
+async def test_approved_experiment_decision_rejects_inconsistent_decision_counts(
+    db: AsyncSession,
+) -> None:
+    db.add(
+        ResearchExperiment(
+            id="experiment",
+            name="candidate",
+            status="FROZEN",
+            code_revision="a" * 40,
+            protocol_sha256="b" * 64,
+            product_json="{}",
+            cost_profile_json="{}",
+            approval_gate_json="{}",
+            experiment_sha256="9" * 64,
+            frozen_at=datetime(2026, 3, 1, tzinfo=UTC),
+        )
+    )
+    await db.flush()
+    statistical_gate = _approved_statistical_gate_payload()
+    statistical_gate["decision_counts"] = {"APPROVED": 2}
+
+    with pytest.raises(research.HTTPException) as error:
+        await research.record_experiment_decision(
+            "experiment",
+            RecordExperimentDecisionRequest(
+                status="APPROVED",
+                reasons=["all_statistical_gates_passed"],
+                statistical_gate=statistical_gate,
+            ),
+            db=db,
+            _user={"sub": "operator"},
+        )
+
+    assert error.value.status_code == 409
+    assert "statistical_gate_decision_counts_do_not_match_results" in error.value.detail[
+        "reasons"
+    ]
+    assert error.value.detail["order_submission_allowed"] is False
+
+
+async def test_approved_experiment_decision_rejects_inconsistent_adjusted_alpha(
+    db: AsyncSession,
+) -> None:
+    db.add(
+        ResearchExperiment(
+            id="experiment",
+            name="candidate",
+            status="FROZEN",
+            code_revision="a" * 40,
+            protocol_sha256="b" * 64,
+            product_json="{}",
+            cost_profile_json="{}",
+            approval_gate_json="{}",
+            experiment_sha256="9" * 64,
+            frozen_at=datetime(2026, 3, 1, tzinfo=UTC),
+        )
+    )
+    await db.flush()
+    statistical_gate = _approved_statistical_gate_payload()
+    statistical_gate["results"][0]["adjusted_one_sided_alpha"] = 0.05
+
+    with pytest.raises(research.HTTPException) as error:
+        await research.record_experiment_decision(
+            "experiment",
+            RecordExperimentDecisionRequest(
+                status="APPROVED",
+                reasons=["all_statistical_gates_passed"],
+                statistical_gate=statistical_gate,
+            ),
+            db=db,
+            _user={"sub": "operator"},
+        )
+
+    assert error.value.status_code == 409
+    assert "approved_result_0_adjusted_alpha_inconsistent" in error.value.detail["reasons"]
+    assert error.value.detail["order_submission_allowed"] is False
+
+
 def _eligible_evidence_payload() -> dict[str, object]:
     safety = {
         "research_only": True,

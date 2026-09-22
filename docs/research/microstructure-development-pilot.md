@@ -350,9 +350,13 @@ from `evaluate_statistical_gate.py`. Approval is rejected unless that artifact
 has `research_only=true`, `order_submission_allowed=false`,
 `execution_authorization=none`, monotonic top-p calibration, positive committed
 prospective shadow evidence, and at least one portfolio result with
-`decision=APPROVED` and every gate condition true. The API stores only the gate
-artifact hash and summary in the append-only decision event; it still does not
-activate Testnet or submit orders.
+`decision=APPROVED` and every gate condition true. The approval path also checks
+that `decision_counts` exactly matches the result list and that each approved
+result's multiplicity-adjusted alpha equals `0.05 / attempted_hypotheses`, so a
+manually edited artifact cannot inflate approvals or weaken the statistical
+penalty while still looking valid. The API stores only the gate artifact hash and
+summary in the append-only decision event; it still does not activate Testnet or
+submit orders.
 
 Backend deployment `8e6b7fcc-0d86-49cf-aa3e-49a132fe117d` put this approval
 gate enforcement in production on 2026-09-22. Post-deploy smoke confirmed the

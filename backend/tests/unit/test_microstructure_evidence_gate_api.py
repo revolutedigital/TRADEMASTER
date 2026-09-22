@@ -93,6 +93,87 @@ async def test_evidence_gate_api_reads_valid_small_artifact(
     assert response.status_reasons == ["no_complete_days_yet"]
 
 
+async def test_evidence_gate_api_reads_remote_artifact_when_configured(monkeypatch) -> None:
+    payload = build_evidence_gate_status(
+        (),
+        artifact_available=True,
+        generated_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return payload
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            assert kwargs == {"timeout": 3.0, "follow_redirects": False}
+
+        async def __aenter__(self) -> "FakeAsyncClient":
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def get(self, url: str) -> FakeResponse:
+            assert url == "http://recorder.internal/evidence-gate-status.json"
+            return FakeResponse()
+
+    monkeypatch.setattr(
+        research.settings,
+        "microstructure_evidence_status_url",
+        "http://recorder.internal/evidence-gate-status.json",
+    )
+    monkeypatch.setattr(research.httpx, "AsyncClient", FakeAsyncClient)
+
+    response = await research.get_evidence_gate_status(_user={"sub": "operator"})
+
+    assert response.artifact_available is True
+    assert response.book_evidence_gate.required_streams == (
+        "TRADE",
+        "DEPTH",
+        "MARK_PRICE",
+        "SPOT_TRADE",
+    )
+    assert response.safety.order_submission_allowed is False
+
+
+async def test_evidence_gate_api_fails_closed_when_remote_artifact_is_unavailable(
+    monkeypatch,
+) -> None:
+    class FakeAsyncClient:
+        def __init__(self, **_kwargs) -> None:
+            return None
+
+        async def __aenter__(self) -> "FakeAsyncClient":
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def get(self, _url: str) -> Response:
+            raise research.httpx.ConnectError("recorder unavailable")
+
+    monkeypatch.setattr(
+        research.settings,
+        "microstructure_evidence_status_url",
+        "http://recorder.internal/evidence-gate-status.json",
+    )
+    monkeypatch.setattr(research.httpx, "AsyncClient", FakeAsyncClient)
+
+    response = await research.get_evidence_gate_status(_user={"sub": "operator"})
+
+    assert response.artifact_available is False
+    assert response.book_evidence_gate.eligible is False
+    assert response.status_reasons == [
+        "evidence_gate_artifact_remote_unreadable:ConnectError"
+    ]
+    assert response.safety.order_submission_allowed is False
+    assert response.safety.execution_authorization == "none"
+
+
 async def test_evidence_gate_api_rejects_unreadable_artifact_as_ineligible(
     tmp_path: Path,
     monkeypatch,

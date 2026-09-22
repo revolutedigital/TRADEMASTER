@@ -97,6 +97,7 @@ class Settings(BaseSettings):
     microstructure_evidence_status_path: str = (
         "data/microstructure_v1/prospective-audits/evidence-gate-status.json"
     )
+    microstructure_evidence_status_url: str = ""
 
     # Webhook alerts (Slack/Discord/custom — optional)
     risk_alert_webhook_url: str = ""

@@ -370,6 +370,10 @@ The API endpoint `GET /api/v1/research/microstructure/evidence-gate` reads only
 that artifact. Missing, invalid, or incomplete evidence is fail-closed:
 `artifact_available=false`, `eligible=false`, `order_submission_allowed=false`,
 and `execution_authorization=none`.
+If `MICROSTRUCTURE_EVIDENCE_STATUS_URL` is configured, the backend reads the same
+small JSON artifact from that read-only URL instead of the local path; timeout,
+HTTP failure, malformed JSON, or schema mismatch remain fail-closed with no
+execution authorization.
 
 The production `microstructure-recorder` service also runs the same evidence
 artifact refresh in the background. Its deployment command writes a rolling

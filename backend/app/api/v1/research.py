@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Path as ApiPath, Query, Response, status
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -59,7 +60,7 @@ router = APIRouter()
 async def get_evidence_gate_status(
     _user: dict = Depends(require_auth),
 ) -> EvidenceGateStatusResponse:
-    return _read_evidence_gate_status()
+    return await _read_evidence_gate_status()
 
 
 @router.get(
@@ -75,7 +76,7 @@ async def get_testnet_eligibility(
     if experiment is None:
         raise HTTPException(status_code=404, detail="Research experiment was not found")
 
-    evidence_status = _read_evidence_gate_status()
+    evidence_status = await _read_evidence_gate_status()
     shadow_signals = await research_experiment_repository.list_shadow_signals(
         db,
         experiment_id,
@@ -148,7 +149,7 @@ async def record_testnet_release(
         response.status_code = status.HTTP_200_OK
         return _serialize_testnet_release(existing_release)
 
-    evidence_status = _read_evidence_gate_status()
+    evidence_status = await _read_evidence_gate_status()
     shadow_signals = await research_experiment_repository.list_shadow_signals(db, experiment_id)
     shadow_summary = _summarize_shadow_outcomes(shadow_signals)
     unresolved_failures = len(evidence_status.status_reasons)
@@ -306,7 +307,9 @@ async def record_shadow_outcome(
     return _serialize_shadow_signal(signal)
 
 
-def _read_evidence_gate_status() -> EvidenceGateStatusResponse:
+async def _read_evidence_gate_status() -> EvidenceGateStatusResponse:
+    if settings.microstructure_evidence_status_url:
+        return await _read_remote_evidence_gate_status(settings.microstructure_evidence_status_url)
     artifact_path = Path(settings.microstructure_evidence_status_path)
     if not artifact_path.exists():
         return _fallback_evidence_gate_status("evidence_gate_artifact_missing")
@@ -316,6 +319,23 @@ def _read_evidence_gate_status() -> EvidenceGateStatusResponse:
     except (OSError, json.JSONDecodeError, ValidationError) as error:
         return _fallback_evidence_gate_status(
             f"evidence_gate_artifact_unreadable:{type(error).__name__}"
+        )
+
+
+async def _read_remote_evidence_gate_status(url: str) -> EvidenceGateStatusResponse:
+    try:
+        async with httpx.AsyncClient(timeout=3.0, follow_redirects=False) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+        return EvidenceGateStatusResponse.model_validate(response.json())
+    except (
+        httpx.HTTPError,
+        json.JSONDecodeError,
+        ValidationError,
+        ValueError,
+    ) as error:
+        return _fallback_evidence_gate_status(
+            f"evidence_gate_artifact_remote_unreadable:{type(error).__name__}"
         )
 
 
@@ -433,7 +453,7 @@ async def get_experiment_report(
         raise HTTPException(status_code=404, detail="Research experiment was not found")
     if experiment.status == "DRAFT":
         raise HTTPException(status_code=409, detail="Draft experiment has no frozen report")
-    evidence_status = _read_evidence_gate_status()
+    evidence_status = await _read_evidence_gate_status()
     hypotheses = await research_experiment_repository.list_hypotheses(db, experiment.id)
     shadow_signals = await research_experiment_repository.list_shadow_signals(db, experiment.id)
     shadow_summary = _summarize_shadow_outcomes(shadow_signals)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import gzip
 import hashlib
 import json
 import zipfile
@@ -359,6 +360,139 @@ def normalize_trade_archive(
     return manifest
 
 
+def normalize_trade_wal_jsonl(
+    *,
+    wal_path: Path,
+    normalized_path: Path,
+    symbol: str,
+    utc_date: date,
+    chunk_rows: int = 250_000,
+) -> DatasetPartitionManifest:
+    """Normalize one prospective recorder TRADE WAL into the replay parquet schema."""
+    try:
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+    except ImportError as error:
+        raise RuntimeError("The research extra with pyarrow is required") from error
+
+    if chunk_rows <= 0:
+        raise ValueError("chunk_rows must be positive")
+    if not wal_path.exists():
+        raise FileNotFoundError(wal_path)
+
+    normalized_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = normalized_path.with_suffix(f"{normalized_path.suffix}.part")
+    temporary_path.unlink(missing_ok=True)
+
+    row_count = 0
+    first_event_time: datetime | None = None
+    last_event_time: datetime | None = None
+    first_sequence_id: int | None = None
+    last_sequence_id: int | None = None
+    sequence_gap_count = 0
+    duplicate_sequence_count = 0
+    parquet_writer: pq.ParquetWriter | None = None
+    pending_rows: list[dict[str, Any]] = []
+
+    def flush_pending() -> None:
+        nonlocal row_count
+        nonlocal first_event_time
+        nonlocal last_event_time
+        nonlocal first_sequence_id
+        nonlocal last_sequence_id
+        nonlocal sequence_gap_count
+        nonlocal duplicate_sequence_count
+        nonlocal parquet_writer
+        if not pending_rows:
+            return
+        chunk = _normalize_trade_wal_chunk(
+            pending_rows,
+            symbol=symbol,
+            utc_date=utc_date,
+        )
+        pending_rows.clear()
+        sequence_ids = chunk["sequence_id"].to_numpy(dtype=np.int64)
+        duplicate_sequence_count += int(pd.Series(sequence_ids).duplicated().sum())
+        differences = np.diff(sequence_ids)
+        sequence_gap_count += int(np.sum(differences > 1))
+        if (differences < 0).any():
+            raise DatasetIntegrityError("WAL sequence IDs are not monotonic")
+        if last_sequence_id is not None:
+            boundary_difference = int(sequence_ids[0]) - last_sequence_id
+            if boundary_difference < 0:
+                raise DatasetIntegrityError("WAL sequence IDs regress across chunks")
+            if boundary_difference == 0:
+                duplicate_sequence_count += 1
+            elif boundary_difference > 1:
+                sequence_gap_count += 1
+
+        table = pa.Table.from_pandas(chunk, preserve_index=False)
+        if parquet_writer is None:
+            parquet_writer = pq.ParquetWriter(
+                temporary_path,
+                table.schema,
+                compression="zstd",
+            )
+        parquet_writer.write_table(table)
+        row_count += len(chunk)
+        first_event_time = first_event_time or chunk["event_time"].iloc[0].to_pydatetime()
+        last_event_time = chunk["event_time"].iloc[-1].to_pydatetime()
+        if first_sequence_id is None:
+            first_sequence_id = int(sequence_ids[0])
+        last_sequence_id = int(sequence_ids[-1])
+
+    with gzip.open(wal_path, "rt", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise DatasetIntegrityError(
+                    f"Invalid JSON in {wal_path} at line {line_number}"
+                ) from error
+            if not isinstance(row, dict):
+                raise DatasetIntegrityError(f"WAL row at line {line_number} is not an object")
+            pending_rows.append(row)
+            if len(pending_rows) >= chunk_rows:
+                flush_pending()
+        flush_pending()
+
+    if parquet_writer is None:
+        raise DatasetIntegrityError(f"WAL {wal_path} contained no valid rows")
+    parquet_writer.close()
+    if duplicate_sequence_count:
+        temporary_path.unlink(missing_ok=True)
+        raise DatasetIntegrityError(
+            f"WAL {wal_path} contains {duplicate_sequence_count} duplicate sequences"
+        )
+    temporary_path.replace(normalized_path)
+    normalized_sha256 = _sha256_file(normalized_path)
+    source_sha256 = _sha256_file(wal_path)
+    quality_status = "VALID" if sequence_gap_count == 0 else "VALID_WITH_SEQUENCE_GAPS"
+    manifest = DatasetPartitionManifest(
+        venue="binance",
+        product="usdm_perpetual",
+        symbol=symbol.upper(),
+        event_type=MarketEventType.TRADE,
+        utc_date=utc_date.isoformat(),
+        source_url=str(wal_path),
+        source_sha256=source_sha256,
+        normalized_sha256=normalized_sha256,
+        row_count=row_count,
+        first_event_time=first_event_time,
+        last_event_time=last_event_time,
+        first_sequence_id=first_sequence_id,
+        last_sequence_id=last_sequence_id,
+        sequence_gap_count=sequence_gap_count,
+        duplicate_sequence_count=duplicate_sequence_count,
+        quality_status=quality_status,
+    )
+    manifest_path = normalized_path.with_suffix(".manifest.json")
+    manifest_path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
+    return manifest
+
+
 def _normalize_trade_chunk(
     raw_chunk: pd.DataFrame,
     *,
@@ -405,6 +539,63 @@ def _normalize_trade_chunk(
         raise DatasetIntegrityError("Normalized trade values contain non-finite numbers")
     if (normalized[["price", "quantity", "quote_quantity"]] <= 0).any().any():
         raise DatasetIntegrityError("Normalized trade values must be positive")
+    return normalized.sort_values(["sequence_id", "event_time"]).reset_index(drop=True)
+
+
+def _normalize_trade_wal_chunk(
+    rows: list[dict[str, Any]],
+    *,
+    symbol: str,
+    utc_date: date,
+) -> pd.DataFrame:
+    raw_chunk = pd.DataFrame(rows)
+    required = {
+        "product",
+        "symbol",
+        "event_type",
+        "event_time",
+        "sequence_id",
+        "price",
+        "quantity",
+        "is_buyer_maker",
+    }
+    missing = required - set(raw_chunk.columns)
+    if missing:
+        raise DatasetIntegrityError(f"WAL trade rows are missing columns: {sorted(missing)}")
+    if set(raw_chunk["event_type"].astype(str)) != {MarketEventType.TRADE.value}:
+        raise DatasetIntegrityError("WAL normalizer expected only TRADE rows")
+    if set(raw_chunk["symbol"].astype(str).str.upper()) != {symbol.upper()}:
+        raise DatasetIntegrityError("WAL symbol does not match requested symbol")
+    event_times = pd.to_datetime(raw_chunk["event_time"], utc=True)
+    if set(event_times.dt.date) != {utc_date}:
+        raise DatasetIntegrityError("WAL trade rows cross the requested UTC date")
+    for column in ("sequence_id", "price", "quantity"):
+        raw_chunk[column] = pd.to_numeric(raw_chunk[column], errors="raise")
+    quote_quantity = (
+        pd.to_numeric(raw_chunk["quote_quantity"], errors="raise")
+        if "quote_quantity" in raw_chunk
+        else raw_chunk["price"] * raw_chunk["quantity"]
+    )
+    normalized = pd.DataFrame(
+        {
+            "venue": "binance",
+            "product": "usdm_perpetual",
+            "symbol": symbol.upper(),
+            "event_type": MarketEventType.TRADE.value,
+            "event_time": event_times,
+            "sequence_id": raw_chunk["sequence_id"].astype("int64"),
+            "price": raw_chunk["price"].astype("float64"),
+            "quantity": raw_chunk["quantity"].astype("float64"),
+            "quote_quantity": quote_quantity.astype("float64"),
+            "is_buyer_maker": raw_chunk["is_buyer_maker"].map(_parse_bool),
+            "first_sequence_id": raw_chunk["sequence_id"].astype("int64"),
+            "last_sequence_id": raw_chunk["sequence_id"].astype("int64"),
+        }
+    )
+    if not np.isfinite(normalized[["price", "quantity", "quote_quantity"]]).all().all():
+        raise DatasetIntegrityError("Normalized WAL trade values contain non-finite numbers")
+    if (normalized[["price", "quantity", "quote_quantity"]] <= 0).any().any():
+        raise DatasetIntegrityError("Normalized WAL trade values must be positive")
     return normalized.sort_values(["sequence_id", "event_time"]).reset_index(drop=True)
 
 

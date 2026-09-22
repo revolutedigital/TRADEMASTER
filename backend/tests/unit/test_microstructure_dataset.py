@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import gzip
 import io
+import json
 import zipfile
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -17,6 +19,7 @@ from app.services.market.microstructure_dataset import (
     BinancePublicArchiveClient,
     DatasetIntegrityError,
     normalize_trade_archive,
+    normalize_trade_wal_jsonl,
 )
 
 
@@ -75,6 +78,47 @@ def test_duplicate_sequences_are_quarantined(tmp_path: Path) -> None:
             utc_date=date(2026, 1, 1),
             chunk_rows=1,
         )
+
+
+def test_normalize_prospective_trade_wal_jsonl(tmp_path: Path) -> None:
+    wal_path = tmp_path / "prospective-wal" / "trade" / "date=2026-01-01" / "events.jsonl.gz"
+    wal_path.parent.mkdir(parents=True)
+    with gzip.open(wal_path, "wt", encoding="utf-8") as handle:
+        for sequence_id, price in ((10, 100.0), (11, 101.0)):
+            handle.write(
+                json.dumps(
+                    {
+                        "product": "usdm_perpetual",
+                        "symbol": "BTCUSDT",
+                        "event_type": "TRADE",
+                        "event_time": f"2026-01-01T00:00:0{sequence_id - 9}+00:00",
+                        "sequence_id": sequence_id,
+                        "price": price,
+                        "quantity": 2.0,
+                        "quote_quantity": price * 2.0,
+                        "is_buyer_maker": sequence_id % 2 == 0,
+                    }
+                )
+                + "\n"
+            )
+    normalized_path = tmp_path / "normalized" / "trades" / "date=2026-01-01" / "events.parquet"
+
+    manifest = normalize_trade_wal_jsonl(
+        wal_path=wal_path,
+        normalized_path=normalized_path,
+        symbol="BTCUSDT",
+        utc_date=date(2026, 1, 1),
+        chunk_rows=1,
+    )
+
+    normalized = pd.read_parquet(normalized_path)
+    assert normalized["sequence_id"].tolist() == [10, 11]
+    assert normalized["quote_quantity"].tolist() == [200.0, 202.0]
+    assert manifest.event_type == MarketEventType.TRADE
+    assert manifest.source_sha256 == hashlib.sha256(wal_path.read_bytes()).hexdigest()
+    assert manifest.row_count == 2
+    assert manifest.sequence_gap_count == 0
+    assert normalized_path.with_suffix(".manifest.json").exists()
 
 
 @pytest.mark.asyncio

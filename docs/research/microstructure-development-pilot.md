@@ -122,16 +122,24 @@ Book-dependent materialization must be run fail-closed:
 
 ```bash
 cd backend
+./.venv/bin/python scripts/research/normalize_prospective_trade_wal.py \
+  --start-date YYYY-MM-DD \
+  --end-date YYYY-MM-DD \
+  --wal-root data/microstructure_v1/prospective-wal \
+  --output-root data/microstructure_v1/normalized/trades
+
 ./.venv/bin/python scripts/research/build_research_dataset.py \
   --start-date YYYY-MM-DD \
   --end-date YYYY-MM-DD \
-  --source-root data/microstructure_v1/normalized/aggTrades \
+  --source-root data/microstructure_v1/normalized/trades \
   --book-source-root data/microstructure_v1/prospective-wal/depth \
   --require-book-features \
   --max-book-staleness-ms 1000
 ```
 
-This adds `book_available`, `book_update_age_ms`, `spread_bps`,
+The first command converts recorder `trade/date=*/events.jsonl.gz` WAL files
+into the same immutable parquet schema used by the replay. The second command
+adds `book_available`, `book_update_age_ms`, `spread_bps`,
 `depth_imbalance`, `microprice_displacement_bps`, and side-oriented versions of
 imbalance and microprice displacement. If any decision lacks fresh book state, the
 partition fails instead of silently producing a fake “book” model.

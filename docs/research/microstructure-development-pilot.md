@@ -347,6 +347,15 @@ prospective shadow evidence, and at least one portfolio result with
 artifact hash and summary in the append-only decision event; it still does not
 activate Testnet or submit orders.
 
+Backend deployment `8e6b7fcc-0d86-49cf-aa3e-49a132fe117d` put this approval
+gate enforcement in production on 2026-09-22. Post-deploy smoke confirmed the
+backend still reads the private recorder artifact
+(`artifact_available=true`, `eligible=false`, `complete_days=0`, required
+streams `TRADE, DEPTH, MARK_PRICE, SPOT_TRADE`,
+`order_submission_allowed=false`, `execution_authorization=none`) and that an
+`APPROVED` decision without `statistical_gate` is rejected with HTTP 409 and
+`statistical_gate_artifact_required_for_approval`.
+
 ## Decision and next evidence gate
 
 The trade-flow-only candidate is rejected. It must not be extended into an audit,

@@ -1688,7 +1688,6 @@ def _frozen_top_p_artifact() -> dict[str, object]:
 def _top_p_entry_feature_vector() -> dict[str, float]:
     return {
         "flow_imbalance_1s": 2.0,
-        "directed_flow_imbalance_1s": 2.0,
         "trade_count_1s": 12.0,
         "quote_volume_1s": 140.0,
         "mean_interarrival_ms_1s": 20.0,
@@ -1698,7 +1697,6 @@ def _top_p_entry_feature_vector() -> dict[str, float]:
 def _top_p_non_entry_feature_vector() -> dict[str, float]:
     return {
         "flow_imbalance_1s": -3.0,
-        "directed_flow_imbalance_1s": -3.0,
         "trade_count_1s": 13.0,
         "quote_volume_1s": 160.0,
         "mean_interarrival_ms_1s": 20.0,

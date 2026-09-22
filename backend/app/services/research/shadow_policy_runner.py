@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.research_experiment import ResearchShadowSignal
+from app.services.research.microstructure_features import feature_vector_for_side
 from app.services.research.shadow_recorder import ResearchShadowRecorder, research_shadow_recorder
 from app.services.research.shadow_recorder import validate_shadow_signal_recording
 from app.services.research.top_p_model import (
@@ -129,6 +130,11 @@ async def record_frozen_top_p_shadow_decision(
     """
     try:
         model_sha256 = verify_frozen_top_p_policy(artifact)
+        feature_vector = feature_vector_for_side(
+            feature_vector,
+            side,
+            artifact["feature_columns"],
+        )
         probability = predict_frozen_top_p_probability(artifact, feature_vector)
         threshold = float(artifact["probability_threshold"])
         horizon_seconds = int(artifact["horizon_seconds"])

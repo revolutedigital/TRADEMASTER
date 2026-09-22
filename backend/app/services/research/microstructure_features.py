@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections import deque
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 import numpy as np
@@ -36,6 +37,18 @@ BOOK_FEATURE_COLUMNS = BASE_BOOK_FEATURE_COLUMNS + tuple(
     f"{prefix}_{window}s"
     for window in TRADE_WINDOWS_SECONDS
     for prefix in BOOK_WINDOW_FEATURE_PREFIXES
+)
+SIDE_SIGN_BY_ORDER_SIDE = {"BUY": 1.0, "SELL": -1.0}
+DIRECTIONAL_PREFIXES = (
+    "book_pressure_imbalance_",
+    "book_depth_imbalance_change_",
+    "book_microprice_displacement_change_bps_",
+    "liquidation_net_qty_",
+    "liquidation_net_notional_",
+    "spot_flow_imbalance_",
+    "spot_return_",
+    "spot_perp_flow_gap_",
+    "spot_perp_return_gap_",
 )
 
 
@@ -187,6 +200,51 @@ class CausalMicrostructureFeatureEngine:
             window_events = [event for event in self._book_events if event[0] >= cutoff]
             values.update(_book_window_feature_row(window_events, window=window))
         return values
+
+
+def side_aware_feature_values(
+    snapshot_values: Mapping[str, float],
+    side: str,
+) -> dict[str, float]:
+    """Derive the same side-aware feature columns used by offline research rows."""
+    side_sign = _side_sign(side)
+    values = _finite_feature_values(snapshot_values)
+    values["side_sign"] = side_sign
+    for column, value in tuple(values.items()):
+        if column.startswith("directed_"):
+            continue
+        if column.startswith("flow_imbalance_"):
+            values[f"directed_{column}"] = value * side_sign
+        elif column.startswith("return_") and column.endswith("_bps"):
+            values[f"directed_{column}"] = value * side_sign
+        elif column in {
+            "depth_imbalance",
+            "microprice_displacement_bps",
+            "mark_index_basis_bps",
+            "spot_perp_basis_bps",
+        }:
+            values[f"directed_{column}"] = value * side_sign
+        elif column == "funding_rate":
+            values["directed_funding_rate"] = -value * side_sign
+        elif column.startswith(DIRECTIONAL_PREFIXES):
+            values[f"directed_{column}"] = value * side_sign
+    return values
+
+
+def feature_vector_for_side(
+    snapshot_values: Mapping[str, float],
+    side: str,
+    feature_columns: Iterable[str] | None = None,
+) -> dict[str, float]:
+    """Return a model-ready feature vector for one BUY/SELL candidate."""
+    values = side_aware_feature_values(snapshot_values, side)
+    if feature_columns is None:
+        return values
+    columns = tuple(str(column) for column in feature_columns)
+    missing = [column for column in columns if column not in values]
+    if missing:
+        raise ValueError(f"feature vector is missing columns: {missing}")
+    return {column: values[column] for column in columns}
 
 
 def materialize_trade_flow_features(
@@ -559,6 +617,25 @@ def _trade_window_features(
 
 def _prefix_sum(values: np.ndarray) -> np.ndarray:
     return np.concatenate((np.zeros(1, dtype=np.float64), np.cumsum(values)))
+
+
+def _side_sign(side: str) -> float:
+    try:
+        return SIDE_SIGN_BY_ORDER_SIDE[side.upper()]
+    except KeyError as error:
+        raise ValueError("side must be BUY or SELL") from error
+
+
+def _finite_feature_values(snapshot_values: Mapping[str, float]) -> dict[str, float]:
+    if not snapshot_values:
+        raise ValueError("feature vector must not be empty")
+    values: dict[str, float] = {}
+    for column, value in snapshot_values.items():
+        parsed = float(value)
+        if not math.isfinite(parsed):
+            raise ValueError("feature vector must contain finite values")
+        values[str(column)] = parsed
+    return values
 
 
 def _ordered_trade_features_frame(trades: pd.DataFrame, *, frame_name: str) -> pd.DataFrame:

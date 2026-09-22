@@ -242,12 +242,15 @@ paths:
       summary: Score a frozen top-p artifact and append selected shadow entries.
       description: |
         Scores one event-driven candidate with a frozen research-only top-p
-        artifact. By default, only candidates that clear the artifact's
-        probability threshold are written to the append-only shadow ledger;
-        below-threshold candidates return a metadata decision without mutating
-        the ledger. Retries for the same experiment, decision time, side, and
-        horizon are idempotent when the artifact and feature hash match. This
-        endpoint never submits or schedules an exchange order.
+        artifact. The feature vector may be the causal base snapshot; the
+        server derives `side_sign` and the same `directed_*` columns used by
+        offline research rows before selecting the artifact's feature columns.
+        By default, only candidates that clear the artifact's probability
+        threshold are written to the append-only shadow ledger; below-threshold
+        candidates return a metadata decision without mutating the ledger.
+        Retries for the same experiment, decision time, side, and horizon are
+        idempotent when the model and derived feature hash match. This endpoint
+        never submits or schedules an exchange order.
       security:
         - bearerAuth: []
       parameters:
@@ -909,6 +912,7 @@ components:
         feature_vector:
           type: object
           minProperties: 1
+          description: Causal base snapshot or precomputed model features; BUY/SELL side-aware columns are derived server-side before scoring.
           additionalProperties:
             type: number
         record_non_entries:

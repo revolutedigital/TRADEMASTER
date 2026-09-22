@@ -9,11 +9,13 @@ import pytest
 from app.schemas.microstructure import MarketEventType, MicrostructureEvent
 from app.services.research.microstructure_features import (
     CausalMicrostructureFeatureEngine,
+    feature_vector_for_side,
     materialize_book_features,
     materialize_liquidation_features,
     materialize_mark_features,
     materialize_spot_perp_features,
     materialize_trade_flow_features,
+    side_aware_feature_values,
 )
 
 
@@ -375,6 +377,60 @@ def test_mark_and_liquidation_features_are_causal_and_match_online_snapshot() ->
         assert offline_liquidations.iloc[index]["liquidation_net_notional_1s"] == pytest.approx(
             online["liquidation_net_notional_1s"]
         )
+
+
+def test_side_aware_feature_values_match_offline_directional_convention() -> None:
+    base_values = {
+        "flow_imbalance_1s": 0.25,
+        "return_1s_bps": 3.0,
+        "depth_imbalance": 0.4,
+        "microprice_displacement_bps": 1.5,
+        "mark_index_basis_bps": -2.0,
+        "funding_rate": 0.0002,
+        "book_pressure_imbalance_1s": 0.7,
+        "liquidation_net_qty_1s": -4.0,
+        "spot_perp_basis_bps": 5.0,
+        "spot_return_1s_bps": -1.0,
+        "spot_perp_flow_gap_1s": 0.2,
+    }
+
+    buy = side_aware_feature_values(base_values, "BUY")
+    sell = side_aware_feature_values(base_values, "SELL")
+    selected = feature_vector_for_side(
+        base_values,
+        "SELL",
+        (
+            "side_sign",
+            "directed_flow_imbalance_1s",
+            "directed_return_1s_bps",
+            "directed_depth_imbalance",
+            "directed_funding_rate",
+            "directed_book_pressure_imbalance_1s",
+            "directed_liquidation_net_qty_1s",
+            "directed_spot_perp_basis_bps",
+            "directed_spot_return_1s_bps",
+            "directed_spot_perp_flow_gap_1s",
+        ),
+    )
+
+    assert buy["side_sign"] == 1.0
+    assert sell["side_sign"] == -1.0
+    assert buy["directed_flow_imbalance_1s"] == pytest.approx(0.25)
+    assert sell["directed_flow_imbalance_1s"] == pytest.approx(-0.25)
+    assert buy["directed_funding_rate"] == pytest.approx(-0.0002)
+    assert sell["directed_funding_rate"] == pytest.approx(0.0002)
+    assert selected["directed_return_1s_bps"] == pytest.approx(-3.0)
+    assert selected["directed_depth_imbalance"] == pytest.approx(-0.4)
+    assert selected["directed_book_pressure_imbalance_1s"] == pytest.approx(-0.7)
+    assert selected["directed_liquidation_net_qty_1s"] == pytest.approx(4.0)
+    assert selected["directed_spot_perp_basis_bps"] == pytest.approx(-5.0)
+    assert selected["directed_spot_return_1s_bps"] == pytest.approx(1.0)
+    assert selected["directed_spot_perp_flow_gap_1s"] == pytest.approx(-0.2)
+
+
+def test_feature_vector_for_side_rejects_missing_model_columns() -> None:
+    with pytest.raises(ValueError, match="missing columns"):
+        feature_vector_for_side({"flow_imbalance_1s": 0.1}, "BUY", ("quote_volume_1s",))
 
 
 def test_snapshot_cannot_move_backwards() -> None:

@@ -166,7 +166,7 @@ async def test_event_driven_frozen_policy_shadow_decision_records_selected_idemp
         decision_time=decision_time,
         side="BUY",
         artifact=artifact,
-        feature_vector=_feature_vector(),
+        feature_vector=_base_feature_vector(),
     )
     second = await record_frozen_top_p_shadow_decision(
         db,
@@ -174,7 +174,7 @@ async def test_event_driven_frozen_policy_shadow_decision_records_selected_idemp
         decision_time=decision_time,
         side="BUY",
         artifact=artifact,
-        feature_vector=_feature_vector(),
+        feature_vector=_base_feature_vector(),
     )
 
     signals = (await db.execute(select(ResearchShadowSignal))).scalars().all()
@@ -268,6 +268,15 @@ def _feature_vector() -> dict[str, float]:
     return {
         "flow_imbalance_1s": 2.0,
         "directed_flow_imbalance_1s": 2.0,
+        "trade_count_1s": 12.0,
+        "quote_volume_1s": 140.0,
+        "mean_interarrival_ms_1s": 20.0,
+    }
+
+
+def _base_feature_vector() -> dict[str, float]:
+    return {
+        "flow_imbalance_1s": 2.0,
         "trade_count_1s": 12.0,
         "quote_volume_1s": 140.0,
         "mean_interarrival_ms_1s": 20.0,

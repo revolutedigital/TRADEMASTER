@@ -257,11 +257,12 @@ Prospective shadow runners should score event-driven candidates through
 or, internally,
 `app.services.research.shadow_policy_runner.record_frozen_top_p_shadow_decision`.
 That path verifies the artifact hash, computes the probability from the
-serialized coefficients, uses the artifact threshold and horizon, and appends to
-the immutable shadow ledger only when the frozen top-p threshold is cleared
-unless `record_non_entries=true` is explicitly requested. Retries for the same
-`(decision_time, side, horizon)` are idempotent when the model and feature hash
-match. It has no exchange adapter and no order-submission path.
+serialized coefficients, derives `side_sign` and the same `directed_*` feature
+columns used by offline rows, uses the artifact threshold and horizon, and
+appends to the immutable shadow ledger only when the frozen top-p threshold is
+cleared unless `record_non_entries=true` is explicitly requested. Retries for the
+same `(decision_time, side, horizon)` are idempotent when the model and derived
+feature hash match. It has no exchange adapter and no order-submission path.
 
 For partition batches, use the dry-run-first CLI. Without `--commit`, it only
 scores the frozen policy and prints the selected shadow entries:
@@ -544,9 +545,9 @@ Shadow runners can append evidence through the research API:
   idempotent but irreversible in the research ledger.
 - `POST /api/v1/research/microstructure/experiments/{experiment_id}/frozen-top-p-shadow-signals`
   is the preferred event-driven path: it receives the frozen policy artifact and
-  causal feature vector, computes probability/threshold server-side, records only
-  selected top-p entries by default, and returns 200 for no-entry candidates or
-  idempotent retries.
+  causal feature vector, derives BUY/SELL side-aware model columns, computes
+  probability/threshold server-side, records only selected top-p entries by
+  default, and returns 200 for no-entry candidates or idempotent retries.
 - `POST /api/v1/research/microstructure/experiments/{experiment_id}/shadow-signals`
   remains available for explicit/manual research evidence after the
   `PROSPECTIVE_SHADOW` partition is opened. Use the frozen top-p route when the

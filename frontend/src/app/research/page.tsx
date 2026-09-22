@@ -72,6 +72,36 @@ interface TestnetEligibility {
   generated_at: string;
 }
 
+interface ExperimentReport {
+  experiment_id: string;
+  status: Exclude<ExperimentStatus, "DRAFT">;
+  decision_reasons: string[];
+  metrics: {
+    book_evidence?: {
+      longest_complete_streak_days?: number;
+      complete_days?: number;
+      status_reasons?: string[];
+      gate_reasons?: string[];
+    };
+    shadow?: {
+      signal_count?: number;
+      outcome_signal_count?: number;
+      decision_days?: number;
+      outcome_days?: number;
+      expected_mean_bps?: number | null;
+      stress_mean_bps?: number | null;
+      positive?: boolean;
+      complete?: boolean;
+    };
+    testnet_boundary?: {
+      order_submission_allowed: false;
+      execution_authorization: "none";
+    };
+  };
+  artifact_sha256: string | null;
+  generated_at: string;
+}
+
 const statusVariant: Record<ExperimentStatus, "default" | "primary" | "danger" | "warning" | "success"> = {
   DRAFT: "default",
   FROZEN: "primary",
@@ -86,6 +116,8 @@ export default function ResearchPage() {
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
   const [testnetEligibility, setTestnetEligibility] = useState<TestnetEligibility | null>(null);
   const [testnetError, setTestnetError] = useState<string | null>(null);
+  const [experimentReport, setExperimentReport] = useState<ExperimentReport | null>(null);
+  const [reportError, setReportError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,6 +126,7 @@ export default function ResearchPage() {
     setError(null);
     setEvidenceError(null);
     setTestnetError(null);
+    setReportError(null);
     try {
       const [experimentsResult, evidenceResult] = await Promise.allSettled([
         apiFetch<Experiment[]>("/api/v1/research/microstructure/experiments"),
@@ -115,22 +148,38 @@ export default function ResearchPage() {
         );
       }
       if (loadedExperiments.length > 0) {
-        try {
-          setTestnetEligibility(
-            await apiFetch<TestnetEligibility>(
-              `/api/v1/research/microstructure/experiments/${loadedExperiments[0].id}/testnet-eligibility`,
-            ),
-          );
-        } catch (requestError) {
+        const firstExperimentId = loadedExperiments[0].id;
+        const [eligibilityResult, reportResult] = await Promise.allSettled([
+          apiFetch<TestnetEligibility>(
+            `/api/v1/research/microstructure/experiments/${firstExperimentId}/testnet-eligibility`,
+          ),
+          apiFetch<ExperimentReport>(
+            `/api/v1/research/microstructure/experiments/${firstExperimentId}/report`,
+          ),
+        ]);
+        if (eligibilityResult.status === "fulfilled") {
+          setTestnetEligibility(eligibilityResult.value);
+        } else {
           setTestnetEligibility(null);
           setTestnetError(
-            requestError instanceof Error
-              ? requestError.message
+            eligibilityResult.reason instanceof Error
+              ? eligibilityResult.reason.message
               : "Falha ao carregar checklist Testnet",
+          );
+        }
+        if (reportResult.status === "fulfilled") {
+          setExperimentReport(reportResult.value);
+        } else {
+          setExperimentReport(null);
+          setReportError(
+            reportResult.reason instanceof Error
+              ? reportResult.reason.message
+              : "Falha ao carregar relatório do experimento",
           );
         }
       } else {
         setTestnetEligibility(null);
+        setExperimentReport(null);
       }
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Falha ao carregar evidências");
@@ -180,6 +229,7 @@ export default function ResearchPage() {
 
       <EvidenceGatePanel status={evidenceStatus} error={evidenceError} longestBookStreak={longestBookStreak} />
       <TestnetEligibilityPanel status={testnetEligibility} error={testnetError} hasExperiments={experiments.length > 0} />
+      <ExperimentReportPanel report={experimentReport} error={reportError} hasExperiments={experiments.length > 0} />
 
       {loading ? (
         <div className="flex justify-center py-16"><Spinner size="lg" /></div>
@@ -221,6 +271,54 @@ export default function ResearchPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function ExperimentReportPanel({
+  report,
+  error,
+  hasExperiments,
+}: {
+  report: ExperimentReport | null;
+  error: string | null;
+  hasExperiments: boolean;
+}) {
+  const shadow = report?.metrics.shadow;
+  const book = report?.metrics.book_evidence;
+  const visibleReason = error ?? (hasExperiments ? null : "nenhum_experimento_registrado");
+
+  return (
+    <Card className={shadow?.positive ? "border-emerald-500/30" : "border-slate-700/50"}>
+      <CardContent>
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="flex gap-3">
+            <Activity className="mt-0.5 h-5 w-5 shrink-0 text-blue-400" />
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="font-semibold text-[var(--color-text)]">Relatório do experimento</h2>
+                <Badge variant={shadow?.positive ? "success" : "default"}>
+                  {shadow?.positive ? "Shadow positivo" : "Auditável"}
+                </Badge>
+              </div>
+              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                Métricas consolidadas do primeiro experimento listado. Report hash:{" "}
+                <span className="font-mono text-xs">{shortHash(report?.artifact_sha256)}</span>
+              </p>
+              {visibleReason ? (
+                <p className="mt-2 font-mono text-xs text-amber-300">{visibleReason}</p>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="grid min-w-72 grid-cols-2 gap-3 text-sm md:grid-cols-4">
+            <GateMetric label="Book streak" value={`${book?.longest_complete_streak_days ?? 0}/60`} />
+            <GateMetric label="Shadow" value={`${shadow?.outcome_signal_count ?? 0}/${shadow?.signal_count ?? 0}`} />
+            <GateMetric label="Expected" value={formatBps(shadow?.expected_mean_bps)} />
+            <GateMetric label="Stress" value={formatBps(shadow?.stress_mean_bps)} />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -340,4 +438,13 @@ function Metric({ icon: Icon, label, value, tone = "text-[var(--color-text)]" }:
       <Icon className="h-5 w-5 text-[var(--color-text-faint)]" />
     </div>
   );
+}
+
+function shortHash(value: string | null | undefined): string {
+  return value ? `${value.slice(0, 10)}…` : "n/a";
+}
+
+function formatBps(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "n/a";
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)} bps`;
 }

@@ -102,6 +102,7 @@ def main() -> int:
     report = {
         "research_only": True,
         "order_submission_allowed": False,
+        "execution_authorization": "none",
         "experiment_stage": "development_pilot",
         "model_target": "paid_stress_before_stop",
         "model_feature_set": model_feature_set,

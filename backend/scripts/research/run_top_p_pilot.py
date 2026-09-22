@@ -66,6 +66,7 @@ def main() -> int:
     report = {
         "research_only": True,
         "order_submission_allowed": False,
+        "execution_authorization": "none",
         "experiment_stage": "development_pilot",
         "target": target_column,
         "opened_dates": [path.parent.name.removeprefix("date=") for path in paths],

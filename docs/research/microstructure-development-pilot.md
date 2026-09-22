@@ -276,8 +276,10 @@ cd backend
   --prospective-shadow-report data/microstructure_v1/reports/prospective-shadow-settlement.json
 ```
 
-If the top-p report is missing or any result lacks a positive monotonicity check,
-or if the prospective shadow report is missing, dry-run, incomplete, or
+If the top-p report is missing, lacks research safety flags
+(`research_only=true`, `order_submission_allowed=false`,
+`execution_authorization=none`), or any result lacks a positive monotonicity
+check, or if the prospective shadow report is missing, dry-run, incomplete, or
 non-positive under stress costs, the gate records the concrete reason and fails
 closed.
 

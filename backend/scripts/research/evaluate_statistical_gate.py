@@ -77,6 +77,7 @@ def main() -> int:
     report = {
         "research_only": True,
         "order_submission_allowed": False,
+        "execution_authorization": "none",
         "attempted_hypotheses": arguments.attempted_hypotheses,
         "top_p_monotonic": top_p_monotonic,
         "top_p_monotonic_reasons": top_p_reasons,
@@ -101,6 +102,8 @@ def _read_top_p_monotonicity(path: Path | None) -> tuple[bool, list[str]]:
         return False, ["top_p_report_not_research_only"]
     if payload.get("order_submission_allowed") is not False:
         return False, ["top_p_report_allows_order_submission"]
+    if payload.get("execution_authorization") != "none":
+        return False, ["top_p_report_has_execution_authorization"]
     results = payload.get("results")
     if not isinstance(results, list) or not results:
         return False, ["top_p_report_has_no_results"]

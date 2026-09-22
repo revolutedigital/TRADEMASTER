@@ -289,6 +289,7 @@ async def test_testnet_eligibility_remains_metadata_without_explicit_release(
     )
 
     assert response.eligible is False
+    assert response.book_evidence_eligible is True
     assert response.book_evidence_contiguous_days == 60
     assert response.prospective_shadow_days == 20
     assert response.prospective_shadow_outcome_days == 20
@@ -409,6 +410,71 @@ async def test_research_testnet_release_requires_all_prior_gates(
     assert error.value.detail["execution_authorization"] == "none"
 
 
+async def test_research_testnet_release_requires_eligible_book_gate_even_with_60_day_streak(
+    tmp_path: Path,
+    monkeypatch,
+    db: AsyncSession,
+) -> None:
+    payload = _eligible_evidence_payload()
+    payload["book_evidence_gate"]["eligible"] = False
+    payload["book_evidence_gate"]["reasons"] = ["spot_trade_missing_from_evidence_gate"]
+    artifact = tmp_path / "evidence-gate-status.json"
+    artifact.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(
+        research.settings,
+        "microstructure_evidence_status_path",
+        str(artifact),
+    )
+    db.add(
+        ResearchExperiment(
+            id="experiment",
+            name="candidate",
+            status="APPROVED",
+            code_revision="a" * 40,
+            protocol_sha256="b" * 64,
+            product_json="{}",
+            cost_profile_json="{}",
+            approval_gate_json="{}",
+            experiment_sha256="9" * 64,
+            decision_reasons_json=json.dumps(["all_gates_passed"]),
+        )
+    )
+    start = datetime(2026, 3, 2, tzinfo=UTC)
+    for day_offset in range(20):
+        db.add(
+            ResearchShadowSignal(
+                experiment_id="experiment",
+                decision_time=start + timedelta(days=day_offset),
+                recorded_at=start + timedelta(days=day_offset, seconds=1),
+                side="BUY",
+                horizon_seconds=300,
+                probability=0.8,
+                threshold=0.7,
+                would_enter=True,
+                model_sha256="d" * 64,
+                feature_vector_sha256=f"{day_offset:064x}"[-64:],
+                outcome_json=json.dumps({"expected_net_bps": 1.2, "stress_net_bps": 0.4}),
+            )
+        )
+    await db.flush()
+
+    with pytest.raises(research.HTTPException) as error:
+        await research.record_testnet_release(
+            "experiment",
+            RecordTestnetReleaseRequest(
+                confirmation_phrase="REQUEST RESEARCH TESTNET RELEASE",
+                reasons=["manual_release_after_review"],
+            ),
+            response=Response(),
+            db=db,
+            user={"sub": "operator"},
+        )
+
+    assert error.value.status_code == 409
+    assert "book_evidence_gate_not_eligible" in error.value.detail["reasons"]
+    assert "book_evidence_has_fewer_than_60_complete_days" not in error.value.detail["reasons"]
+
+
 async def test_research_testnet_release_makes_checklist_eligible_without_execution(
     tmp_path: Path,
     monkeypatch,
@@ -490,7 +556,9 @@ async def test_research_testnet_release_makes_checklist_eligible_without_executi
     assert release.order_submission_allowed is False
     assert release.execution_authorization == "none"
     assert release.evidence_snapshot["book_evidence_contiguous_days"] == 60
+    assert release.evidence_snapshot["book_evidence_eligible"] is True
     assert eligibility.eligible is True
+    assert eligibility.book_evidence_eligible is True
     assert eligibility.explicit_testnet_release is True
     assert eligibility.release_request_required is False
     assert eligibility.order_submission_allowed is False

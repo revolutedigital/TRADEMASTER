@@ -16,6 +16,7 @@ MAX_PROSPECTIVE_SHADOW_DAYS = 30
 class TestnetEligibility:
     eligible: bool
     reasons: tuple[str, ...]
+    book_evidence_eligible: bool
     book_evidence_contiguous_days: int
     prospective_shadow_days: int
     prospective_shadow_outcome_days: int
@@ -30,6 +31,7 @@ def evaluate_testnet_eligibility(
     experiment: ResearchExperiment,
     *,
     book_evidence_contiguous_days: int,
+    book_evidence_eligible: bool,
     prospective_shadow_days: int,
     prospective_shadow_outcome_days: int,
     prospective_shadow_signal_count: int,
@@ -42,6 +44,8 @@ def evaluate_testnet_eligibility(
     reasons: list[str] = []
     if experiment.status != "APPROVED":
         reasons.append("experiment_status_is_not_approved")
+    if not book_evidence_eligible:
+        reasons.append("book_evidence_gate_not_eligible")
     if book_evidence_contiguous_days < MIN_BOOK_EVIDENCE_DAYS:
         reasons.append("book_evidence_has_fewer_than_60_complete_days")
     if prospective_shadow_days < MIN_PROSPECTIVE_SHADOW_DAYS:
@@ -61,6 +65,7 @@ def evaluate_testnet_eligibility(
     return TestnetEligibility(
         eligible=not reasons,
         reasons=tuple(reasons),
+        book_evidence_eligible=book_evidence_eligible,
         book_evidence_contiguous_days=book_evidence_contiguous_days,
         prospective_shadow_days=prospective_shadow_days,
         prospective_shadow_outcome_days=prospective_shadow_outcome_days,

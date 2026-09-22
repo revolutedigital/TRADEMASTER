@@ -86,6 +86,9 @@ async def get_testnet_eligibility(
     explicit_testnet_release = testnet_release is not None
     eligibility = evaluate_testnet_eligibility(
         experiment,
+        book_evidence_eligible=(
+            evidence_status.artifact_available and evidence_status.book_evidence_gate.eligible
+        ),
         book_evidence_contiguous_days=(
             evidence_status.book_evidence_gate.longest_complete_streak_days
             if evidence_status.artifact_available
@@ -104,6 +107,7 @@ async def get_testnet_eligibility(
         experiment_status=experiment.status,
         eligible=eligibility.eligible,
         reasons=list(eligibility.reasons),
+        book_evidence_eligible=eligibility.book_evidence_eligible,
         book_evidence_contiguous_days=eligibility.book_evidence_contiguous_days,
         prospective_shadow_days=eligibility.prospective_shadow_days,
         prospective_shadow_outcome_days=eligibility.prospective_shadow_outcome_days,
@@ -150,6 +154,9 @@ async def record_testnet_release(
     unresolved_failures = len(evidence_status.status_reasons)
     eligibility = evaluate_testnet_eligibility(
         experiment,
+        book_evidence_eligible=(
+            evidence_status.artifact_available and evidence_status.book_evidence_gate.eligible
+        ),
         book_evidence_contiguous_days=(
             evidence_status.book_evidence_gate.longest_complete_streak_days
             if evidence_status.artifact_available
@@ -622,6 +629,9 @@ def _testnet_release_evidence_snapshot(
             evidence_status.book_evidence_gate.longest_complete_streak_days
             if evidence_status.artifact_available
             else 0
+        ),
+        "book_evidence_eligible": (
+            evidence_status.artifact_available and evidence_status.book_evidence_gate.eligible
         ),
         "evidence_artifact_available": evidence_status.artifact_available,
         "evidence_manifest_sha256": evidence_status.book_evidence_gate.manifest_sha256,

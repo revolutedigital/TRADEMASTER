@@ -600,6 +600,7 @@ components:
         - experiment_status
         - eligible
         - reasons
+        - book_evidence_eligible
         - book_evidence_contiguous_days
         - prospective_shadow_days
         - prospective_shadow_outcome_days
@@ -628,6 +629,9 @@ components:
         reasons:
           type: array
           items: { type: string }
+        book_evidence_eligible:
+          type: boolean
+          description: True only when the evidence artifact exists and its book/spot WAL gate is eligible.
         book_evidence_contiguous_days:
           type: integer
           minimum: 0

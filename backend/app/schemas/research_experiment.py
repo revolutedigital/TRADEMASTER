@@ -138,6 +138,7 @@ class TestnetEligibilityResponse(BaseModel):
     experiment_status: ExperimentStatus
     eligible: bool
     reasons: list[str]
+    book_evidence_eligible: bool
     book_evidence_contiguous_days: int = Field(ge=0)
     prospective_shadow_days: int = Field(ge=0)
     prospective_shadow_outcome_days: int = Field(ge=0)

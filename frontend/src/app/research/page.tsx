@@ -59,6 +59,7 @@ interface TestnetEligibility {
   prospective_shadow_days: number;
   prospective_shadow_outcome_days: number;
   prospective_shadow_signal_count: number;
+  prospective_shadow_outcome_signal_count: number;
   prospective_shadow_expected_mean_bps: number | null;
   prospective_shadow_stress_mean_bps: number | null;
   prospective_shadow_positive: boolean;
@@ -262,8 +263,8 @@ function TestnetEligibilityPanel({
             <GateMetric label="Book" value={`${status?.book_evidence_contiguous_days ?? 0}/60`} />
             <GateMetric label="Shadow" value={`${status?.prospective_shadow_days ?? 0}/20`} />
             <GateMetric
-              label="Outcome"
-              value={`${status?.prospective_shadow_outcome_days ?? 0}/${status?.prospective_shadow_days ?? 20}`}
+              label="Outcomes"
+              value={`${status?.prospective_shadow_outcome_signal_count ?? 0}/${status?.prospective_shadow_signal_count ?? 0}`}
             />
             <GateMetric label="Falhas" value={status?.unresolved_failures ?? 0} />
           </div>

@@ -135,6 +135,7 @@ class TestnetEligibilityResponse(BaseModel):
     prospective_shadow_days: int = Field(ge=0)
     prospective_shadow_outcome_days: int = Field(ge=0)
     prospective_shadow_signal_count: int = Field(ge=0)
+    prospective_shadow_outcome_signal_count: int = Field(ge=0)
     prospective_shadow_expected_mean_bps: float | None
     prospective_shadow_stress_mean_bps: float | None
     prospective_shadow_positive: bool

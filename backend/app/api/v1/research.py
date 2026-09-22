@@ -73,6 +73,8 @@ async def get_testnet_eligibility(
         ),
         prospective_shadow_days=shadow_summary["decision_days"],
         prospective_shadow_outcome_days=shadow_summary["outcome_days"],
+        prospective_shadow_signal_count=shadow_summary["signal_count"],
+        prospective_shadow_outcome_signal_count=shadow_summary["outcome_signal_count"],
         prospective_shadow_positive=shadow_summary["positive"],
         unresolved_failures=unresolved_failures,
         explicit_testnet_release=False,
@@ -85,7 +87,8 @@ async def get_testnet_eligibility(
         book_evidence_contiguous_days=eligibility.book_evidence_contiguous_days,
         prospective_shadow_days=eligibility.prospective_shadow_days,
         prospective_shadow_outcome_days=eligibility.prospective_shadow_outcome_days,
-        prospective_shadow_signal_count=len(shadow_signals),
+        prospective_shadow_signal_count=eligibility.prospective_shadow_signal_count,
+        prospective_shadow_outcome_signal_count=eligibility.prospective_shadow_outcome_signal_count,
         prospective_shadow_expected_mean_bps=shadow_summary["expected_mean_bps"],
         prospective_shadow_stress_mean_bps=shadow_summary["stress_mean_bps"],
         prospective_shadow_positive=eligibility.prospective_shadow_positive,
@@ -111,6 +114,7 @@ def _read_evidence_gate_status() -> EvidenceGateStatusResponse:
         return _fallback_evidence_gate_status(
             f"evidence_gate_artifact_unreadable:{type(error).__name__}"
         )
+
 
 @router.post("/experiments", response_model=ExperimentResponse, status_code=status.HTTP_201_CREATED)
 async def create_experiment(
@@ -265,6 +269,7 @@ def _fallback_evidence_gate_status(reason: str) -> EvidenceGateStatusResponse:
 def _summarize_shadow_outcomes(signals: list[ResearchShadowSignal]) -> dict[str, object]:
     decision_days = {_utc_day(signal.decision_time) for signal in signals}
     outcome_days = set()
+    outcome_signal_count = 0
     expected_values: list[float] = []
     stress_values: list[float] = []
 
@@ -284,18 +289,22 @@ def _summarize_shadow_outcomes(signals: list[ResearchShadowSignal]) -> dict[str,
         expected_values.append(expected_net_bps)
         stress_values.append(stress_net_bps)
         outcome_days.add(_utc_day(signal.decision_time))
+        outcome_signal_count += 1
 
     expected_mean = _mean(expected_values)
     stress_mean = _mean(stress_values)
     positive = (
         bool(decision_days)
         and outcome_days == decision_days
+        and outcome_signal_count == len(signals)
         and expected_mean is not None
         and stress_mean is not None
         and expected_mean > 0
         and stress_mean > 0
     )
     return {
+        "signal_count": len(signals),
+        "outcome_signal_count": outcome_signal_count,
         "decision_days": len(decision_days),
         "outcome_days": len(outcome_days),
         "expected_mean_bps": expected_mean,

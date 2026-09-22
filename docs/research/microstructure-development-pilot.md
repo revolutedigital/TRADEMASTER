@@ -190,7 +190,7 @@ That endpoint crosses experiment status, the book-evidence artifact, and the
 append-only shadow ledger. It is still metadata only: `explicit_testnet_release`
 is always false in this read path, `release_request_required=true`, and order
 submission remains blocked. A 20-to-30-day shadow block counts toward Testnet
-only when every shadow day has outcome evidence and both expected and stress
-mean bps are positive. Outcomes are recorded once through the research shadow
-recorder with `expected_net_bps`, `stress_net_bps`, and `label_sha256`; overwrite,
-missing, malformed, or non-finite `outcome_json` is fail-closed.
+only when every shadow signal has immutable outcome evidence and both expected
+and stress mean bps are positive. Outcomes are recorded once through the research
+shadow recorder with `expected_net_bps`, `stress_net_bps`, and `label_sha256`;
+overwrite, missing, malformed, or non-finite `outcome_json` is fail-closed.

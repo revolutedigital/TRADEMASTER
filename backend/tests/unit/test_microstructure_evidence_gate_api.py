@@ -359,6 +359,7 @@ async def test_testnet_eligibility_remains_metadata_without_explicit_release(
             approval_gate_json="{}",
         )
     )
+    db.add(_approved_decision_event())
     start = datetime(2026, 3, 2, tzinfo=UTC)
     for day_offset in range(20):
         db.add(
@@ -394,11 +395,68 @@ async def test_testnet_eligibility_remains_metadata_without_explicit_release(
     assert response.prospective_shadow_expected_mean_bps == 1.2
     assert response.prospective_shadow_stress_mean_bps == 0.4
     assert response.prospective_shadow_positive is True
+    assert response.approved_statistical_gate_verified is True
     assert response.explicit_testnet_release is False
     assert response.release_request_required is True
     assert response.order_submission_allowed is False
     assert response.execution_authorization == "none"
     assert response.reasons == ["explicit_testnet_release_is_missing"]
+
+
+async def test_testnet_eligibility_rejects_legacy_approved_status_without_gate_event(
+    tmp_path: Path,
+    monkeypatch,
+    db: AsyncSession,
+) -> None:
+    artifact = tmp_path / "evidence-gate-status.json"
+    artifact.write_text(json.dumps(_eligible_evidence_payload()), encoding="utf-8")
+    monkeypatch.setattr(
+        research.settings,
+        "microstructure_evidence_status_path",
+        str(artifact),
+    )
+    db.add(
+        ResearchExperiment(
+            id="experiment",
+            name="legacy-approved",
+            status="APPROVED",
+            code_revision="a" * 40,
+            protocol_sha256="b" * 64,
+            product_json="{}",
+            cost_profile_json="{}",
+            approval_gate_json="{}",
+        )
+    )
+    start = datetime(2026, 3, 2, tzinfo=UTC)
+    for day_offset in range(20):
+        db.add(
+            ResearchShadowSignal(
+                experiment_id="experiment",
+                decision_time=start + timedelta(days=day_offset),
+                recorded_at=start + timedelta(days=day_offset, seconds=1),
+                side="BUY",
+                horizon_seconds=300,
+                probability=0.8,
+                threshold=0.7,
+                would_enter=True,
+                model_sha256="d" * 64,
+                feature_vector_sha256=f"{day_offset:064x}"[-64:],
+                outcome_json=json.dumps({"expected_net_bps": 1.2, "stress_net_bps": 0.4}),
+            )
+        )
+    await db.flush()
+
+    response = await research.get_testnet_eligibility(
+        "experiment",
+        db=db,
+        _user={"sub": "operator"},
+    )
+
+    assert response.eligible is False
+    assert response.approved_statistical_gate_verified is False
+    assert "approved_statistical_gate_evidence_missing" in response.reasons
+    assert response.order_submission_allowed is False
+    assert response.execution_authorization == "none"
 
 
 async def test_testnet_eligibility_requires_positive_shadow_outcomes(
@@ -425,6 +483,7 @@ async def test_testnet_eligibility_requires_positive_shadow_outcomes(
             approval_gate_json="{}",
         )
     )
+    db.add(_approved_decision_event())
     start = datetime(2026, 3, 2, tzinfo=UTC)
     for day_offset in range(20):
         db.add(
@@ -455,6 +514,7 @@ async def test_testnet_eligibility_requires_positive_shadow_outcomes(
     assert response.prospective_shadow_signal_count == 20
     assert response.prospective_shadow_outcome_signal_count == 0
     assert response.prospective_shadow_positive is False
+    assert response.approved_statistical_gate_verified is True
     assert response.prospective_shadow_expected_mean_bps is None
     assert "prospective_shadow_outcomes_incomplete" in response.reasons
     assert "prospective_shadow_block_not_positive" in response.reasons
@@ -535,6 +595,7 @@ async def test_research_testnet_release_requires_eligible_book_gate_even_with_60
             decision_reasons_json=json.dumps(["all_gates_passed"]),
         )
     )
+    db.add(_approved_decision_event())
     start = datetime(2026, 3, 2, tzinfo=UTC)
     for day_offset in range(20):
         db.add(
@@ -571,6 +632,69 @@ async def test_research_testnet_release_requires_eligible_book_gate_even_with_60
     assert "book_evidence_has_fewer_than_60_complete_days" not in error.value.detail["reasons"]
 
 
+async def test_research_testnet_release_rejects_legacy_approved_without_gate_event(
+    tmp_path: Path,
+    monkeypatch,
+    db: AsyncSession,
+) -> None:
+    artifact = tmp_path / "evidence-gate-status.json"
+    artifact.write_text(json.dumps(_eligible_evidence_payload()), encoding="utf-8")
+    monkeypatch.setattr(
+        research.settings,
+        "microstructure_evidence_status_path",
+        str(artifact),
+    )
+    db.add(
+        ResearchExperiment(
+            id="experiment",
+            name="legacy-approved",
+            status="APPROVED",
+            code_revision="a" * 40,
+            protocol_sha256="b" * 64,
+            product_json="{}",
+            cost_profile_json="{}",
+            approval_gate_json="{}",
+            experiment_sha256="9" * 64,
+            decision_reasons_json=json.dumps(["legacy_status_only"]),
+        )
+    )
+    start = datetime(2026, 3, 2, tzinfo=UTC)
+    for day_offset in range(20):
+        db.add(
+            ResearchShadowSignal(
+                experiment_id="experiment",
+                decision_time=start + timedelta(days=day_offset),
+                recorded_at=start + timedelta(days=day_offset, seconds=1),
+                side="BUY",
+                horizon_seconds=300,
+                probability=0.8,
+                threshold=0.7,
+                would_enter=True,
+                model_sha256="d" * 64,
+                feature_vector_sha256=f"{day_offset:064x}"[-64:],
+                outcome_json=json.dumps({"expected_net_bps": 1.2, "stress_net_bps": 0.4}),
+            )
+        )
+    await db.flush()
+
+    with pytest.raises(research.HTTPException) as error:
+        await research.record_testnet_release(
+            "experiment",
+            RecordTestnetReleaseRequest(
+                confirmation_phrase="REQUEST RESEARCH TESTNET RELEASE",
+                reasons=["manual_release_after_review"],
+            ),
+            response=Response(),
+            db=db,
+            user={"sub": "operator"},
+        )
+
+    assert error.value.status_code == 409
+    assert "approved_statistical_gate_evidence_missing" in error.value.detail["reasons"]
+    assert error.value.detail["order_submission_allowed"] is False
+    assert error.value.detail["execution_authorization"] == "none"
+
+
 async def test_research_testnet_release_makes_checklist_eligible_without_execution(
     tmp_path: Path,
     monkeypatch,
@@ -598,6 +722,7 @@ async def test_research_testnet_release_makes_checklist_eligible_without_executi
             decided_at=datetime(2026, 3, 3, tzinfo=UTC),
         )
     )
+    db.add(_approved_decision_event())
     start = datetime(2026, 3, 2, tzinfo=UTC)
     for day_offset in range(20):
         db.add(
@@ -653,8 +778,10 @@ async def test_research_testnet_release_makes_checklist_eligible_without_executi
     assert release.execution_authorization == "none"
     assert release.evidence_snapshot["book_evidence_contiguous_days"] == 60
     assert release.evidence_snapshot["book_evidence_eligible"] is True
+    assert release.evidence_snapshot["approved_statistical_gate_verified"] is True
     assert eligibility.eligible is True
     assert eligibility.book_evidence_eligible is True
+    assert eligibility.approved_statistical_gate_verified is True
     assert eligibility.explicit_testnet_release is True
     assert eligibility.release_request_required is False
     assert eligibility.order_submission_allowed is False
@@ -685,6 +812,7 @@ async def test_testnet_eligibility_rejects_missing_outcome_for_second_signal_on_
             approval_gate_json="{}",
         )
     )
+    db.add(_approved_decision_event())
     start = datetime(2026, 3, 2, tzinfo=UTC)
     for day_offset in range(20):
         db.add(
@@ -729,6 +857,7 @@ async def test_testnet_eligibility_rejects_missing_outcome_for_second_signal_on_
     assert response.prospective_shadow_signal_count == 21
     assert response.prospective_shadow_outcome_signal_count == 20
     assert response.prospective_shadow_positive is False
+    assert response.approved_statistical_gate_verified is True
     assert "prospective_shadow_signal_outcomes_incomplete" in response.reasons
     assert "prospective_shadow_block_not_positive" in response.reasons
     assert response.order_submission_allowed is False
@@ -761,6 +890,7 @@ async def test_experiment_report_exposes_evidence_and_shadow_metrics(
             decided_at=datetime(2026, 3, 3, tzinfo=UTC),
         )
     )
+    db.add(_approved_decision_event())
     start = datetime(2026, 3, 2, tzinfo=UTC)
     db.add_all(
         [
@@ -829,6 +959,10 @@ async def test_experiment_report_exposes_evidence_and_shadow_metrics(
     assert (
         response["metrics"]["hypothesis_ledger"]["attempts"][0]["definition"]["feature_set"]
         == "flow_price_book_aux_session"
+    )
+    assert (
+        response["metrics"]["testnet_boundary"]["approved_statistical_gate_verified"]
+        is True
     )
     assert response["metrics"]["testnet_boundary"]["order_submission_allowed"] is False
     assert response["safety"]["execution_authorization"] == "none"
@@ -1084,6 +1218,29 @@ def _approved_statistical_gate_payload() -> dict[str, object]:
             }
         ],
     }
+
+
+def _approved_decision_event(experiment_id: str = "experiment") -> ResearchExperimentEvent:
+    return ResearchExperimentEvent(
+        experiment_id=experiment_id,
+        kind="DECISION_RECORDED",
+        payload_json=json.dumps(
+            {
+                "status": "APPROVED",
+                "reasons": ["all_statistical_gates_passed"],
+                "evidence": {
+                    "statistical_gate_sha256": "a" * 64,
+                    "statistical_gate_decision": "APPROVED",
+                    "attempted_hypotheses": 44,
+                    "approved_strategy_count": 1,
+                    "order_submission_allowed": False,
+                    "execution_authorization": "none",
+                },
+            },
+            sort_keys=True,
+        ),
+        occurred_at=datetime(2026, 3, 2, tzinfo=UTC),
+    )
 
 
 async def _seed_shadow_experiment(db: AsyncSession, *, opened: bool) -> None:

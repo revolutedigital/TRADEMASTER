@@ -122,5 +122,22 @@ class ResearchExperimentRepository:
         db.add(event)
         await db.flush()
 
+    async def list_events(
+        self,
+        db: AsyncSession,
+        experiment_id: str,
+        *,
+        kind: str | None = None,
+    ) -> list[ResearchExperimentEvent]:
+        query = select(ResearchExperimentEvent).where(
+            ResearchExperimentEvent.experiment_id == experiment_id
+        )
+        if kind is not None:
+            query = query.where(ResearchExperimentEvent.kind == kind)
+        result = await db.execute(
+            query.order_by(ResearchExperimentEvent.occurred_at, ResearchExperimentEvent.id)
+        )
+        return list(result.scalars().all())
+
 
 research_experiment_repository = ResearchExperimentRepository()

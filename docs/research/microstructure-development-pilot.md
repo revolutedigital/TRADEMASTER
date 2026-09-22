@@ -465,14 +465,23 @@ recorded once through the research shadow recorder with `expected_net_bps`,
 `stress_net_bps`, and `label_sha256`; overwrite, missing, malformed, or
 non-finite `outcome_json` is fail-closed.
 
+An `APPROVED` value on the experiment row is not sufficient for Testnet
+eligibility. The checklist and release endpoint also require the latest
+append-only `DECISION_RECORDED` approval event to carry statistical-gate
+evidence: gate SHA-256, at least one approved strategy, and the research-only
+safety fields (`order_submission_allowed=false`,
+`execution_authorization=none`). Legacy rows with only `status=APPROVED` remain
+fail-closed with `approved_statistical_gate_evidence_missing`.
+
 The separate
 `POST /api/v1/research/microstructure/experiments/{experiment_id}/testnet-release`
 endpoint records the explicit manual research release only after the experiment
-is already `APPROVED`, the 60-day book gate passes, the prospective shadow block
-is complete and positive, and there are no unresolved evidence failures. It is
-idempotent and stores a snapshot hashable release record; it still does not
-activate Testnet, start a strategy, load credentials, or submit orders. After
-that record exists, the eligibility checklist may return
+is already `APPROVED` with a verified statistical-gate decision event, the
+60-day book gate passes, the prospective shadow block is complete and positive,
+and there are no unresolved evidence failures. It is idempotent and stores a
+snapshot hashable release record; it still does not activate Testnet, start a
+strategy, load credentials, or submit orders. After that record exists, the
+eligibility checklist may return
 `explicit_testnet_release=true` and `release_request_required=false`, while
 `order_submission_allowed=false` and `execution_authorization=none` remain true.
 

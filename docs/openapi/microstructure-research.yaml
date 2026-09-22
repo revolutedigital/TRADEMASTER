@@ -623,6 +623,7 @@ components:
         - prospective_shadow_expected_mean_bps
         - prospective_shadow_stress_mean_bps
         - prospective_shadow_positive
+        - approved_statistical_gate_verified
         - unresolved_failures
         - explicit_testnet_release
         - release_request_required
@@ -667,6 +668,9 @@ components:
           type: [number, 'null']
         prospective_shadow_positive:
           type: boolean
+        approved_statistical_gate_verified:
+          type: boolean
+          description: True only when the latest APPROVED decision event carries statistical gate hash evidence and research-only safety fields.
         unresolved_failures:
           type: integer
           minimum: 0

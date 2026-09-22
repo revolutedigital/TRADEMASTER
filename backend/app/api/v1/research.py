@@ -86,6 +86,10 @@ async def get_testnet_eligibility(
     unresolved_failures = len(evidence_status.status_reasons)
     testnet_release = await _get_testnet_release(db, experiment_id)
     explicit_testnet_release = testnet_release is not None
+    approved_statistical_gate_verified = await _approved_statistical_gate_verified(
+        db,
+        experiment_id,
+    )
     eligibility = evaluate_testnet_eligibility(
         experiment,
         book_evidence_eligible=(
@@ -101,6 +105,7 @@ async def get_testnet_eligibility(
         prospective_shadow_signal_count=shadow_summary["signal_count"],
         prospective_shadow_outcome_signal_count=shadow_summary["outcome_signal_count"],
         prospective_shadow_positive=shadow_summary["positive"],
+        approved_statistical_gate_verified=approved_statistical_gate_verified,
         unresolved_failures=unresolved_failures,
         explicit_testnet_release=explicit_testnet_release,
     )
@@ -118,6 +123,7 @@ async def get_testnet_eligibility(
         prospective_shadow_expected_mean_bps=shadow_summary["expected_mean_bps"],
         prospective_shadow_stress_mean_bps=shadow_summary["stress_mean_bps"],
         prospective_shadow_positive=eligibility.prospective_shadow_positive,
+        approved_statistical_gate_verified=eligibility.approved_statistical_gate_verified,
         unresolved_failures=unresolved_failures,
         explicit_testnet_release=explicit_testnet_release,
         release_request_required=not explicit_testnet_release,
@@ -154,6 +160,10 @@ async def record_testnet_release(
     shadow_signals = await research_experiment_repository.list_shadow_signals(db, experiment_id)
     shadow_summary = _summarize_shadow_outcomes(shadow_signals)
     unresolved_failures = len(evidence_status.status_reasons)
+    approved_statistical_gate_verified = await _approved_statistical_gate_verified(
+        db,
+        experiment_id,
+    )
     eligibility = evaluate_testnet_eligibility(
         experiment,
         book_evidence_eligible=(
@@ -169,6 +179,7 @@ async def record_testnet_release(
         prospective_shadow_signal_count=shadow_summary["signal_count"],
         prospective_shadow_outcome_signal_count=shadow_summary["outcome_signal_count"],
         prospective_shadow_positive=shadow_summary["positive"],
+        approved_statistical_gate_verified=approved_statistical_gate_verified,
         unresolved_failures=unresolved_failures,
         explicit_testnet_release=True,
     )
@@ -188,6 +199,7 @@ async def record_testnet_release(
         evidence_status=evidence_status,
         shadow_summary=shadow_summary,
         unresolved_failures=unresolved_failures,
+        approved_statistical_gate_verified=approved_statistical_gate_verified,
         generated_at=release_time,
     )
     requested_by = str(user.get("sub", "operator"))[:120]
@@ -462,6 +474,10 @@ async def get_experiment_report(
     shadow_summary = _summarize_shadow_outcomes(shadow_signals)
     testnet_release = await _get_testnet_release(db, experiment.id)
     explicit_testnet_release = testnet_release is not None
+    approved_statistical_gate_verified = await _approved_statistical_gate_verified(
+        db,
+        experiment.id,
+    )
     metrics = {
         "experiment_sha256": experiment.experiment_sha256,
         "book_evidence": {
@@ -497,6 +513,7 @@ async def get_experiment_report(
             ],
         },
         "testnet_boundary": {
+            "approved_statistical_gate_verified": approved_statistical_gate_verified,
             "release_request_required": not explicit_testnet_release,
             "explicit_testnet_release": explicit_testnet_release,
             "order_submission_allowed": False,
@@ -730,6 +747,44 @@ async def _get_testnet_release(
     return result.scalar_one_or_none()
 
 
+async def _approved_statistical_gate_verified(
+    db: AsyncSession,
+    experiment_id: str,
+) -> bool:
+    events = await research_experiment_repository.list_events(
+        db,
+        experiment_id,
+        kind="DECISION_RECORDED",
+    )
+    for event in reversed(events):
+        try:
+            payload = json.loads(event.payload_json)
+        except json.JSONDecodeError:
+            return False
+        if payload.get("status") != "APPROVED":
+            return False
+        evidence = payload.get("evidence")
+        if not isinstance(evidence, dict):
+            return False
+        gate_sha256 = evidence.get("statistical_gate_sha256")
+        if (
+            not isinstance(gate_sha256, str)
+            or len(gate_sha256) != 64
+            or any(character not in "0123456789abcdef" for character in gate_sha256)
+        ):
+            return False
+        approved_strategy_count = evidence.get("approved_strategy_count")
+        if type(approved_strategy_count) is not int:
+            return False
+        return (
+            evidence.get("statistical_gate_decision") == "APPROVED"
+            and approved_strategy_count > 0
+            and evidence.get("order_submission_allowed") is False
+            and evidence.get("execution_authorization") == "none"
+        )
+    return False
+
+
 def _serialize_testnet_release(
     release: ResearchTestnetRelease,
 ) -> ResearchTestnetReleaseResponse:
@@ -755,6 +810,7 @@ def _testnet_release_evidence_snapshot(
     evidence_status: EvidenceGateStatusResponse,
     shadow_summary: dict[str, object],
     unresolved_failures: int,
+    approved_statistical_gate_verified: bool,
     generated_at: datetime,
 ) -> dict[str, object]:
     return {
@@ -777,6 +833,7 @@ def _testnet_release_evidence_snapshot(
         "prospective_shadow_expected_mean_bps": shadow_summary["expected_mean_bps"],
         "prospective_shadow_stress_mean_bps": shadow_summary["stress_mean_bps"],
         "prospective_shadow_positive": shadow_summary["positive"],
+        "approved_statistical_gate_verified": approved_statistical_gate_verified,
         "unresolved_failures": unresolved_failures,
         "generated_at": generated_at.isoformat(),
         "order_submission_allowed": False,

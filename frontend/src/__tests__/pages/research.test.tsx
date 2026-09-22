@@ -80,6 +80,7 @@ const testnetEligibility = {
   prospective_shadow_expected_mean_bps: 3.2,
   prospective_shadow_stress_mean_bps: 1.1,
   prospective_shadow_positive: true,
+  approved_statistical_gate_verified: true,
   unresolved_failures: 0,
   explicit_testnet_release: false,
   release_request_required: true,
@@ -122,6 +123,7 @@ const experimentReport = {
       ],
     },
     testnet_boundary: {
+      approved_statistical_gate_verified: true,
       order_submission_allowed: false,
       execution_authorization: "none",
     },
@@ -160,6 +162,7 @@ describe("ResearchPage", () => {
     expect(screen.getByText("Sem release")).toBeInTheDocument();
     expect(screen.getByText("Incompleto")).toBeInTheDocument();
     expect(screen.getAllByText("Book gate")).toHaveLength(2);
+    expect(screen.getAllByText("Stat gate")).toHaveLength(2);
     expect(screen.getAllByText("travado")).toHaveLength(2);
     expect(screen.getAllByText("60/60").length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("Comprar")).not.toBeInTheDocument();

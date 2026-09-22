@@ -27,6 +27,7 @@ def test_approved_research_still_needs_separate_testnet_release() -> None:
         prospective_shadow_signal_count=30,
         prospective_shadow_outcome_signal_count=30,
         prospective_shadow_positive=True,
+        approved_statistical_gate_verified=True,
         unresolved_failures=0,
         explicit_testnet_release=False,
     )
@@ -45,6 +46,7 @@ def test_eligibility_is_metadata_not_execution_authorization() -> None:
         prospective_shadow_signal_count=30,
         prospective_shadow_outcome_signal_count=30,
         prospective_shadow_positive=True,
+        approved_statistical_gate_verified=True,
         unresolved_failures=0,
         explicit_testnet_release=True,
     )
@@ -63,6 +65,7 @@ def test_testnet_requires_sixty_complete_book_evidence_days() -> None:
         prospective_shadow_signal_count=20,
         prospective_shadow_outcome_signal_count=20,
         prospective_shadow_positive=True,
+        approved_statistical_gate_verified=True,
         unresolved_failures=0,
         explicit_testnet_release=True,
     )
@@ -81,6 +84,7 @@ def test_testnet_requires_book_evidence_gate_to_be_eligible() -> None:
         prospective_shadow_signal_count=20,
         prospective_shadow_outcome_signal_count=20,
         prospective_shadow_positive=True,
+        approved_statistical_gate_verified=True,
         unresolved_failures=0,
         explicit_testnet_release=True,
     )
@@ -99,6 +103,7 @@ def test_shadow_window_cannot_exceed_preregistered_maximum() -> None:
         prospective_shadow_signal_count=31,
         prospective_shadow_outcome_signal_count=31,
         prospective_shadow_positive=True,
+        approved_statistical_gate_verified=True,
         unresolved_failures=0,
         explicit_testnet_release=True,
     )
@@ -116,6 +121,7 @@ def test_testnet_requires_positive_prospective_shadow_block() -> None:
         prospective_shadow_signal_count=20,
         prospective_shadow_outcome_signal_count=20,
         prospective_shadow_positive=False,
+        approved_statistical_gate_verified=True,
         unresolved_failures=0,
         explicit_testnet_release=True,
     )
@@ -133,9 +139,30 @@ def test_testnet_requires_complete_shadow_outcomes() -> None:
         prospective_shadow_signal_count=20,
         prospective_shadow_outcome_signal_count=19,
         prospective_shadow_positive=True,
+        approved_statistical_gate_verified=True,
         unresolved_failures=0,
         explicit_testnet_release=True,
     )
     assert result.eligible is False
     assert "prospective_shadow_outcomes_incomplete" in result.reasons
     assert "prospective_shadow_signal_outcomes_incomplete" in result.reasons
+
+
+def test_testnet_requires_approved_statistical_gate_evidence() -> None:
+    result = evaluate_testnet_eligibility(
+        experiment("APPROVED"),
+        book_evidence_eligible=True,
+        book_evidence_contiguous_days=60,
+        prospective_shadow_days=20,
+        prospective_shadow_outcome_days=20,
+        prospective_shadow_signal_count=20,
+        prospective_shadow_outcome_signal_count=20,
+        prospective_shadow_positive=True,
+        approved_statistical_gate_verified=False,
+        unresolved_failures=0,
+        explicit_testnet_release=True,
+    )
+
+    assert result.eligible is False
+    assert result.approved_statistical_gate_verified is False
+    assert "approved_statistical_gate_evidence_missing" in result.reasons

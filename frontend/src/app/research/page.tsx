@@ -65,6 +65,7 @@ interface TestnetEligibility {
   prospective_shadow_expected_mean_bps: number | null;
   prospective_shadow_stress_mean_bps: number | null;
   prospective_shadow_positive: boolean;
+  approved_statistical_gate_verified: boolean;
   unresolved_failures: number;
   explicit_testnet_release: boolean;
   release_request_required: boolean;
@@ -105,6 +106,7 @@ interface ExperimentReport {
       }>;
     };
     testnet_boundary?: {
+      approved_statistical_gate_verified?: boolean;
       order_submission_allowed: false;
       execution_authorization: "none";
     };
@@ -296,7 +298,12 @@ function ExperimentReportPanel({
 }) {
   const shadow = report?.metrics.shadow;
   const book = report?.metrics.book_evidence;
-  const reportReady = book?.eligible === true && shadow?.positive === true;
+  const testnetBoundary = report?.metrics.testnet_boundary;
+  const reportReady = (
+    book?.eligible === true
+    && shadow?.positive === true
+    && testnetBoundary?.approved_statistical_gate_verified === true
+  );
   const hypothesisLedger = report?.metrics.hypothesis_ledger;
   const visibleAttempts = hypothesisLedger?.attempts?.slice(0, 3) ?? [];
   const visibleReason = error ?? (hasExperiments ? null : "nenhum_experimento_registrado");
@@ -327,6 +334,7 @@ function ExperimentReportPanel({
           <div className="grid min-w-72 grid-cols-2 gap-3 text-sm md:grid-cols-4">
             <GateMetric label="Book streak" value={`${book?.longest_complete_streak_days ?? 0}/60`} />
             <GateMetric label="Book gate" value={book?.eligible ? "ok" : "travado"} />
+            <GateMetric label="Stat gate" value={testnetBoundary?.approved_statistical_gate_verified ? "ok" : "sem hash"} />
             <GateMetric label="Shadow" value={`${shadow?.outcome_signal_count ?? 0}/${shadow?.signal_count ?? 0}`} />
             <GateMetric label="Expected" value={formatBps(shadow?.expected_mean_bps)} />
             <GateMetric label="Stress" value={formatBps(shadow?.stress_mean_bps)} />
@@ -360,6 +368,7 @@ function TestnetEligibilityPanel({
 }) {
   const checklistReady = status?.eligible === true;
   const bookGateReady = status?.book_evidence_eligible === true;
+  const statGateReady = status?.approved_statistical_gate_verified === true;
   const visibleReason = error ?? status?.reasons[0] ?? (hasExperiments ? null : "nenhum_experimento_registrado");
   const badgeLabel = checklistReady
     ? "Release registrado"
@@ -390,8 +399,9 @@ function TestnetEligibilityPanel({
             </div>
           </div>
 
-          <div className="grid min-w-72 grid-cols-2 gap-3 text-sm md:grid-cols-4">
+          <div className="grid min-w-72 grid-cols-2 gap-3 text-sm md:grid-cols-5">
             <GateMetric label="Book gate" value={bookGateReady ? "ok" : "travado"} />
+            <GateMetric label="Stat gate" value={statGateReady ? "ok" : "sem hash"} />
             <GateMetric label="Book" value={`${status?.book_evidence_contiguous_days ?? 0}/60`} />
             <GateMetric label="Shadow" value={`${status?.prospective_shadow_days ?? 0}/20`} />
             <GateMetric

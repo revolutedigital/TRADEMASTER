@@ -23,6 +23,7 @@ class TestnetEligibility:
     prospective_shadow_signal_count: int
     prospective_shadow_outcome_signal_count: int
     prospective_shadow_positive: bool
+    approved_statistical_gate_verified: bool
     execution_authorization: str = "none"
     order_submission_allowed: bool = False
 
@@ -37,6 +38,7 @@ def evaluate_testnet_eligibility(
     prospective_shadow_signal_count: int,
     prospective_shadow_outcome_signal_count: int,
     prospective_shadow_positive: bool,
+    approved_statistical_gate_verified: bool,
     unresolved_failures: int,
     explicit_testnet_release: bool,
 ) -> TestnetEligibility:
@@ -44,6 +46,8 @@ def evaluate_testnet_eligibility(
     reasons: list[str] = []
     if experiment.status != "APPROVED":
         reasons.append("experiment_status_is_not_approved")
+    if not approved_statistical_gate_verified:
+        reasons.append("approved_statistical_gate_evidence_missing")
     if not book_evidence_eligible:
         reasons.append("book_evidence_gate_not_eligible")
     if book_evidence_contiguous_days < MIN_BOOK_EVIDENCE_DAYS:
@@ -72,4 +76,5 @@ def evaluate_testnet_eligibility(
         prospective_shadow_signal_count=prospective_shadow_signal_count,
         prospective_shadow_outcome_signal_count=prospective_shadow_outcome_signal_count,
         prospective_shadow_positive=prospective_shadow_positive,
+        approved_statistical_gate_verified=approved_statistical_gate_verified,
     )

@@ -35,6 +35,7 @@ interface EvidenceGateStatus {
   book_evidence_gate: {
     eligible: boolean;
     required_complete_days: 60;
+    required_streams: string[];
     complete_days: number;
     longest_complete_streak_days: number;
     streak_start: string | null;
@@ -416,6 +417,7 @@ function EvidenceGatePanel({
 }) {
   const gate = status?.book_evidence_gate;
   const gateReady = gate?.eligible === true;
+  const requiredStreams = formatRequiredStreams(gate?.required_streams);
   const badgeVariant = gateReady ? "success" : "warning";
   const visibleReason = error ?? status?.status_reasons[0] ?? gate?.reasons[0] ?? null;
 
@@ -435,7 +437,7 @@ function EvidenceGatePanel({
                 <Badge variant={badgeVariant}>{gateReady ? "Elegível" : "Travado"}</Badge>
               </div>
               <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                Exige 60 dias UTC completos e consecutivos de trade, spot_trade, depth e mark_price antes de qualquer canário Testnet.
+                Exige 60 dias UTC completos e consecutivos de {requiredStreams} antes de qualquer canário Testnet.
                 O painel só lê artefato offline; não escaneia dados brutos nem possui botão de execução.
               </p>
               {visibleReason ? (
@@ -480,4 +482,11 @@ function shortHash(value: string | null | undefined): string {
 function formatBps(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "n/a";
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)} bps`;
+}
+
+function formatRequiredStreams(streams: string[] | undefined): string {
+  const requiredStreams = streams?.length
+    ? streams
+    : ["TRADE", "DEPTH", "MARK_PRICE", "SPOT_TRADE"];
+  return requiredStreams.map((stream) => stream.toLowerCase()).join(", ");
 }

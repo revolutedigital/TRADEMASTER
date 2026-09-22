@@ -88,6 +88,7 @@ def test_microstructure_spec_publishes_the_book_evidence_artifact_contract() -> 
     assert "book_evidence_gate" in status["required"]
     assert "safety" in status["required"]
     assert gate["required_complete_days"]["const"] == 60
+    assert gate["required_streams"]["const"] == ["TRADE", "DEPTH", "MARK_PRICE", "SPOT_TRADE"]
     assert gate["manifest_sha256"]["pattern"] == "^[a-f0-9]{64}$"
 
 

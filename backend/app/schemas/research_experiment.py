@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 ExperimentStatus = Literal["DRAFT", "FROZEN", "REJECTED", "INCONCLUSIVE", "APPROVED"]
@@ -17,6 +17,13 @@ DatasetPartitionRole = Literal[
     "AUDIT",
     "PROSPECTIVE_SHADOW",
 ]
+RequiredWalStream = Literal["TRADE", "DEPTH", "MARK_PRICE", "SPOT_TRADE"]
+REQUIRED_WAL_STREAMS: tuple[RequiredWalStream, ...] = (
+    "TRADE",
+    "DEPTH",
+    "MARK_PRICE",
+    "SPOT_TRADE",
+)
 
 
 class ProductContract(BaseModel):
@@ -105,6 +112,7 @@ class BookEvidenceGateResponse(BaseModel):
 
     eligible: bool
     required_complete_days: Literal[60]
+    required_streams: tuple[RequiredWalStream, ...] = Field(min_length=4, max_length=4)
     audited_days: int = Field(ge=0)
     complete_days: int = Field(ge=0)
     longest_complete_streak_days: int = Field(ge=0)
@@ -114,6 +122,23 @@ class BookEvidenceGateResponse(BaseModel):
     manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     reasons: list[str]
     safety: SafetyBoundary
+
+    @model_validator(mode="before")
+    @classmethod
+    def backfill_required_streams(cls, value: object) -> object:
+        if isinstance(value, dict) and "required_streams" not in value:
+            return {**value, "required_streams": REQUIRED_WAL_STREAMS}
+        return value
+
+    @field_validator("required_streams")
+    @classmethod
+    def require_v1_stream_set(
+        cls,
+        value: tuple[RequiredWalStream, ...],
+    ) -> tuple[RequiredWalStream, ...]:
+        if value != REQUIRED_WAL_STREAMS:
+            raise ValueError("required_streams must match the microstructure v1 WAL gate")
+        return value
 
 
 class EvidenceGateStatusResponse(BaseModel):

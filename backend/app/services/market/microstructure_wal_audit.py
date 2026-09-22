@@ -75,6 +75,9 @@ DEFAULT_REQUIRED_EVENT_STREAMS = (
         label="SPOT_TRADE",
     ),
 )
+DEFAULT_REQUIRED_EVENT_STREAM_NAMES = tuple(
+    stream.stream_name for stream in DEFAULT_REQUIRED_EVENT_STREAMS
+)
 DEFAULT_OPTIONAL_EVENT_STREAMS = (WalStreamSpec(MarketEventType.LIQUIDATION),)
 
 
@@ -185,6 +188,7 @@ class DailyWalAudit:
 class BookEvidenceGate:
     eligible: bool
     required_complete_days: int
+    required_streams: tuple[str, ...]
     audited_days: int
     complete_days: int
     longest_complete_streak_days: int
@@ -198,6 +202,7 @@ class BookEvidenceGate:
         return {
             "eligible": self.eligible,
             "required_complete_days": self.required_complete_days,
+            "required_streams": list(self.required_streams),
             "audited_days": self.audited_days,
             "complete_days": self.complete_days,
             "longest_complete_streak_days": self.longest_complete_streak_days,
@@ -563,6 +568,7 @@ def evaluate_book_evidence_gate(
     audits: Iterable[DailyWalAudit],
     *,
     required_complete_days: int = MIN_BOOK_EVIDENCE_DAYS,
+    required_streams: tuple[str, ...] = DEFAULT_REQUIRED_EVENT_STREAM_NAMES,
 ) -> BookEvidenceGate:
     """Require a contiguous run of complete UTC days before book-dependent audit."""
     if required_complete_days <= 0:
@@ -585,6 +591,7 @@ def evaluate_book_evidence_gate(
     manifest_sha256 = _stable_sha256(
         {
             "required_complete_days": required_complete_days,
+            "required_streams": list(required_streams),
             "daily_manifests": [
                 {
                     "utc_date": audit.utc_date.isoformat(),
@@ -598,6 +605,7 @@ def evaluate_book_evidence_gate(
     return BookEvidenceGate(
         eligible=not reasons,
         required_complete_days=required_complete_days,
+        required_streams=required_streams,
         audited_days=len(ordered),
         complete_days=complete_days,
         longest_complete_streak_days=streak_days,

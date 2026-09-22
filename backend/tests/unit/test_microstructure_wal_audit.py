@@ -233,6 +233,7 @@ def test_book_evidence_gate_requires_contiguous_complete_days(tmp_path: Path) ->
     gate = evaluate_book_evidence_gate(audits, required_complete_days=3)
 
     assert gate.eligible is False
+    assert gate.required_streams == ("TRADE", "DEPTH", "MARK_PRICE", "SPOT_TRADE")
     assert gate.complete_days == 3
     assert gate.longest_complete_streak_days == 2
     assert gate.incomplete_days == ("2026-01-03",)
@@ -318,6 +319,12 @@ def test_build_evidence_gate_status_is_small_and_research_only(tmp_path: Path) -
     assert status["audited_days"] == 1
     assert status["latest_daily_status"] == "VALID"
     assert status["book_evidence_gate"]["eligible"] is False
+    assert status["book_evidence_gate"]["required_streams"] == [
+        "TRADE",
+        "DEPTH",
+        "MARK_PRICE",
+        "SPOT_TRADE",
+    ]
     assert status["safety"] == {
         "research_only": True,
         "order_submission_allowed": False,

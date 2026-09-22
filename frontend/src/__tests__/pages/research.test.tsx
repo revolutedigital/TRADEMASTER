@@ -50,6 +50,7 @@ const evidenceGate = {
   book_evidence_gate: {
     eligible: false,
     required_complete_days: 60,
+    required_streams: ["TRADE", "DEPTH", "MARK_PRICE", "SPOT_TRADE"],
     complete_days: 60,
     longest_complete_streak_days: 60,
     streak_start: "2026-01-01",
@@ -153,7 +154,7 @@ describe("ResearchPage", () => {
     render(<ResearchPage />);
 
     expect(await screen.findByText("Microstructure WAL v1")).toBeInTheDocument();
-    expect(screen.getByText(/trade, spot_trade, depth e mark_price/)).toBeInTheDocument();
+    expect(screen.getByText(/trade, depth, mark_price, spot_trade/)).toBeInTheDocument();
     expect(screen.getByText("book_evidence_gate_not_eligible")).toBeInTheDocument();
     expect(screen.getByText("spot_trade_missing_from_evidence_gate")).toBeInTheDocument();
     expect(screen.getByText("Sem release")).toBeInTheDocument();

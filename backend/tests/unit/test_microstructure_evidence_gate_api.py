@@ -82,6 +82,12 @@ async def test_evidence_gate_api_reads_valid_small_artifact(
     assert response.audited_start_date is None
     assert response.audited_end_date is None
     assert response.book_evidence_gate.required_complete_days == 60
+    assert response.book_evidence_gate.required_streams == (
+        "TRADE",
+        "DEPTH",
+        "MARK_PRICE",
+        "SPOT_TRADE",
+    )
     assert response.book_evidence_gate.streak_start is None
     assert response.book_evidence_gate.streak_end is None
     assert response.status_reasons == ["no_complete_days_yet"]
@@ -117,12 +123,19 @@ def test_evidence_gate_status_accepts_iso_dates_in_artifact() -> None:
     payload["book_evidence_gate"]["streak_start"] = "2026-01-01"
     payload["book_evidence_gate"]["streak_end"] = "2026-01-02"
     payload["book_evidence_gate"]["incomplete_days"] = ["2026-01-01"]
+    payload["book_evidence_gate"].pop("required_streams", None)
 
     parsed = research.EvidenceGateStatusResponse.model_validate(payload)
 
     assert parsed.audited_start_date == date(2026, 1, 1)
     assert parsed.audited_end_date == date(2026, 1, 2)
     assert parsed.book_evidence_gate.incomplete_days == [date(2026, 1, 1)]
+    assert parsed.book_evidence_gate.required_streams == (
+        "TRADE",
+        "DEPTH",
+        "MARK_PRICE",
+        "SPOT_TRADE",
+    )
 
 
 async def test_partition_open_api_is_idempotent_and_research_only(db: AsyncSession) -> None:
@@ -805,6 +818,7 @@ def _eligible_evidence_payload() -> dict[str, object]:
         "book_evidence_gate": {
             "eligible": True,
             "required_complete_days": 60,
+            "required_streams": ["TRADE", "DEPTH", "MARK_PRICE", "SPOT_TRADE"],
             "audited_days": 60,
             "complete_days": 60,
             "longest_complete_streak_days": 60,

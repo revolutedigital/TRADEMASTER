@@ -16,16 +16,18 @@ paths:
   /research/microstructure/evidence-gate:
     get:
       operationId: getMicrostructureEvidenceGate
-      summary: Read the prospective book-evidence gate artifact.
+      summary: Read the prospective book/spot WAL evidence gate artifact.
       description: |
         Returns the last offline WAL audit summary used by the dashboard. The
-        endpoint reads a small immutable artifact and never scans raw market
-        data, submits orders, activates strategies, or grants execution access.
+        endpoint reads a small immutable artifact for the required futures
+        `trade`, `depth`, `mark_price`, and spot `spot_trade` WAL streams. It
+        never scans raw market data, submits orders, activates strategies, or
+        grants execution access.
       security:
         - bearerAuth: []
       responses:
         '200':
-          description: Current book-evidence gate status for the research panel.
+          description: Current book/spot WAL evidence gate status for the research panel.
           content:
             application/json:
               schema:
@@ -112,10 +114,10 @@ paths:
       operationId: getMicrostructureTestnetEligibility
       summary: Read research-to-Testnet metadata without granting execution access.
       description: |
-        Crosses the experiment status, the prospective book-evidence artifact,
-        and the append-only shadow ledger. This endpoint is a release checklist
-        only: it never submits orders, activates a strategy, or authorizes
-        Testnet or LIVE execution.
+        Crosses the experiment status, the prospective book/spot WAL evidence
+        artifact, and the append-only shadow ledger. This endpoint is a release
+        checklist only: it never submits orders, activates a strategy, or
+        authorizes Testnet or LIVE execution.
       security:
         - bearerAuth: []
       parameters:
@@ -137,11 +139,12 @@ paths:
       summary: Record explicit research Testnet release after all gates pass.
       description: |
         Creates a one-shot research-only release record only after the experiment
-        is approved, 60 complete book days are present, the prospective shadow
-        block is complete and positive, and there are no unresolved evidence
-        failures. This record can make the metadata checklist eligible, but this
-        endpoint still does not submit orders, start Testnet, activate a
-        strategy, or grant execution authorization.
+        is approved, 60 complete UTC days are present for every required WAL
+        stream (`trade`, `depth`, `mark_price`, and `spot_trade`), the
+        prospective shadow block is complete and positive, and there are no
+        unresolved evidence failures. This record can make the metadata
+        checklist eligible, but this endpoint still does not submit orders,
+        start Testnet, activate a strategy, or grant execution authorization.
       security:
         - bearerAuth: []
       parameters:
@@ -493,7 +496,7 @@ components:
         book_evidence_min_complete_days:
           type: integer
           const: 60
-          description: Must be a contiguous sequence of complete UTC WAL-audited book days.
+          description: Must be a contiguous sequence of complete UTC WAL-audited days across trade, depth, mark_price, and spot_trade.
         prospective_shadow_min_days: { type: integer, const: 20 }
         prospective_shadow_max_days: { type: integer, const: 30 }
         top_p_tails_pct:
@@ -506,6 +509,7 @@ components:
       required:
         - eligible
         - required_complete_days
+        - required_streams
         - audited_days
         - complete_days
         - longest_complete_streak_days
@@ -521,6 +525,13 @@ components:
         required_complete_days:
           type: integer
           const: 60
+        required_streams:
+          type: array
+          const: [TRADE, DEPTH, MARK_PRICE, SPOT_TRADE]
+          items:
+            type: string
+            enum: [TRADE, DEPTH, MARK_PRICE, SPOT_TRADE]
+          description: Required WAL streams for a complete UTC evidence day.
         audited_days:
           type: integer
           minimum: 0

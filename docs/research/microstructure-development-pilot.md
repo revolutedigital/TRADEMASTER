@@ -49,6 +49,22 @@ The earliest eligible end of the pre-registered 60-complete-day book evidence
 window is `2026-11-21T03:09:51Z`, subject to daily completeness and sequence-gap
 validation. Starting the recorder does not approve a model or activate Testnet.
 
+A repeatable WAL audit was added at
+`backend/scripts/research/audit_microstructure_wal.py`. It verifies, per UTC day,
+that the required `trade`, `depth`, and `mark_price` gzip JSONL streams exist,
+cover the full day boundary, satisfy minimum row counts, stay within receive-gap
+tolerances, and have no JSON errors, duplicate sequence IDs, sequence regressions,
+or depth sequence gaps. `liquidation` remains optional because a quiet day can have
+zero forced-order events. The audit output carries a deterministic manifest hash
+and repeats the safety boundary: research only, no order submission, no execution
+authorization.
+
+A first audit copy was taken from the Railway volume on 2026-09-22 while the day
+was still in progress. The result was correctly `PARTIAL`: 75,850 trades, 12,096
+depth updates, and 1,128 mark-price rows from approximately `03:09:51Z` through
+`03:30:34Z`, with zero JSON errors, zero duplicate sequences, and zero sequence
+gaps. Manifest hash: `44945a8793ab35114937c3d6be300cd386054e2fcec248464b8324fc2d333863`.
+
 ## Economic feasibility
 
 At the expected 12 bps and stress 24 bps round-trip costs, the direction-selecting

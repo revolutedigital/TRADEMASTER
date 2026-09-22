@@ -51,12 +51,13 @@ validation. Starting the recorder does not approve a model or activate Testnet.
 
 A repeatable WAL audit was added at
 `backend/scripts/research/audit_microstructure_wal.py`. It verifies, per UTC day,
-that the required `trade`, `depth`, and `mark_price` gzip JSONL streams exist,
-cover the full day boundary, satisfy minimum row counts, stay within receive-gap
-tolerances, and have no JSON errors, duplicate sequence IDs, sequence regressions,
-or depth sequence gaps. `liquidation` remains optional because a quiet day can have
-zero forced-order events. The audit output carries a deterministic manifest hash
-and repeats the safety boundary: research only, no order submission, no execution
+that the required `trade`, `spot_trade`, `depth`, and `mark_price` gzip JSONL
+streams exist, cover the full day boundary, satisfy minimum row counts, stay
+within receive-gap tolerances, carry the expected product/event type, and have no
+JSON errors, duplicate sequence IDs, sequence regressions, or depth sequence
+gaps. `liquidation` remains optional because a quiet day can have zero
+forced-order events. The audit output carries a deterministic manifest hash and
+repeats the safety boundary: research only, no order submission, no execution
 authorization.
 
 The same CLI now also emits a book-evidence gate. That gate requires a contiguous

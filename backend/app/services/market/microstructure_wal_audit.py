@@ -24,6 +24,7 @@ DEFAULT_REQUIRED_EVENT_TYPES = (
     MarketEventType.MARK_PRICE,
 )
 DEFAULT_OPTIONAL_EVENT_TYPES = (MarketEventType.LIQUIDATION,)
+DEFAULT_PRODUCT = "usdm_perpetual"
 DEFAULT_MIN_ROWS_BY_TYPE = {
     MarketEventType.TRADE: 100_000,
     MarketEventType.DEPTH: 100_000,
@@ -38,11 +39,51 @@ CONTIGUOUS_SEQUENCE_TYPES = {MarketEventType.AGG_TRADE, MarketEventType.DEPTH}
 
 
 @dataclass(frozen=True)
+class WalStreamSpec:
+    """One WAL stream partitioned by product and event type."""
+
+    event_type: MarketEventType
+    product: str = DEFAULT_PRODUCT
+    directory: str | None = None
+    label: str | None = None
+
+    @property
+    def directory_name(self) -> str:
+        if self.directory:
+            return self.directory
+        if self.product == DEFAULT_PRODUCT:
+            return self.event_type.value.lower()
+        return f"{self.product}_{self.event_type.value.lower()}"
+
+    @property
+    def stream_name(self) -> str:
+        if self.label:
+            return self.label
+        if self.product == DEFAULT_PRODUCT:
+            return self.event_type.value
+        return f"{self.product.upper()}_{self.event_type.value}"
+
+
+DEFAULT_REQUIRED_EVENT_STREAMS = (
+    WalStreamSpec(MarketEventType.TRADE),
+    WalStreamSpec(MarketEventType.DEPTH),
+    WalStreamSpec(MarketEventType.MARK_PRICE),
+    WalStreamSpec(
+        MarketEventType.TRADE,
+        product="spot",
+        directory="spot_trade",
+        label="SPOT_TRADE",
+    ),
+)
+DEFAULT_OPTIONAL_EVENT_STREAMS = (WalStreamSpec(MarketEventType.LIQUIDATION),)
+
+
+@dataclass(frozen=True)
 class DailyCompletenessPolicy:
     """Rules a UTC day must pass before it can count toward prospective evidence."""
 
-    required_event_types: tuple[MarketEventType, ...] = DEFAULT_REQUIRED_EVENT_TYPES
-    optional_event_types: tuple[MarketEventType, ...] = DEFAULT_OPTIONAL_EVENT_TYPES
+    required_event_streams: tuple[WalStreamSpec, ...] = DEFAULT_REQUIRED_EVENT_STREAMS
+    optional_event_streams: tuple[WalStreamSpec, ...] = DEFAULT_OPTIONAL_EVENT_STREAMS
     min_rows_by_type: Mapping[MarketEventType, int] = field(
         default_factory=lambda: dict(DEFAULT_MIN_ROWS_BY_TYPE)
     )
@@ -52,10 +93,20 @@ class DailyCompletenessPolicy:
     max_start_delay: timedelta = timedelta(minutes=5)
     max_end_lag: timedelta = timedelta(minutes=5)
 
+    def __post_init__(self) -> None:
+        stream_names = [
+            stream.stream_name
+            for stream in self.required_event_streams + self.optional_event_streams
+        ]
+        if len(stream_names) != len(set(stream_names)):
+            raise ValueError("WAL stream specs must have unique stream names")
+
 
 @dataclass(frozen=True)
 class EventStreamWalAudit:
     event_type: MarketEventType
+    product: str
+    stream_name: str
     utc_date: date
     relative_path: str
     exists: bool
@@ -72,6 +123,7 @@ class EventStreamWalAudit:
     sequence_gap_count: int
     json_error_count: int
     wrong_event_type_count: int
+    wrong_product_count: int
     reasons: tuple[str, ...]
 
     @property
@@ -81,6 +133,8 @@ class EventStreamWalAudit:
     def to_dict(self) -> dict[str, Any]:
         return {
             "event_type": self.event_type.value,
+            "product": self.product,
+            "stream_name": self.stream_name,
             "utc_date": self.utc_date.isoformat(),
             "relative_path": self.relative_path,
             "exists": self.exists,
@@ -97,6 +151,7 @@ class EventStreamWalAudit:
             "sequence_gap_count": self.sequence_gap_count,
             "json_error_count": self.json_error_count,
             "wrong_event_type_count": self.wrong_event_type_count,
+            "wrong_product_count": self.wrong_product_count,
             "reasons": list(self.reasons),
         }
 
@@ -178,28 +233,31 @@ class ProspectiveWalAuditor:
         return tuple(self.audit_date(start_date + timedelta(days=offset)) for offset in range(days))
 
     def audit_date(self, utc_date: date) -> DailyWalAudit:
-        stream_types = self._policy.required_event_types + self._policy.optional_event_types
-        streams = tuple(self._audit_stream(event_type, utc_date) for event_type in stream_types)
+        stream_specs = self._policy.required_event_streams + self._policy.optional_event_streams
+        streams = tuple(self._audit_stream(stream_spec, utc_date) for stream_spec in stream_specs)
         reasons: list[str] = []
-        required_by_type = {
-            stream.event_type: stream
+        required_by_name = {
+            stream.stream_name: stream
             for stream in streams
-            if stream.event_type in self._policy.required_event_types
+            if stream.stream_name
+            in {stream_spec.stream_name for stream_spec in self._policy.required_event_streams}
         }
-        for event_type in self._policy.required_event_types:
-            stream = required_by_type[event_type]
+        for stream_spec in self._policy.required_event_streams:
+            stream = required_by_name[stream_spec.stream_name]
             for reason in stream.reasons:
-                reasons.append(f"{event_type.value}: {reason}")
+                reasons.append(f"{stream.stream_name}: {reason}")
 
         required_missing = any(
-            not required_by_type[event_type].exists for event_type in self._policy.required_event_types
+            not required_by_name[stream_spec.stream_name].exists
+            for stream_spec in self._policy.required_event_streams
         )
         required_empty = any(
-            required_by_type[event_type].exists and required_by_type[event_type].row_count == 0
-            for event_type in self._policy.required_event_types
+            required_by_name[stream_spec.stream_name].exists
+            and required_by_name[stream_spec.stream_name].row_count == 0
+            for stream_spec in self._policy.required_event_streams
         )
-        integrity_failure = any(_has_integrity_failure(stream) for stream in required_by_type.values())
-        coverage_failure = any(_has_coverage_failure(stream) for stream in required_by_type.values())
+        integrity_failure = any(_has_integrity_failure(stream) for stream in required_by_name.values())
+        coverage_failure = any(_has_coverage_failure(stream) for stream in required_by_name.values())
 
         if not reasons:
             status: WalAuditStatus = "VALID"
@@ -228,12 +286,14 @@ class ProspectiveWalAuditor:
             reasons=tuple(reasons),
         )
 
-    def _audit_stream(self, event_type: MarketEventType, utc_date: date) -> EventStreamWalAudit:
-        relative_path = _relative_event_path(event_type, utc_date)
+    def _audit_stream(self, stream_spec: WalStreamSpec, utc_date: date) -> EventStreamWalAudit:
+        relative_path = _relative_event_path(stream_spec, utc_date)
         path = self._root / relative_path
         if not path.exists():
             return EventStreamWalAudit(
-                event_type=event_type,
+                event_type=stream_spec.event_type,
+                product=stream_spec.product,
+                stream_name=stream_spec.stream_name,
                 utc_date=utc_date,
                 relative_path=relative_path,
                 exists=False,
@@ -250,10 +310,14 @@ class ProspectiveWalAuditor:
                 sequence_gap_count=0,
                 json_error_count=0,
                 wrong_event_type_count=0,
+                wrong_product_count=0,
                 reasons=("missing WAL file",),
             )
 
-        state = _StreamAuditState(event_type=event_type)
+        state = _StreamAuditState(
+            event_type=stream_spec.event_type,
+            product=stream_spec.product,
+        )
         try:
             with gzip.open(path, "rt", encoding="utf-8") as source:
                 for line in source:
@@ -263,9 +327,11 @@ class ProspectiveWalAuditor:
 
         byte_size = path.stat().st_size
         reasons = state.reasons
-        self._append_policy_reasons(event_type, utc_date, state, reasons)
+        self._append_policy_reasons(stream_spec, utc_date, state, reasons)
         return EventStreamWalAudit(
-            event_type=event_type,
+            event_type=stream_spec.event_type,
+            product=stream_spec.product,
+            stream_name=stream_spec.stream_name,
             utc_date=utc_date,
             relative_path=relative_path,
             exists=True,
@@ -282,22 +348,24 @@ class ProspectiveWalAuditor:
             sequence_gap_count=state.sequence_gap_count,
             json_error_count=state.json_error_count,
             wrong_event_type_count=state.wrong_event_type_count,
+            wrong_product_count=state.wrong_product_count,
             reasons=tuple(reasons),
         )
 
     def _append_policy_reasons(
         self,
-        event_type: MarketEventType,
+        stream_spec: WalStreamSpec,
         utc_date: date,
         state: "_StreamAuditState",
         reasons: list[str],
     ) -> None:
-        if event_type in self._policy.optional_event_types and state.row_count == 0:
+        if stream_spec in self._policy.optional_event_streams and state.row_count == 0:
             return
         if state.row_count == 0:
             reasons.append("empty WAL file")
             return
 
+        event_type = stream_spec.event_type
         minimum_rows = self._policy.min_rows_by_type.get(event_type, 0)
         if state.row_count < minimum_rows:
             reasons.append(f"row_count {state.row_count} below minimum {minimum_rows}")
@@ -334,6 +402,8 @@ class ProspectiveWalAuditor:
             reasons.append(f"{state.json_error_count} JSON parse errors")
         if state.wrong_event_type_count:
             reasons.append(f"{state.wrong_event_type_count} rows with another event_type")
+        if state.wrong_product_count:
+            reasons.append(f"{state.wrong_product_count} rows with another product")
         if state.duplicate_sequence_count:
             reasons.append(f"{state.duplicate_sequence_count} duplicate sequence IDs")
         if state.sequence_regression_count:
@@ -345,6 +415,7 @@ class ProspectiveWalAuditor:
 @dataclass
 class _StreamAuditState:
     event_type: MarketEventType
+    product: str
     row_count: int = 0
     first_event_time: datetime | None = None
     last_event_time: datetime | None = None
@@ -356,6 +427,7 @@ class _StreamAuditState:
     sequence_gap_count: int = 0
     json_error_count: int = 0
     wrong_event_type_count: int = 0
+    wrong_product_count: int = 0
     reasons: list[str] = field(default_factory=list)
     _previous_sequence_end: int | None = None
     _previous_receive_time: datetime | None = None
@@ -374,6 +446,9 @@ class _StreamAuditState:
             return
         if row.get("event_type") != self.event_type.value:
             self.wrong_event_type_count += 1
+            return
+        if row.get("product") != self.product:
+            self.wrong_product_count += 1
             return
 
         event_time = _parse_datetime(row.get("event_time"))
@@ -424,6 +499,7 @@ def _has_integrity_failure(stream: EventStreamWalAudit) -> bool:
             stream.sequence_regression_count,
             stream.sequence_gap_count,
             any("unreadable gzip WAL" in reason for reason in stream.reasons),
+            stream.wrong_product_count,
         )
     )
 
@@ -438,8 +514,8 @@ def _has_coverage_failure(stream: EventStreamWalAudit) -> bool:
     )
 
 
-def _relative_event_path(event_type: MarketEventType, utc_date: date) -> str:
-    return f"{event_type.value.lower()}/date={utc_date.isoformat()}/events.jsonl.gz"
+def _relative_event_path(stream_spec: WalStreamSpec, utc_date: date) -> str:
+    return f"{stream_spec.directory_name}/date={utc_date.isoformat()}/events.jsonl.gz"
 
 
 def _datetime_json(value: datetime | None) -> str | None:

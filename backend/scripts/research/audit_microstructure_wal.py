@@ -151,7 +151,7 @@ def _print_text(audits: Sequence[DailyWalAudit], *, gate: BookEvidenceGate) -> N
             )
             _write_stdout(
                 "  "
-                f"{stream.event_type.value}: rows={stream.row_count} "
+                f"{stream.stream_name}: rows={stream.row_count} "
                 f"bytes={stream.byte_size} gaps={stream.sequence_gap_count} "
                 f"dupes={stream.duplicate_sequence_count} max_receive_gap={max_gap}"
             )

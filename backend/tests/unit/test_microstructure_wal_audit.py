@@ -38,6 +38,8 @@ def test_audit_accepts_clean_complete_utc_day(tmp_path: Path) -> None:
         [
             _event(MarketEventType.TRADE, start, sequence_id=10),
             _event(MarketEventType.TRADE, end, sequence_id=12),
+            _event(MarketEventType.TRADE, start, sequence_id=110, product="spot"),
+            _event(MarketEventType.TRADE, end, sequence_id=112, product="spot"),
             _event(
                 MarketEventType.DEPTH,
                 start,
@@ -63,6 +65,7 @@ def test_audit_accepts_clean_complete_utc_day(tmp_path: Path) -> None:
     assert audit.complete_day is True
     assert count_complete_days((audit,)) == 1
     assert len(audit.manifest_sha256) == 64
+    assert any(stream.relative_path.startswith("spot_trade/") for stream in audit.streams)
 
 
 def test_audit_rejects_missing_required_stream(tmp_path: Path) -> None:
@@ -87,6 +90,39 @@ def test_audit_rejects_missing_required_stream(tmp_path: Path) -> None:
     assert any("DEPTH: missing WAL file" in reason for reason in audit.reasons)
 
 
+def test_audit_rejects_missing_required_spot_trade_stream(tmp_path: Path) -> None:
+    utc_date = date(2026, 1, 1)
+    start = datetime(2026, 1, 1, 0, 1, tzinfo=UTC)
+    end = datetime(2026, 1, 1, 23, 59, tzinfo=UTC)
+    _write_events(
+        tmp_path,
+        [
+            _event(MarketEventType.TRADE, start),
+            _event(MarketEventType.TRADE, end),
+            _event(MarketEventType.DEPTH, start),
+            _event(MarketEventType.DEPTH, end),
+            _event(MarketEventType.MARK_PRICE, start),
+            _event(MarketEventType.MARK_PRICE, end),
+        ],
+    )
+
+    audit = ProspectiveWalAuditor(
+        tmp_path,
+        policy=DailyCompletenessPolicy(
+            min_rows_by_type={
+                MarketEventType.TRADE: 2,
+                MarketEventType.DEPTH: 2,
+                MarketEventType.MARK_PRICE: 2,
+            },
+            max_receive_gap_seconds_by_type={},
+        ),
+    ).audit_date(utc_date)
+
+    assert audit.status == "MISSING"
+    assert audit.complete_day is False
+    assert any("SPOT_TRADE: missing WAL file" in reason for reason in audit.reasons)
+
+
 def test_audit_detects_depth_sequence_gap(tmp_path: Path) -> None:
     utc_date = date(2026, 1, 1)
     start = datetime(2026, 1, 1, 0, 1, tzinfo=UTC)
@@ -94,6 +130,7 @@ def test_audit_detects_depth_sequence_gap(tmp_path: Path) -> None:
         tmp_path,
         [
             _event(MarketEventType.TRADE, start, sequence_id=1),
+            _event(MarketEventType.TRADE, start, sequence_id=11, product="spot"),
             _event(
                 MarketEventType.DEPTH,
                 start,
@@ -136,6 +173,7 @@ def test_audit_marks_boundary_shortfall_as_partial(tmp_path: Path) -> None:
         tmp_path,
         [
             _event(MarketEventType.TRADE, middle),
+            _event(MarketEventType.TRADE, middle, product="spot"),
             _event(MarketEventType.DEPTH, middle),
             _event(MarketEventType.MARK_PRICE, middle),
         ],
@@ -181,6 +219,8 @@ def test_book_evidence_gate_requires_contiguous_complete_days(tmp_path: Path) ->
             [
                 _event(MarketEventType.TRADE, start),
                 _event(MarketEventType.TRADE, end),
+                _event(MarketEventType.TRADE, start, product="spot"),
+                _event(MarketEventType.TRADE, end, product="spot"),
                 _event(MarketEventType.DEPTH, start),
                 _event(MarketEventType.DEPTH, end),
                 _event(MarketEventType.MARK_PRICE, start),
@@ -222,6 +262,8 @@ def test_book_evidence_gate_approves_only_complete_contiguous_window(tmp_path: P
             [
                 _event(MarketEventType.TRADE, start),
                 _event(MarketEventType.TRADE, end),
+                _event(MarketEventType.TRADE, start, product="spot"),
+                _event(MarketEventType.TRADE, end, product="spot"),
                 _event(MarketEventType.DEPTH, start),
                 _event(MarketEventType.DEPTH, end),
                 _event(MarketEventType.MARK_PRICE, start),
@@ -251,6 +293,8 @@ def test_build_evidence_gate_status_is_small_and_research_only(tmp_path: Path) -
         [
             _event(MarketEventType.TRADE, start),
             _event(MarketEventType.TRADE, end),
+            _event(MarketEventType.TRADE, start, product="spot"),
+            _event(MarketEventType.TRADE, end, product="spot"),
             _event(MarketEventType.DEPTH, start),
             _event(MarketEventType.DEPTH, end),
             _event(MarketEventType.MARK_PRICE, start),
@@ -286,6 +330,7 @@ def _event(
     event_type: MarketEventType,
     when: datetime,
     *,
+    product: str = "usdm_perpetual",
     sequence_id: int | None = None,
     first_sequence_id: int | None = None,
     last_sequence_id: int | None = None,
@@ -293,7 +338,7 @@ def _event(
     payload: dict | None = None,
 ) -> MicrostructureEvent:
     return MicrostructureEvent(
-        product="usdm_perpetual",
+        product=product,
         symbol="BTCUSDT",
         event_type=event_type,
         event_time=when,
@@ -312,7 +357,10 @@ def _event(
 def _write_events(root: Path, events: list[MicrostructureEvent]) -> None:
     for event in events:
         event_date = event.event_time.astimezone(UTC).date().isoformat()
-        path = root / event.event_type.value.lower() / f"date={event_date}" / "events.jsonl.gz"
+        event_directory = event.event_type.value.lower()
+        if event.product != "usdm_perpetual":
+            event_directory = f"{event.product}_{event_directory}"
+        path = root / event_directory / f"date={event_date}" / "events.jsonl.gz"
         path.parent.mkdir(parents=True, exist_ok=True)
         with gzip.open(path, "at", encoding="utf-8") as output:
             output.write(json.dumps(event.model_dump(mode="json"), separators=(",", ":")))

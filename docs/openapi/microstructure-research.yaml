@@ -1116,6 +1116,11 @@ components:
           items: { type: string }
         metrics:
           type: object
+          description: >
+            Research-only report metrics, including book_evidence, shadow,
+            hypothesis_ledger, testnet_boundary, and experiment_event_chain.
+            experiment_event_chain is tamper-evident and exposes event_count,
+            verified, latest_event_sha256, and reasons.
           additionalProperties: true
         artifact_sha256:
           type: [string, 'null']

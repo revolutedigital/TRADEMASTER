@@ -130,9 +130,12 @@ class ResearchExperimentEvent(Base):
     kind: Mapped[str] = mapped_column(String(40), nullable=False)
     payload_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    previous_event_sha256: Mapped[str | None] = mapped_column(String(64))
+    event_sha256: Mapped[str | None] = mapped_column(String(64), unique=True)
 
     __table_args__ = (
         Index("ix_research_experiment_events_timeline", "experiment_id", "occurred_at"),
+        Index("ix_research_experiment_events_chain", "experiment_id", "previous_event_sha256"),
     )
 
 

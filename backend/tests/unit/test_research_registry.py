@@ -14,6 +14,10 @@ from app.models.research_experiment import (
     ResearchExperimentEvent,
     ResearchHypothesisAttempt,
 )
+from app.repositories.research_experiment_repo import (
+    research_experiment_repository,
+    verify_research_event_chain,
+)
 from app.services.data.research_registry import (
     BurnedDataConflict,
     ExperimentDefinition,
@@ -217,6 +221,37 @@ async def test_decision_is_terminal_and_carries_no_execution_authority(database)
             status="REJECTED",
             reasons=["Cannot overwrite an approval."],
         )
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_events_are_hash_chained_and_tamper_evident(database) -> None:
+    registry = ResearchRegistry()
+    experiment = await _draft_with_hypothesis(registry, database)
+    await registry.freeze(database, experiment.id)
+    await registry.open_partition(database, experiment.id, role="TRAINING")
+
+    events = await research_experiment_repository.list_events(database, experiment.id)
+    status = verify_research_event_chain(events)
+
+    assert [event.kind for event in events] == [
+        "DRAFT_CREATED",
+        "HYPOTHESIS_REGISTERED",
+        "EXPERIMENT_FROZEN",
+        "PARTITION_OPENED",
+    ]
+    assert status.verified is True
+    assert status.event_count == 4
+    assert status.latest_event_sha256 == events[-1].event_sha256
+    assert events[0].previous_event_sha256 is None
+    for previous_event, current_event in zip(events, events[1:]):
+        assert len(previous_event.event_sha256 or "") == 64
+        assert current_event.previous_event_sha256 == previous_event.event_sha256
+
+    events[1].payload_json = '{"kind":"tampered"}'
+    tampered_status = verify_research_event_chain(events)
+
+    assert tampered_status.verified is False
+    assert tampered_status.reasons == (f"event_{events[1].id}_hash_mismatch",)
 
 
 @pytest.mark.asyncio

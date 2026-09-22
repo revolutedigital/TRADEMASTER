@@ -507,7 +507,10 @@ The experiment report endpoint,
 returns concrete report metrics instead of an empty placeholder: experiment hash,
 book-evidence availability/streak/reasons, shadow signal/outcome counts,
 expected/stress mean bps, shadow completeness/positivity, and the Testnet boundary
-flags. It also emits a deterministic `artifact_sha256` for that report payload.
+flags. It also reports the immutable experiment-event hash chain with
+`event_count`, `verified`, `latest_event_sha256`, and failure `reasons`; a broken
+chain prevents `approved_statistical_gate_verified=true`. It also emits a
+deterministic `artifact_sha256` for that report payload.
 
 Once an offline/statistical gate has produced its terminal result, the decision
 can be recorded through

@@ -25,7 +25,10 @@ from app.models.research_experiment import (
     ResearchShadowSignal,
     ResearchTestnetRelease,
 )
-from app.repositories.research_experiment_repo import research_experiment_repository
+from app.repositories.research_experiment_repo import (
+    research_experiment_repository,
+    verify_research_event_chain,
+)
 from app.schemas.research_experiment import (
     CreateExperimentRequest,
     DatasetPartitionRole,
@@ -242,7 +245,8 @@ async def record_testnet_release(
         released_at=release_time,
     )
     db.add(release)
-    db.add(
+    await research_experiment_repository.append_event(
+        db,
         ResearchExperimentEvent(
             experiment_id=experiment.id,
             kind="TESTNET_RELEASE_RECORDED",
@@ -255,9 +259,8 @@ async def record_testnet_release(
                 sort_keys=True,
             ),
             occurred_at=release_time,
-        )
+        ),
     )
-    await db.flush()
     return _serialize_testnet_release(release)
 
 
@@ -489,6 +492,7 @@ async def get_experiment_report(
     shadow_summary = _summarize_shadow_outcomes(shadow_signals)
     testnet_release = await _get_testnet_release(db, experiment.id)
     explicit_testnet_release = testnet_release is not None
+    event_chain = await research_experiment_repository.event_chain_status(db, experiment.id)
     approved_statistical_gate_verified = await _approved_statistical_gate_verified(
         db,
         experiment.id,
@@ -534,6 +538,7 @@ async def get_experiment_report(
             "order_submission_allowed": False,
             "execution_authorization": "none",
         },
+        "experiment_event_chain": event_chain.to_dict(),
     }
     decision_reasons = json.loads(experiment.decision_reasons_json)
     return {
@@ -820,9 +825,11 @@ async def _approved_statistical_gate_verified(
     events = await research_experiment_repository.list_events(
         db,
         experiment_id,
-        kind="DECISION_RECORDED",
     )
-    for event in reversed(events):
+    if not verify_research_event_chain(events).verified:
+        return False
+    decision_events = [event for event in events if event.kind == "DECISION_RECORDED"]
+    for event in reversed(decision_events):
         try:
             payload = json.loads(event.payload_json)
         except json.JSONDecodeError:

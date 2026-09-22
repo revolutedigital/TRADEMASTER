@@ -20,6 +20,7 @@ from app.models.research_experiment import (
     ResearchHypothesisAttempt,
     ResearchShadowSignal,
 )
+from app.repositories.research_experiment_repo import build_research_event_hash
 from app.schemas.research_experiment import (
     RecordExperimentDecisionRequest,
     RecordShadowOutcomeRequest,
@@ -1134,12 +1135,63 @@ async def test_experiment_report_exposes_evidence_and_shadow_metrics(
         response["metrics"]["hypothesis_ledger"]["attempts"][0]["definition"]["feature_set"]
         == "flow_price_book_aux_session"
     )
+    assert response["metrics"]["experiment_event_chain"]["verified"] is True
+    assert response["metrics"]["experiment_event_chain"]["event_count"] == 1
+    assert len(response["metrics"]["experiment_event_chain"]["latest_event_sha256"]) == 64
     assert (
         response["metrics"]["testnet_boundary"]["approved_statistical_gate_verified"]
         is True
     )
     assert response["metrics"]["testnet_boundary"]["order_submission_allowed"] is False
     assert response["safety"]["execution_authorization"] == "none"
+
+
+async def test_experiment_report_flags_tampered_event_chain(
+    tmp_path: Path,
+    monkeypatch,
+    db: AsyncSession,
+) -> None:
+    artifact = tmp_path / "evidence-gate-status.json"
+    artifact.write_text(json.dumps(_eligible_evidence_payload()), encoding="utf-8")
+    monkeypatch.setattr(
+        research.settings,
+        "microstructure_evidence_status_path",
+        str(artifact),
+    )
+    db.add(
+        ResearchExperiment(
+            id="experiment",
+            name="candidate",
+            status="APPROVED",
+            code_revision="a" * 40,
+            protocol_sha256="b" * 64,
+            product_json="{}",
+            cost_profile_json="{}",
+            approval_gate_json="{}",
+            experiment_sha256="9" * 64,
+            decision_reasons_json=json.dumps(["passed_shadow"]),
+            decided_at=datetime(2026, 3, 3, tzinfo=UTC),
+        )
+    )
+    event = _approved_decision_event()
+    event.payload_json = event.payload_json.replace("APPROVED", "REJECTED", 1)
+    db.add(event)
+    await db.flush()
+
+    response = await research.get_experiment_report(
+        "experiment",
+        db=db,
+        _user={"sub": "operator"},
+    )
+
+    assert response["metrics"]["experiment_event_chain"]["verified"] is False
+    assert response["metrics"]["experiment_event_chain"]["reasons"] == [
+        "event_1_hash_mismatch"
+    ]
+    assert (
+        response["metrics"]["testnet_boundary"]["approved_statistical_gate_verified"]
+        is False
+    )
 
 
 async def test_record_experiment_decision_is_terminal_and_research_only(
@@ -1539,26 +1591,36 @@ def _approved_statistical_gate_payload() -> dict[str, object]:
 
 
 def _approved_decision_event(experiment_id: str = "experiment") -> ResearchExperimentEvent:
+    payload_json = json.dumps(
+        {
+            "status": "APPROVED",
+            "reasons": ["all_statistical_gates_passed"],
+            "evidence": {
+                "statistical_gate_sha256": "a" * 64,
+                "statistical_gate_decision": "APPROVED",
+                "attempted_hypotheses": 44,
+                "approved_strategy_count": 1,
+                "research_only": True,
+                "order_submission_allowed": False,
+                "execution_authorization": "none",
+            },
+        },
+        sort_keys=True,
+    )
+    occurred_at = datetime(2026, 3, 2, tzinfo=UTC)
     return ResearchExperimentEvent(
         experiment_id=experiment_id,
         kind="DECISION_RECORDED",
-        payload_json=json.dumps(
-            {
-                "status": "APPROVED",
-                "reasons": ["all_statistical_gates_passed"],
-                "evidence": {
-                    "statistical_gate_sha256": "a" * 64,
-                    "statistical_gate_decision": "APPROVED",
-                    "attempted_hypotheses": 44,
-                    "approved_strategy_count": 1,
-                    "research_only": True,
-                    "order_submission_allowed": False,
-                    "execution_authorization": "none",
-                },
-            },
-            sort_keys=True,
+        payload_json=payload_json,
+        occurred_at=occurred_at,
+        previous_event_sha256=None,
+        event_sha256=build_research_event_hash(
+            experiment_id=experiment_id,
+            kind="DECISION_RECORDED",
+            payload_json=payload_json,
+            occurred_at=occurred_at,
+            previous_event_sha256=None,
         ),
-        occurred_at=datetime(2026, 3, 2, tzinfo=UTC),
     )
 
 

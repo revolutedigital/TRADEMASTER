@@ -1,5 +1,7 @@
 """Shadow evidence is append-only and impossible before explicit partition open."""
 
+import json
+import math
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -84,4 +86,71 @@ async def test_shadow_signal_fails_before_prospective_partition_open(db: AsyncSe
             threshold=0.7,
             model_sha256="d" * 64,
             feature_vector={"flow": -0.5},
+        )
+
+
+@pytest.mark.asyncio
+async def test_shadow_outcome_is_recorded_once_without_execution_fields(db: AsyncSession) -> None:
+    await seed(db, opened=True)
+    recorder = ResearchShadowRecorder()
+    signal = await recorder.record(
+        db,
+        experiment_id="experiment",
+        decision_time=datetime.now(UTC),
+        side="BUY",
+        horizon_seconds=300,
+        probability=0.8,
+        threshold=0.7,
+        model_sha256="d" * 64,
+        feature_vector={"flow": 0.5},
+    )
+
+    updated = await recorder.record_outcome(
+        db,
+        signal_id=signal.id,
+        expected_net_bps=1.2,
+        stress_net_bps=0.4,
+        label_sha256="e" * 64,
+    )
+
+    outcome = json.loads(updated.outcome_json or "{}")
+    assert outcome["expected_net_bps"] == 1.2
+    assert outcome["stress_net_bps"] == 0.4
+    assert outcome["research_only"] is True
+    assert outcome["order_submission_allowed"] is False
+    assert outcome["execution_authorization"] == "none"
+    assert "order_id" not in outcome
+    with pytest.raises(ShadowRecorderError, match="immutable"):
+        await recorder.record_outcome(
+            db,
+            signal_id=signal.id,
+            expected_net_bps=2.0,
+            stress_net_bps=1.0,
+            label_sha256="e" * 64,
+        )
+
+
+@pytest.mark.asyncio
+async def test_shadow_outcome_rejects_non_finite_values(db: AsyncSession) -> None:
+    await seed(db, opened=True)
+    recorder = ResearchShadowRecorder()
+    signal = await recorder.record(
+        db,
+        experiment_id="experiment",
+        decision_time=datetime.now(UTC),
+        side="SELL",
+        horizon_seconds=120,
+        probability=0.8,
+        threshold=0.7,
+        model_sha256="d" * 64,
+        feature_vector={"flow": 0.5},
+    )
+
+    with pytest.raises(ShadowRecorderError, match="finite"):
+        await recorder.record_outcome(
+            db,
+            signal_id=signal.id,
+            expected_net_bps=math.nan,
+            stress_net_bps=0.4,
+            label_sha256="e" * 64,
         )

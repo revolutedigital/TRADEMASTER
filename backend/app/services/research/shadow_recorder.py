@@ -91,10 +91,46 @@ class ResearchShadowRecorder:
         await db.flush()
         return signal
 
+    async def record_outcome(
+        self,
+        db: AsyncSession,
+        *,
+        signal_id: int,
+        expected_net_bps: float,
+        stress_net_bps: float,
+        label_sha256: str,
+    ) -> ResearchShadowSignal:
+        signal = await db.get(ResearchShadowSignal, signal_id)
+        if signal is None:
+            raise LookupError("research shadow signal was not found")
+        if signal.outcome_json is not None:
+            raise ShadowRecorderError("shadow outcome is immutable once recorded")
+        if not math.isfinite(expected_net_bps) or not math.isfinite(stress_net_bps):
+            raise ShadowRecorderError("shadow outcome bps must be finite")
+        if not SHA256.fullmatch(label_sha256):
+            raise ShadowRecorderError("label_sha256 must be a lowercase SHA-256")
+        signal.outcome_json = _canonical_json(
+            {
+                "expected_net_bps": expected_net_bps,
+                "stress_net_bps": stress_net_bps,
+                "label_sha256": label_sha256,
+                "recorded_at": datetime.now(UTC).isoformat(),
+                "research_only": True,
+                "order_submission_allowed": False,
+                "execution_authorization": "none",
+            }
+        )
+        await db.flush()
+        return signal
+
 
 def _sha256(value: Any) -> str:
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    encoded = _canonical_json(value).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _canonical_json(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
 research_shadow_recorder = ResearchShadowRecorder()

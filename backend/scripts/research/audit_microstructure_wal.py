@@ -34,6 +34,11 @@ def main() -> int:
     parser.add_argument("--date", type=_parse_date)
     parser.add_argument("--start-date", type=_parse_date)
     parser.add_argument("--end-date", type=_parse_date)
+    parser.add_argument(
+        "--rolling-days",
+        type=int,
+        help="Audit the last N complete UTC days ending at --end-date or yesterday.",
+    )
     parser.add_argument("--format", choices=("text", "json"), default="text")
     parser.add_argument("--fail-on-incomplete", action="store_true")
     parser.add_argument("--required-complete-days", type=int, default=60)
@@ -46,7 +51,12 @@ def main() -> int:
     )
     arguments = parser.parse_args()
 
-    start_date, end_date = _resolve_range(arguments.date, arguments.start_date, arguments.end_date)
+    start_date, end_date = _resolve_range(
+        arguments.date,
+        arguments.start_date,
+        arguments.end_date,
+        rolling_days=arguments.rolling_days,
+    )
     auditor = ProspectiveWalAuditor(arguments.root)
     audits = auditor.audit_range(start_date, end_date)
     gate = evaluate_book_evidence_gate(
@@ -82,14 +92,24 @@ def _resolve_range(
     single_date: date | None,
     start_date: date | None,
     end_date: date | None,
+    *,
+    rolling_days: int | None = None,
+    today: date | None = None,
 ) -> tuple[date, date]:
+    if rolling_days is not None and rolling_days <= 0:
+        raise SystemExit("--rolling-days must be positive")
+    if rolling_days is not None and (single_date or start_date):
+        raise SystemExit("--rolling-days can be combined only with --end-date")
     if single_date and (start_date or end_date):
         raise SystemExit("--date cannot be combined with --start-date or --end-date")
     if single_date:
         return single_date, single_date
-    today = datetime.now(UTC).date()
-    resolved_end = end_date or (today - timedelta(days=1))
-    resolved_start = start_date or resolved_end
+    resolved_today = today or datetime.now(UTC).date()
+    resolved_end = end_date or (resolved_today - timedelta(days=1))
+    if rolling_days is not None:
+        resolved_start = resolved_end - timedelta(days=rolling_days - 1)
+    else:
+        resolved_start = start_date or resolved_end
     if resolved_end < resolved_start:
         raise SystemExit("--end-date must be on or after --start-date")
     return resolved_start, resolved_end

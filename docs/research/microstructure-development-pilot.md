@@ -172,8 +172,7 @@ small status artifact after each offline audit:
 cd backend
 ./.venv/bin/python scripts/research/audit_microstructure_wal.py \
   --root data/microstructure_v1/prospective-wal \
-  --start-date YYYY-MM-DD \
-  --end-date YYYY-MM-DD \
+  --rolling-days 60 \
   --write-status \
   --format json
 ```

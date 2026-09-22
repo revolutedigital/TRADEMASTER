@@ -371,6 +371,14 @@ that artifact. Missing, invalid, or incomplete evidence is fail-closed:
 `artifact_available=false`, `eligible=false`, `order_submission_allowed=false`,
 and `execution_authorization=none`.
 
+The production `microstructure-recorder` service also runs the same evidence
+artifact refresh in the background. Its deployment command writes a rolling
+60-complete-day status file to
+`/data/microstructure-v1/prospective-audits/evidence-gate-status.json` on the
+mounted recorder volume. The background refresh audits only complete UTC days
+ending at yesterday; today's partial collection can be inspected manually, but it
+does not count toward the 60-day book-evidence gate.
+
 The research panel also exposes
 `GET /api/v1/research/microstructure/experiments/{experiment_id}/testnet-eligibility`.
 That endpoint crosses experiment status, the book-evidence artifact, and the

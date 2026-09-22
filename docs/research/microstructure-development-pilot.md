@@ -399,6 +399,19 @@ artifact refresh. The first production artifact was written at
 `execution_authorization=none`. The same post-deploy check confirmed the four
 raw WAL streams were still growing.
 
+Deployment `6e849b90-fe06-4dac-9d10-ed812fbb4a3d` activated the read-only
+recorder metadata server on 2026-09-22. A production smoke check over
+`127.0.0.1:8000` returned `/health` as `status=healthy`,
+`artifact_exists=true`, `research_only=true`, `order_submission_allowed=false`,
+and `execution_authorization=none`. The same check returned
+`/evidence-gate-status.json` with `artifact_available=true`, generated at
+`2026-09-22T07:01:15.502423Z`, required streams
+`TRADE, DEPTH, MARK_PRICE, SPOT_TRADE`, and the same research-only execution
+boundary; an unknown path returned HTTP 404. A 15-second volume check after that
+deploy confirmed live WAL growth: `spot_trade` 1,507,695 → 1,519,731 bytes,
+`mark_price` 3,403,597 → 3,407,233 bytes, `depth` 81,299,366 → 81,386,709
+bytes, and `trade` 12,933,192 → 12,945,801 bytes.
+
 The research panel also exposes
 `GET /api/v1/research/microstructure/experiments/{experiment_id}/testnet-eligibility`.
 That endpoint crosses experiment status, the book-evidence artifact, and the

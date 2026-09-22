@@ -208,3 +208,9 @@ Shadow runners can append evidence through the research API:
 
 Both endpoints are metadata-only and return
 `order_submission_allowed=false` and `execution_authorization=none`.
+
+When the complete event path for a shadow signal is available, settlement should
+be produced by `app.services.research.shadow_outcome_settlement`: it replays the
+same trailing policy through `HistoricalTrailingSimulator`, returns
+`expected_net_bps`, `stress_net_bps`, and a deterministic `label_sha256`, and can
+be passed directly to the immutable shadow-outcome recorder.

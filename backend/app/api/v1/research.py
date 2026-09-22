@@ -715,9 +715,11 @@ def _decision_evidence_or_raise(
     if body.status != "APPROVED":
         if statistical_gate is None:
             return None
-        gate_payload = statistical_gate.model_dump(mode="json")
+        artifact_reasons = _statistical_gate_artifact_reasons(statistical_gate)
+        if artifact_reasons:
+            _raise_approval_gate_conflict(tuple(artifact_reasons))
         return {
-            "statistical_gate_sha256": _report_sha256(gate_payload),
+            "statistical_gate_sha256": statistical_gate.artifact_sha256,
             "statistical_gate_decision": _best_statistical_gate_decision(statistical_gate),
             "research_only": True,
             "order_submission_allowed": False,
@@ -731,9 +733,8 @@ def _decision_evidence_or_raise(
     if reasons:
         _raise_approval_gate_conflict(tuple(reasons))
 
-    gate_payload = statistical_gate.model_dump(mode="json")
     return {
-        "statistical_gate_sha256": _report_sha256(gate_payload),
+        "statistical_gate_sha256": statistical_gate.artifact_sha256,
         "statistical_gate_decision": "APPROVED",
         "attempted_hypotheses": statistical_gate.attempted_hypotheses,
         "approved_strategy_count": _approved_statistical_gate_count(statistical_gate),
@@ -744,7 +745,7 @@ def _decision_evidence_or_raise(
 
 
 def _statistical_gate_approval_reasons(gate: StatisticalGateEvidence) -> list[str]:
-    reasons: list[str] = []
+    reasons: list[str] = _statistical_gate_artifact_reasons(gate)
     if gate.top_p_monotonic is not True:
         reasons.append("top_p_calibration_not_monotonic")
         reasons.extend(gate.top_p_monotonic_reasons)
@@ -761,6 +762,15 @@ def _statistical_gate_approval_reasons(gate: StatisticalGateEvidence) -> list[st
     for index, result in enumerate(approved_results):
         reasons.extend(_approved_result_reasons(index, result, gate.attempted_hypotheses))
     return reasons
+
+
+def _statistical_gate_artifact_reasons(gate: StatisticalGateEvidence) -> list[str]:
+    payload = gate.model_dump(mode="json")
+    declared_hash = str(payload.pop("artifact_sha256", ""))
+    expected_hash = _report_sha256(payload)
+    if declared_hash != expected_hash:
+        return ["statistical_gate_artifact_sha256_mismatch"]
+    return []
 
 
 def _statistical_gate_count_reasons(gate: StatisticalGateEvidence) -> list[str]:

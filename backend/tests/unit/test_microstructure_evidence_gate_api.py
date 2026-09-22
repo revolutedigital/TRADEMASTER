@@ -1448,13 +1448,14 @@ async def test_approved_experiment_decision_records_statistical_gate_hash(
         )
     )
     await db.flush()
+    statistical_gate = _approved_statistical_gate_payload()
 
     response = await research.record_experiment_decision(
         "experiment",
         RecordExperimentDecisionRequest(
             status="APPROVED",
             reasons=["all_statistical_gates_passed"],
-            statistical_gate=_approved_statistical_gate_payload(),
+            statistical_gate=statistical_gate,
         ),
         db=db,
         _user={"sub": "operator"},
@@ -1478,10 +1479,49 @@ async def test_approved_experiment_decision_records_statistical_gate_hash(
     assert payload["evidence"]["statistical_gate_decision"] == "APPROVED"
     assert payload["evidence"]["attempted_hypotheses"] == 44
     assert payload["evidence"]["approved_strategy_count"] == 1
-    assert len(payload["evidence"]["statistical_gate_sha256"]) == 64
+    assert payload["evidence"]["statistical_gate_sha256"] == statistical_gate["artifact_sha256"]
     assert payload["evidence"]["research_only"] is True
     assert payload["evidence"]["order_submission_allowed"] is False
     assert payload["evidence"]["execution_authorization"] == "none"
+
+
+async def test_approved_experiment_decision_rejects_tampered_statistical_gate_hash(
+    db: AsyncSession,
+) -> None:
+    db.add(
+        ResearchExperiment(
+            id="experiment",
+            name="candidate",
+            status="FROZEN",
+            code_revision="a" * 40,
+            protocol_sha256="b" * 64,
+            product_json="{}",
+            cost_profile_json="{}",
+            approval_gate_json="{}",
+            experiment_sha256="9" * 64,
+            frozen_at=datetime(2026, 3, 1, tzinfo=UTC),
+        )
+    )
+    await db.flush()
+    statistical_gate = _approved_statistical_gate_payload()
+    statistical_gate["artifact_sha256"] = "0" * 64
+
+    with pytest.raises(research.HTTPException) as error:
+        await research.record_experiment_decision(
+            "experiment",
+            RecordExperimentDecisionRequest(
+                status="APPROVED",
+                reasons=["all_statistical_gates_passed"],
+                statistical_gate=statistical_gate,
+            ),
+            db=db,
+            _user={"sub": "operator"},
+        )
+
+    assert error.value.status_code == 409
+    assert "statistical_gate_artifact_sha256_mismatch" in error.value.detail["reasons"]
+    assert error.value.detail["order_submission_allowed"] is False
+    assert error.value.detail["execution_authorization"] == "none"
 
 
 async def test_approved_experiment_decision_rejects_failed_statistical_gate(
@@ -1753,7 +1793,7 @@ def _safe_shadow_outcome_json(
 
 
 def _approved_statistical_gate_payload() -> dict[str, object]:
-    return {
+    payload = {
         "research_only": True,
         "order_submission_allowed": False,
         "execution_authorization": "none",
@@ -1788,6 +1828,17 @@ def _approved_statistical_gate_payload() -> dict[str, object]:
                 "reasons": [],
             }
         ],
+    }
+    return _with_statistical_gate_hash(payload)
+
+
+def _with_statistical_gate_hash(payload: dict[str, object]) -> dict[str, object]:
+    canonical_payload = {
+        key: value for key, value in payload.items() if key != "artifact_sha256"
+    }
+    return {
+        "artifact_sha256": research._report_sha256(canonical_payload),
+        **canonical_payload,
     }
 
 

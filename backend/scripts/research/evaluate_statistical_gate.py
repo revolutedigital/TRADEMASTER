@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 from datetime import UTC, datetime
@@ -77,18 +78,22 @@ def main() -> int:
             pbo=pbo,
         )
         results.append({"strategy": strategy, **gate.to_dict()})
-    report = {
-        "research_only": True,
-        "order_submission_allowed": False,
-        "execution_authorization": "none",
-        "attempted_hypotheses": arguments.attempted_hypotheses,
-        "top_p_monotonic": top_p_monotonic,
-        "top_p_monotonic_reasons": top_p_reasons,
-        "prospective_shadow_positive": prospective_positive,
-        "prospective_shadow_reasons": prospective_reasons,
-        "decision_counts": pd.Series([row["decision"] for row in results]).value_counts().to_dict(),
-        "results": results,
-    }
+    report = _with_artifact_sha256(
+        {
+            "research_only": True,
+            "order_submission_allowed": False,
+            "execution_authorization": "none",
+            "attempted_hypotheses": arguments.attempted_hypotheses,
+            "top_p_monotonic": top_p_monotonic,
+            "top_p_monotonic_reasons": top_p_reasons,
+            "prospective_shadow_positive": prospective_positive,
+            "prospective_shadow_reasons": prospective_reasons,
+            "decision_counts": pd.Series(
+                [row["decision"] for row in results]
+            ).value_counts().to_dict(),
+            "results": results,
+        }
+    )
     output = arguments.portfolio_root / "statistical-gate.json"
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(report["decision_counts"], indent=2))  # noqa: T201
@@ -236,6 +241,19 @@ def _outcome_decision_date(value: object) -> str | None:
     if parsed.tzinfo is None:
         return None
     return parsed.astimezone(UTC).date().isoformat()
+
+
+def _with_artifact_sha256(report: dict[str, object]) -> dict[str, object]:
+    payload = {key: value for key, value in report.items() if key != "artifact_sha256"}
+    return {
+        "artifact_sha256": _report_sha256(payload),
+        **payload,
+    }
+
+
+def _report_sha256(payload: dict[str, object]) -> str:
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 if __name__ == "__main__":

@@ -279,6 +279,7 @@ class StatisticalGateEvidence(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    artifact_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     research_only: Literal[True]
     order_submission_allowed: Literal[False]
     execution_authorization: Literal["none"]

@@ -185,6 +185,8 @@ def test_microstructure_spec_publishes_terminal_decision_as_metadata_only() -> N
     assert gate_properties["research_only"]["const"] is True
     assert gate_properties["order_submission_allowed"]["const"] is False
     assert gate_properties["execution_authorization"]["const"] == "none"
+    assert "artifact_sha256" in gate["required"]
+    assert gate_properties["artifact_sha256"]["pattern"] == "^[a-f0-9]{64}$"
     assert gate_properties["attempted_hypotheses"]["minimum"] == 1
     assert gate_properties["results"]["minItems"] == 1
     assert "order_submission_allowed" not in request["properties"]

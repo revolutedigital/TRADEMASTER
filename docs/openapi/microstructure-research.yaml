@@ -960,6 +960,7 @@ components:
       type: object
       additionalProperties: false
       required:
+        - artifact_sha256
         - research_only
         - order_submission_allowed
         - execution_authorization
@@ -971,6 +972,10 @@ components:
         - decision_counts
         - results
       properties:
+        artifact_sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+          description: Canonical SHA-256 of this statistical-gate artifact excluding the artifact_sha256 field itself.
         research_only:
           type: boolean
           const: true

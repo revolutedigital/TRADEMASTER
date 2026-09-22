@@ -5,6 +5,8 @@ import json
 from scripts.research.evaluate_statistical_gate import (
     _read_prospective_shadow_positive,
     _read_top_p_monotonicity,
+    _report_sha256,
+    _with_artifact_sha256,
 )
 
 
@@ -113,6 +115,29 @@ def test_prospective_shadow_report_fails_closed_on_malformed_outcome(tmp_path) -
     assert "prospective_shadow_outcome_1_expected_net_bps_invalid" in reasons
     assert "prospective_shadow_outcome_1_contains_execution_field" in reasons
     assert "prospective_shadow_outcome_dates_mismatch" in reasons
+
+
+def test_statistical_gate_artifact_hash_excludes_its_own_field() -> None:
+    payload = {
+        "research_only": True,
+        "order_submission_allowed": False,
+        "execution_authorization": "none",
+        "attempted_hypotheses": 1,
+        "top_p_monotonic": True,
+        "top_p_monotonic_reasons": [],
+        "prospective_shadow_positive": True,
+        "prospective_shadow_reasons": [],
+        "decision_counts": {"APPROVED": 1},
+        "results": [{"decision": "APPROVED"}],
+    }
+
+    report = _with_artifact_sha256(payload)
+    recomputed = _report_sha256(
+        {key: value for key, value in report.items() if key != "artifact_sha256"}
+    )
+
+    assert len(report["artifact_sha256"]) == 64
+    assert report["artifact_sha256"] == recomputed
 
 
 def _shadow_report() -> dict[str, object]:

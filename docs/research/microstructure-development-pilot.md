@@ -387,6 +387,11 @@ closed. A prospective shadow report is complete only when it is committed
 20-to-30-day prospective block, and every listed outcome has a unique
 `signal_id`, UTC `decision_time`, finite expected/stress bps, a 64-character
 `label_sha256`, and no execution/order identifier.
+The written `statistical-gate.json` includes `artifact_sha256`, computed over the
+canonical JSON payload excluding the `artifact_sha256` field itself. The decision
+API rejects a statistical-gate artifact whose declared hash no longer matches the
+payload, so editing results, counts, safety flags, or shadow reasons after the
+CLI run invalidates the artifact.
 
 The research API enforces that boundary at decision time. The endpoint
 `POST /api/v1/research/microstructure/experiments/{experiment_id}/decision`

@@ -252,12 +252,16 @@ families, or rows changes the frozen policy input hash. That model hash is the
 value that shadow signals should record as `model_sha256`. The artifact is still research-only:
 `order_submission_allowed=false`, `execution_authorization=none`.
 
-Prospective shadow runners should score and record decisions through
-`app.services.research.shadow_policy_runner.record_frozen_top_p_shadow_signal`.
-That function verifies the artifact hash, computes the probability from the
-serialized coefficients, uses the artifact threshold and horizon, and appends the
-signal through the immutable shadow recorder. It has no exchange adapter and no
-order-submission path.
+Prospective shadow runners should score event-driven candidates through
+`POST /api/v1/research/microstructure/experiments/{experiment_id}/frozen-top-p-shadow-signals`
+or, internally,
+`app.services.research.shadow_policy_runner.record_frozen_top_p_shadow_decision`.
+That path verifies the artifact hash, computes the probability from the
+serialized coefficients, uses the artifact threshold and horizon, and appends to
+the immutable shadow ledger only when the frozen top-p threshold is cleared
+unless `record_non_entries=true` is explicitly requested. Retries for the same
+`(decision_time, side, horizon)` are idempotent when the model and feature hash
+match. It has no exchange adapter and no order-submission path.
 
 For partition batches, use the dry-run-first CLI. Without `--commit`, it only
 scores the frozen policy and prints the selected shadow entries:
@@ -538,9 +542,16 @@ Shadow runners can append evidence through the research API:
 - `POST /api/v1/research/microstructure/experiments/{experiment_id}/partitions/PROSPECTIVE_SHADOW/open`
   marks the first access to the preregistered shadow block. This operation is
   idempotent but irreversible in the research ledger.
+- `POST /api/v1/research/microstructure/experiments/{experiment_id}/frozen-top-p-shadow-signals`
+  is the preferred event-driven path: it receives the frozen policy artifact and
+  causal feature vector, computes probability/threshold server-side, records only
+  selected top-p entries by default, and returns 200 for no-entry candidates or
+  idempotent retries.
 - `POST /api/v1/research/microstructure/experiments/{experiment_id}/shadow-signals`
-  records a hypothetical decision after the `PROSPECTIVE_SHADOW` partition is
-  explicitly opened. It stores `feature_vector_sha256`, not raw feature values.
+  remains available for explicit/manual research evidence after the
+  `PROSPECTIVE_SHADOW` partition is opened. Use the frozen top-p route when the
+  decision comes from the model artifact instead of supplying probability and
+  threshold by hand. It stores `feature_vector_sha256`, not raw feature values.
 - `POST /api/v1/research/microstructure/shadow-signals/{signal_id}/outcome`
   records the one-shot outcome for that signal, but only after the signal's full
   replay horizon has elapsed.

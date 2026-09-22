@@ -236,6 +236,47 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           description: Experiment is not frozen, partition is not open, or signal is invalid.
+  /research/microstructure/experiments/{experiment_id}/frozen-top-p-shadow-signals:
+    post:
+      operationId: recordMicrostructureFrozenTopPShadowSignal
+      summary: Score a frozen top-p artifact and append selected shadow entries.
+      description: |
+        Scores one event-driven candidate with a frozen research-only top-p
+        artifact. By default, only candidates that clear the artifact's
+        probability threshold are written to the append-only shadow ledger;
+        below-threshold candidates return a metadata decision without mutating
+        the ledger. Retries for the same experiment, decision time, side, and
+        horizon are idempotent when the artifact and feature hash match. This
+        endpoint never submits or schedules an exchange order.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ExperimentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordFrozenTopPShadowSignalRequest'
+      responses:
+        '201':
+          description: Selected frozen top-p shadow entry recorded without execution access.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrozenTopPShadowDecision'
+        '200':
+          description: No-entry decision or idempotent retry returned without new ledger writes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrozenTopPShadowDecision'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Artifact is invalid, experiment is not frozen, partition is not open, or retry conflicts with an existing signal.
   /research/microstructure/shadow-signals/{signal_id}/outcome:
     post:
       operationId: recordMicrostructureShadowOutcome
@@ -845,6 +886,35 @@ components:
           type: object
           additionalProperties:
             type: number
+    RecordFrozenTopPShadowSignalRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - decision_time
+        - side
+        - policy_artifact
+        - feature_vector
+      properties:
+        decision_time:
+          type: string
+          format: date-time
+        side:
+          type: string
+          enum: [BUY, SELL]
+        policy_artifact:
+          type: object
+          minProperties: 1
+          additionalProperties: true
+          description: Frozen research_top_p_shadow_policy artifact with an intact model_sha256 hash and research-only safety fields.
+        feature_vector:
+          type: object
+          minProperties: 1
+          additionalProperties:
+            type: number
+        record_non_entries:
+          type: boolean
+          default: false
+          description: False by default so the prospective shadow ledger measures only selected top-p entries; true records below-threshold diagnostics explicitly.
     RecordShadowOutcomeRequest:
       type: object
       description: Records a one-shot research outcome after the signal horizon matures; the server persists recorded_at plus research-only safety fields and never order identifiers.
@@ -995,6 +1065,69 @@ components:
         label_sha256:
           type: [string, 'null']
           pattern: '^[a-f0-9]{64}$'
+        safety:
+          $ref: '#/components/schemas/SafetyBoundary'
+    FrozenTopPShadowDecision:
+      type: object
+      additionalProperties: false
+      required:
+        - experiment_id
+        - decision_time
+        - side
+        - horizon_seconds
+        - probability
+        - threshold
+        - would_enter
+        - model_sha256
+        - feature_vector_sha256
+        - recorded
+        - skipped_existing
+        - signal
+        - order_submission_allowed
+        - execution_authorization
+        - safety
+      properties:
+        experiment_id:
+          type: string
+          format: uuid
+        decision_time:
+          type: string
+          format: date-time
+        side:
+          type: string
+          enum: [BUY, SELL]
+        horizon_seconds:
+          type: integer
+          enum: [120, 300]
+        probability:
+          type: number
+        threshold:
+          type: number
+        would_enter:
+          type: boolean
+        model_sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        feature_vector_sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        recorded:
+          type: boolean
+          description: True only when this call appended a new shadow signal row.
+        skipped_existing:
+          type: boolean
+          description: True when an idempotent retry found an identical existing shadow signal.
+        signal:
+          anyOf:
+            - $ref: '#/components/schemas/ShadowSignal'
+            - type: 'null'
+          description: Null for below-threshold no-entry decisions when record_non_entries is false.
+        order_submission_allowed:
+          type: boolean
+          const: false
+        execution_authorization:
+          type: string
+          const: none
         safety:
           $ref: '#/components/schemas/SafetyBoundary'
     CreateExperimentRequest:

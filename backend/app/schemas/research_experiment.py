@@ -249,6 +249,23 @@ class RecordShadowSignalRequest(BaseModel):
         return value
 
 
+class RecordFrozenTopPShadowSignalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision_time: datetime
+    side: Literal["BUY", "SELL"]
+    policy_artifact: dict[str, Any] = Field(min_length=1)
+    feature_vector: dict[str, float] = Field(min_length=1)
+    record_non_entries: bool = False
+
+    @field_validator("decision_time")
+    @classmethod
+    def require_decision_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("decision_time must be timezone-aware")
+        return value
+
+
 class RecordShadowOutcomeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -308,6 +325,26 @@ class ShadowSignalResponse(BaseModel):
     expected_net_bps: float | None
     stress_net_bps: float | None
     label_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    safety: SafetyBoundary
+
+
+class FrozenTopPShadowDecisionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    experiment_id: str
+    decision_time: datetime
+    side: Literal["BUY", "SELL"]
+    horizon_seconds: Literal[120, 300]
+    probability: float
+    threshold: float
+    would_enter: bool
+    model_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    feature_vector_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    recorded: bool
+    skipped_existing: bool
+    signal: ShadowSignalResponse | None
+    order_submission_allowed: Literal[False]
+    execution_authorization: Literal["none"]
     safety: SafetyBoundary
 
 

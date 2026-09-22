@@ -35,6 +35,7 @@ def test_microstructure_spec_is_openapi_31_and_research_only() -> None:
         "/research/microstructure/experiments/{experiment_id}/testnet-release",
         "/research/microstructure/experiments/{experiment_id}/partitions/{role}/open",
         "/research/microstructure/experiments/{experiment_id}/shadow-signals",
+        "/research/microstructure/experiments/{experiment_id}/frozen-top-p-shadow-signals",
         "/research/microstructure/shadow-signals/{signal_id}/outcome",
         "/research/microstructure/experiments/{experiment_id}/freeze",
         "/research/microstructure/experiments/{experiment_id}/decision",
@@ -145,6 +146,28 @@ def test_microstructure_spec_publishes_research_only_shadow_signal_contract() ->
     assert "safety" in shadow_signal["required"]
     assert "order_id" not in shadow_signal["properties"]
     assert "execution_authorization" not in shadow_signal["properties"]
+
+
+def test_microstructure_spec_publishes_frozen_top_p_shadow_contract() -> None:
+    spec = _load_spec()
+    path = spec["paths"][
+        "/research/microstructure/experiments/{experiment_id}/frozen-top-p-shadow-signals"
+    ]
+    request = spec["components"]["schemas"]["RecordFrozenTopPShadowSignalRequest"]
+    response = spec["components"]["schemas"]["FrozenTopPShadowDecision"]
+
+    assert path["post"]["operationId"] == "recordMicrostructureFrozenTopPShadowSignal"
+    assert request["additionalProperties"] is False
+    assert "policy_artifact" in request["required"]
+    assert "feature_vector" in request["required"]
+    assert "record_non_entries" not in request["required"]
+    assert request["properties"]["record_non_entries"]["default"] is False
+    assert response["additionalProperties"] is False
+    assert "recorded" in response["required"]
+    assert "skipped_existing" in response["required"]
+    assert "signal" in response["required"]
+    assert response["properties"]["order_submission_allowed"]["const"] is False
+    assert response["properties"]["execution_authorization"]["const"] == "none"
 
 
 def test_microstructure_spec_publishes_terminal_decision_as_metadata_only() -> None:

@@ -13,6 +13,7 @@ from app.models.research_experiment import ResearchDataUse, ResearchExperiment, 
 from app.services.research.shadow_policy_runner import (
     ShadowPolicyRunnerError,
     record_frozen_top_p_shadow_batch,
+    record_frozen_top_p_shadow_decision,
     record_frozen_top_p_shadow_signal,
     score_frozen_top_p_shadow_frame,
 )
@@ -146,6 +147,78 @@ async def test_frozen_policy_shadow_batch_records_entries_idempotently(
     assert first.execution_authorization == "none"
 
 
+@pytest.mark.asyncio
+async def test_event_driven_frozen_policy_shadow_decision_records_selected_idempotently(
+    db: AsyncSession,
+) -> None:
+    partition_start = datetime(2026, 1, 1, tzinfo=UTC)
+    await _seed_shadow_experiment(
+        db,
+        partition_start=partition_start,
+        partition_end=partition_start + timedelta(days=30),
+    )
+    artifact = _artifact()
+    decision_time = datetime(2026, 1, 8, tzinfo=UTC)
+
+    first = await record_frozen_top_p_shadow_decision(
+        db,
+        experiment_id="experiment",
+        decision_time=decision_time,
+        side="BUY",
+        artifact=artifact,
+        feature_vector=_feature_vector(),
+    )
+    second = await record_frozen_top_p_shadow_decision(
+        db,
+        experiment_id="experiment",
+        decision_time=decision_time,
+        side="BUY",
+        artifact=artifact,
+        feature_vector=_feature_vector(),
+    )
+
+    signals = (await db.execute(select(ResearchShadowSignal))).scalars().all()
+    assert first.recorded is True
+    assert first.skipped_existing is False
+    assert first.signal is not None
+    assert first.decision.would_enter is True
+    assert second.recorded is False
+    assert second.skipped_existing is True
+    assert second.signal is not None
+    assert second.signal.id == first.signal.id
+    assert len(signals) == 1
+    assert first.order_submission_allowed is False
+    assert first.execution_authorization == "none"
+
+
+@pytest.mark.asyncio
+async def test_event_driven_frozen_policy_shadow_decision_skips_non_entry_by_default(
+    db: AsyncSession,
+) -> None:
+    partition_start = datetime(2026, 1, 1, tzinfo=UTC)
+    await _seed_shadow_experiment(
+        db,
+        partition_start=partition_start,
+        partition_end=partition_start + timedelta(days=30),
+    )
+
+    result = await record_frozen_top_p_shadow_decision(
+        db,
+        experiment_id="experiment",
+        decision_time=datetime(2026, 1, 8, tzinfo=UTC),
+        side="BUY",
+        artifact=_artifact(),
+        feature_vector=_loser_feature_vector(),
+    )
+
+    signals = (await db.execute(select(ResearchShadowSignal))).scalars().all()
+    assert result.recorded is False
+    assert result.skipped_existing is False
+    assert result.signal is None
+    assert result.decision.would_enter is False
+    assert len(signals) == 0
+
+
 async def _seed_shadow_experiment(
     db: AsyncSession,
     *,
@@ -221,7 +294,9 @@ def _shadow_frame() -> pd.DataFrame:
     ):
         rows.append(
             {
-                "decision_time_ms": int((base_time + pd.Timedelta(seconds=offset)).timestamp() * 1000),
+                "decision_time_ms": int(
+                    (base_time + pd.Timedelta(seconds=offset)).timestamp() * 1000
+                ),
                 "side": side,
                 "horizon_seconds": 120,
                 **feature_vector,

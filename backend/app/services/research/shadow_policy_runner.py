@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -14,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.research_experiment import ResearchShadowSignal
 from app.services.research.shadow_recorder import ResearchShadowRecorder, research_shadow_recorder
+from app.services.research.shadow_recorder import validate_shadow_signal_recording
 from app.services.research.top_p_model import (
     predict_frozen_top_p_probability,
     verify_frozen_top_p_policy,
@@ -64,6 +66,18 @@ class ShadowPolicyBatchResult:
     execution_authorization: str = "none"
 
 
+@dataclass(frozen=True)
+class FrozenTopPShadowDecisionRecord:
+    """One event-driven frozen top-p decision and its optional ledger row."""
+
+    decision: FrozenTopPShadowDecision
+    signal: ResearchShadowSignal | None
+    recorded: bool
+    skipped_existing: bool
+    order_submission_allowed: bool = False
+    execution_authorization: str = "none"
+
+
 async def record_frozen_top_p_shadow_signal(
     db: AsyncSession,
     *,
@@ -92,6 +106,100 @@ async def record_frozen_top_p_shadow_signal(
         threshold=threshold,
         model_sha256=model_sha256,
         feature_vector=feature_vector,
+    )
+
+
+async def record_frozen_top_p_shadow_decision(
+    db: AsyncSession,
+    *,
+    experiment_id: str,
+    decision_time: datetime,
+    side: str,
+    artifact: dict[str, Any],
+    feature_vector: dict[str, float],
+    record_non_entries: bool = False,
+    recorder: ResearchShadowRecorder = research_shadow_recorder,
+) -> FrozenTopPShadowDecisionRecord:
+    """Score one live-like candidate and append only selected shadow entries by default.
+
+    This is the event-driven counterpart to the parquet batch runner: it verifies
+    that the frozen policy is intact and research-only, validates the opened
+    prospective shadow partition, then records an immutable ledger row only when
+    the candidate clears the frozen top-p threshold.
+    """
+    try:
+        model_sha256 = verify_frozen_top_p_policy(artifact)
+        probability = predict_frozen_top_p_probability(artifact, feature_vector)
+        threshold = float(artifact["probability_threshold"])
+        horizon_seconds = int(artifact["horizon_seconds"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ShadowPolicyRunnerError(str(error)) from error
+    try:
+        validated = await validate_shadow_signal_recording(
+            db,
+            experiment_id=experiment_id,
+            decision_time=decision_time,
+            side=side,
+            horizon_seconds=horizon_seconds,
+            probability=probability,
+            threshold=threshold,
+            model_sha256=model_sha256,
+            feature_vector=feature_vector,
+        )
+    except (TypeError, ValueError) as error:
+        raise ShadowPolicyRunnerError(str(error)) from error
+
+    decision = FrozenTopPShadowDecision(
+        decision_time=validated.decision_time,
+        side=validated.side,
+        horizon_seconds=validated.horizon_seconds,
+        probability=validated.probability,
+        threshold=validated.threshold,
+        would_enter=validated.probability >= validated.threshold,
+        model_sha256=validated.model_sha256,
+        feature_vector_sha256=validated.feature_vector_sha256,
+        feature_vector=feature_vector,
+    )
+    if not decision.would_enter and not record_non_entries:
+        return FrozenTopPShadowDecisionRecord(
+            decision=decision,
+            signal=None,
+            recorded=False,
+            skipped_existing=False,
+        )
+
+    existing = await _find_existing_shadow_signal(
+        db,
+        experiment_id=experiment_id,
+        decision_time=decision.decision_time,
+        side=decision.side,
+        horizon_seconds=decision.horizon_seconds,
+    )
+    if existing is not None:
+        _raise_if_existing_signal_conflicts(existing, decision)
+        return FrozenTopPShadowDecisionRecord(
+            decision=decision,
+            signal=existing,
+            recorded=False,
+            skipped_existing=True,
+        )
+
+    signal = await recorder.record(
+        db,
+        experiment_id=experiment_id,
+        decision_time=decision.decision_time,
+        side=decision.side,
+        horizon_seconds=decision.horizon_seconds,
+        probability=decision.probability,
+        threshold=decision.threshold,
+        model_sha256=decision.model_sha256,
+        feature_vector=decision.feature_vector,
+    )
+    return FrozenTopPShadowDecisionRecord(
+        decision=decision,
+        signal=signal,
+        recorded=True,
+        skipped_existing=False,
     )
 
 
@@ -253,6 +361,44 @@ async def _existing_shadow_keys(
 def _decision_time_key_ms(value: datetime) -> int:
     normalized = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
     return int(normalized.timestamp() * 1000)
+
+
+async def _find_existing_shadow_signal(
+    db: AsyncSession,
+    *,
+    experiment_id: str,
+    decision_time: datetime,
+    side: str,
+    horizon_seconds: int,
+) -> ResearchShadowSignal | None:
+    decision_time_ms = _decision_time_key_ms(decision_time)
+    result = await db.execute(
+        select(ResearchShadowSignal).where(
+            ResearchShadowSignal.experiment_id == experiment_id,
+            ResearchShadowSignal.side == side,
+            ResearchShadowSignal.horizon_seconds == horizon_seconds,
+        )
+    )
+    for signal in result.scalars().all():
+        if _decision_time_key_ms(signal.decision_time) == decision_time_ms:
+            return signal
+    return None
+
+
+def _raise_if_existing_signal_conflicts(
+    signal: ResearchShadowSignal,
+    decision: FrozenTopPShadowDecision,
+) -> None:
+    if signal.model_sha256 != decision.model_sha256:
+        raise ShadowPolicyRunnerError("existing shadow signal has a different model hash")
+    if signal.feature_vector_sha256 != decision.feature_vector_sha256:
+        raise ShadowPolicyRunnerError("existing shadow signal has a different feature vector hash")
+    if signal.would_enter != decision.would_enter:
+        raise ShadowPolicyRunnerError("existing shadow signal has a different entry decision")
+    if not math.isclose(signal.probability, decision.probability, rel_tol=1e-12, abs_tol=1e-12):
+        raise ShadowPolicyRunnerError("existing shadow signal has a different probability")
+    if not math.isclose(signal.threshold, decision.threshold, rel_tol=1e-12, abs_tol=1e-12):
+        raise ShadowPolicyRunnerError("existing shadow signal has a different threshold")
 
 
 def _sha256(value: Any) -> str:

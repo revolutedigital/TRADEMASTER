@@ -35,8 +35,10 @@ from app.schemas.research_experiment import (
     EvidenceGateStatusResponse,
     ExperimentReportResponse,
     ExperimentResponse,
+    FrozenTopPShadowDecisionResponse,
     OpenedPartitionResponse,
     RecordExperimentDecisionRequest,
+    RecordFrozenTopPShadowSignalRequest,
     RecordShadowOutcomeRequest,
     RecordShadowSignalRequest,
     RecordTestnetReleaseRequest,
@@ -56,6 +58,11 @@ from app.services.data.research_registry import (
 from app.services.market.microstructure_wal_audit import build_evidence_gate_status
 from app.services.research.shadow_ledger import research_shadow_ledger_status
 from app.services.research.shadow_recorder import ShadowRecorderError, research_shadow_recorder
+from app.services.research.shadow_policy_runner import (
+    FrozenTopPShadowDecisionRecord,
+    ShadowPolicyRunnerError,
+    record_frozen_top_p_shadow_decision,
+)
 from app.services.research.testnet_release_gate import evaluate_testnet_eligibility
 
 
@@ -327,6 +334,37 @@ async def record_shadow_signal(
     except ShadowRecorderError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     return _serialize_shadow_signal(signal)
+
+
+@router.post(
+    "/experiments/{experiment_id}/frozen-top-p-shadow-signals",
+    response_model=FrozenTopPShadowDecisionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def record_frozen_top_p_shadow_signal(
+    experiment_id: str,
+    body: RecordFrozenTopPShadowSignalRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    _user: dict = Depends(require_auth),
+) -> FrozenTopPShadowDecisionResponse:
+    try:
+        result = await record_frozen_top_p_shadow_decision(
+            db,
+            experiment_id=experiment_id,
+            decision_time=body.decision_time,
+            side=body.side,
+            artifact=body.policy_artifact,
+            feature_vector=body.feature_vector,
+            record_non_entries=body.record_non_entries,
+        )
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ShadowPolicyRunnerError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    if not result.recorded:
+        response.status_code = status.HTTP_200_OK
+    return _serialize_frozen_top_p_shadow_decision(experiment_id, result)
 
 
 @router.post(
@@ -642,6 +680,30 @@ def _serialize_shadow_signal(signal: ResearchShadowSignal) -> ShadowSignalRespon
         expected_net_bps=None if outcome is None else outcome["expected_net_bps"],
         stress_net_bps=None if outcome is None else outcome["stress_net_bps"],
         label_sha256=None if outcome is None else outcome["label_sha256"],
+        safety=_safety(),
+    )
+
+
+def _serialize_frozen_top_p_shadow_decision(
+    experiment_id: str,
+    result: FrozenTopPShadowDecisionRecord,
+) -> FrozenTopPShadowDecisionResponse:
+    decision = result.decision
+    return FrozenTopPShadowDecisionResponse(
+        experiment_id=experiment_id,
+        decision_time=decision.decision_time,
+        side=decision.side,
+        horizon_seconds=decision.horizon_seconds,
+        probability=decision.probability,
+        threshold=decision.threshold,
+        would_enter=decision.would_enter,
+        model_sha256=decision.model_sha256,
+        feature_vector_sha256=decision.feature_vector_sha256,
+        recorded=result.recorded,
+        skipped_existing=result.skipped_existing,
+        signal=None if result.signal is None else _serialize_shadow_signal(result.signal),
+        order_submission_allowed=False,
+        execution_authorization="none",
         safety=_safety(),
     )
 

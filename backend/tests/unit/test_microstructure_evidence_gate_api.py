@@ -6,6 +6,8 @@ import json
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import pytest
 from fastapi import Response
 from sqlalchemy import select
@@ -26,6 +28,7 @@ from app.repositories.research_experiment_repo import (
 )
 from app.schemas.research_experiment import (
     RecordExperimentDecisionRequest,
+    RecordFrozenTopPShadowSignalRequest,
     RecordShadowOutcomeRequest,
     RecordShadowSignalRequest,
     RecordTestnetReleaseRequest,
@@ -35,6 +38,7 @@ from app.services.research.shadow_recorder import (
     shadow_outcome_event_payload,
     shadow_signal_event_payload,
 )
+from app.services.research.top_p_model import freeze_top_p_policy
 
 
 @pytest.fixture
@@ -295,6 +299,82 @@ async def test_shadow_signal_api_records_hypothetical_signal_without_order_field
     assert response.expected_net_bps is None
     assert response.safety.order_submission_allowed is False
     assert not hasattr(response, "order_id")
+
+
+async def test_frozen_top_p_shadow_signal_api_scores_artifact_and_records_entry_idempotently(
+    db: AsyncSession,
+) -> None:
+    await _seed_shadow_experiment(db, opened=True)
+    artifact = _frozen_top_p_artifact()
+    decision_time = datetime.now(UTC)
+
+    first = await research.record_frozen_top_p_shadow_signal(
+        "experiment",
+        RecordFrozenTopPShadowSignalRequest(
+            decision_time=decision_time,
+            side="BUY",
+            policy_artifact=artifact,
+            feature_vector=_top_p_entry_feature_vector(),
+        ),
+        response=Response(),
+        db=db,
+        _user={"sub": "operator"},
+    )
+    retry_response = Response()
+    second = await research.record_frozen_top_p_shadow_signal(
+        "experiment",
+        RecordFrozenTopPShadowSignalRequest(
+            decision_time=decision_time,
+            side="BUY",
+            policy_artifact=artifact,
+            feature_vector=_top_p_entry_feature_vector(),
+        ),
+        response=retry_response,
+        db=db,
+        _user={"sub": "operator"},
+    )
+
+    assert first.recorded is True
+    assert first.skipped_existing is False
+    assert first.signal is not None
+    assert first.would_enter is True
+    assert first.signal.model_sha256 == artifact["model_sha256"]
+    assert first.order_submission_allowed is False
+    assert first.execution_authorization == "none"
+    assert second.recorded is False
+    assert second.skipped_existing is True
+    assert second.signal is not None
+    assert first.signal.id == second.signal.id
+    assert retry_response.status_code == 200
+
+
+async def test_frozen_top_p_shadow_signal_api_does_not_record_non_entry_by_default(
+    db: AsyncSession,
+) -> None:
+    await _seed_shadow_experiment(db, opened=True)
+    api_response = Response()
+
+    response = await research.record_frozen_top_p_shadow_signal(
+        "experiment",
+        RecordFrozenTopPShadowSignalRequest(
+            decision_time=datetime.now(UTC),
+            side="BUY",
+            policy_artifact=_frozen_top_p_artifact(),
+            feature_vector=_top_p_non_entry_feature_vector(),
+        ),
+        response=api_response,
+        db=db,
+        _user={"sub": "operator"},
+    )
+
+    signals = (await db.execute(select(ResearchShadowSignal))).scalars().all()
+    assert response.recorded is False
+    assert response.skipped_existing is False
+    assert response.signal is None
+    assert response.would_enter is False
+    assert response.safety.order_submission_allowed is False
+    assert len(signals) == 0
+    assert api_response.status_code == 200
 
 
 async def test_shadow_outcome_api_records_once_and_rejects_overwrite(db: AsyncSession) -> None:
@@ -1591,6 +1671,62 @@ def _eligible_evidence_payload() -> dict[str, object]:
         "safety": safety,
         "generated_at": "2026-03-02T00:00:00+00:00",
     }
+
+
+def _frozen_top_p_artifact() -> dict[str, object]:
+    return freeze_top_p_policy(
+        _top_p_model_frame(),
+        horizon_seconds=120,
+        feature_set="flow",
+        tail_fraction=0.10,
+        calibration_date="2026-01-06",
+        dataset_manifest_sha256="d" * 64,
+        embargo_seconds=300,
+    ).to_dict()
+
+
+def _top_p_entry_feature_vector() -> dict[str, float]:
+    return {
+        "flow_imbalance_1s": 2.0,
+        "directed_flow_imbalance_1s": 2.0,
+        "trade_count_1s": 12.0,
+        "quote_volume_1s": 140.0,
+        "mean_interarrival_ms_1s": 20.0,
+    }
+
+
+def _top_p_non_entry_feature_vector() -> dict[str, float]:
+    return {
+        "flow_imbalance_1s": -3.0,
+        "directed_flow_imbalance_1s": -3.0,
+        "trade_count_1s": 13.0,
+        "quote_volume_1s": 160.0,
+        "mean_interarrival_ms_1s": 20.0,
+    }
+
+
+def _top_p_model_frame() -> pd.DataFrame:
+    random = np.random.default_rng(456)
+    rows = []
+    for day in range(7):
+        day_start = pd.Timestamp("2026-01-01", tz="UTC") + pd.Timedelta(days=day)
+        for sample in range(60):
+            signal = random.normal()
+            rows.append(
+                {
+                    "decision_time_ms": int(
+                        (day_start + pd.Timedelta(minutes=sample * 10)).timestamp() * 1000
+                    ),
+                    "horizon_seconds": 120,
+                    "target": int(signal + random.normal(scale=0.3) > 0),
+                    "flow_imbalance_1s": signal,
+                    "directed_flow_imbalance_1s": signal,
+                    "trade_count_1s": 10 + abs(signal),
+                    "quote_volume_1s": 100 + abs(signal) * 20,
+                    "mean_interarrival_ms_1s": 20,
+                }
+            )
+    return pd.DataFrame(rows)
 
 
 def _safe_shadow_outcome_json(

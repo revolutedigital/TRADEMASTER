@@ -1271,7 +1271,11 @@ components:
             Research-only report metrics, including book_evidence, shadow,
             hypothesis_ledger, testnet_boundary, and experiment_event_chain.
             experiment_event_chain is tamper-evident and exposes event_count,
-            verified, latest_event_sha256, and reasons.
+            verified, latest_event_sha256, and reasons. testnet_boundary includes
+            approved_statistical_gate_verified and, when the decision event chain
+            verifies, a statistical_gate summary with the terminal artifact hash,
+            decision, attempted hypothesis count, approved strategy count, and
+            research-only safety flags.
           additionalProperties: true
         artifact_sha256:
           type: [string, 'null']

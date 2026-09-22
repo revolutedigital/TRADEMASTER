@@ -93,6 +93,11 @@ const testnetEligibility = {
   evidence_artifact_available: true,
   order_submission_allowed: false,
   execution_authorization: "none",
+  safety: {
+    research_only: true,
+    order_submission_allowed: false,
+    execution_authorization: "none",
+  },
   generated_at: "2026-03-22T12:11:00Z",
 };
 
@@ -141,6 +146,18 @@ const experimentReport = {
     },
     testnet_boundary: {
       approved_statistical_gate_verified: false,
+      release_request_required: true,
+      explicit_testnet_release: false,
+      statistical_gate: {
+        decision_status: "APPROVED",
+        statistical_gate_sha256: "f".repeat(64),
+        statistical_gate_decision: "APPROVED",
+        attempted_hypotheses: 44,
+        approved_strategy_count: 1,
+        research_only: true,
+        order_submission_allowed: false,
+        execution_authorization: "none",
+      },
       order_submission_allowed: false,
       execution_authorization: "none",
     },
@@ -152,6 +169,11 @@ const experimentReport = {
     },
   },
   artifact_sha256: "report123456789",
+  safety: {
+    research_only: true,
+    order_submission_allowed: false,
+    execution_authorization: "none",
+  },
   generated_at: "2026-03-22T12:12:00Z",
 };
 
@@ -192,6 +214,10 @@ describe("ResearchPage", () => {
     expect(screen.getByText("Eventos ledger")).toBeInTheDocument();
     expect(screen.getByText("Shadow ledger")).toBeInTheDocument();
     expect(screen.getByText("Ledger shadow")).toBeInTheDocument();
+    expect(screen.getByText("Hash stat gate")).toBeInTheDocument();
+    expect(screen.getByText("ffffffffff…")).toBeInTheDocument();
+    expect(screen.getByText("Hipóteses stat")).toBeInTheDocument();
+    expect(screen.getByText("Estratégias ok")).toBeInTheDocument();
     expect(screen.getByText("abcdef1234…")).toBeInTheDocument();
     expect(screen.getByText("Sem release")).toBeInTheDocument();
     expect(screen.getByText("Incompleto")).toBeInTheDocument();

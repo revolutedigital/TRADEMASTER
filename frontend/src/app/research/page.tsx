@@ -11,17 +11,19 @@ import { apiFetch } from "@/lib/utils";
 
 type ExperimentStatus = "DRAFT" | "FROZEN" | "REJECTED" | "INCONCLUSIVE" | "APPROVED";
 
+interface SafetyBoundary {
+  research_only: boolean;
+  order_submission_allowed: boolean;
+  execution_authorization: string;
+}
+
 interface Experiment {
   id: string;
   name: string;
   status: ExperimentStatus;
   experiment_sha256: string | null;
-  dataset_partitions: Array<{ role: string; start_at: string; end_at: string }>;
-  safety: {
-    research_only: true;
-    order_submission_allowed: false;
-    execution_authorization: "none";
-  };
+  dataset_partitions: Array<{ role: string; start_at: string; end_at: string; manifest_sha256?: string }>;
+  safety: SafetyBoundary;
   created_at: string;
 }
 
@@ -43,11 +45,7 @@ interface EvidenceGateStatus {
     reasons: string[];
   };
   status_reasons: string[];
-  safety: {
-    research_only: true;
-    order_submission_allowed: false;
-    execution_authorization: "none";
-  };
+  safety: SafetyBoundary;
   generated_at: string;
 }
 
@@ -72,8 +70,9 @@ interface TestnetEligibility {
   explicit_testnet_release: boolean;
   release_request_required: boolean;
   evidence_artifact_available: boolean;
-  order_submission_allowed: false;
-  execution_authorization: "none";
+  order_submission_allowed: boolean;
+  execution_authorization: string;
+  safety: SafetyBoundary;
   generated_at: string;
 }
 
@@ -117,8 +116,11 @@ interface ExperimentReport {
     };
     testnet_boundary?: {
       approved_statistical_gate_verified?: boolean;
-      order_submission_allowed: false;
-      execution_authorization: "none";
+      release_request_required?: boolean;
+      explicit_testnet_release?: boolean;
+      statistical_gate?: StatisticalGateSummary | null;
+      order_submission_allowed?: boolean;
+      execution_authorization?: string;
     };
     experiment_event_chain?: {
       event_count?: number;
@@ -128,7 +130,19 @@ interface ExperimentReport {
     };
   };
   artifact_sha256: string | null;
+  safety: SafetyBoundary;
   generated_at: string;
+}
+
+interface StatisticalGateSummary {
+  decision_status?: string;
+  statistical_gate_sha256?: string;
+  statistical_gate_decision?: string;
+  attempted_hypotheses?: number | null;
+  approved_strategy_count?: number;
+  research_only?: boolean;
+  order_submission_allowed?: boolean;
+  execution_authorization?: string;
 }
 
 const statusVariant: Record<ExperimentStatus, "default" | "primary" | "danger" | "warning" | "success"> = {
@@ -224,6 +238,25 @@ export default function ResearchPage() {
   const approved = experiments.filter((experiment) => experiment.status === "APPROVED").length;
   const rejected = experiments.filter((experiment) => experiment.status === "REJECTED").length;
   const longestBookStreak = evidenceStatus?.book_evidence_gate.longest_complete_streak_days ?? 0;
+  const safetyReasons = collectReasons(
+    experiments.flatMap((experiment) => safetyBoundaryReasons(`experiment_${experiment.id}`, experiment.safety)),
+    safetyBoundaryReasons("evidence_gate", evidenceStatus?.safety),
+    testnetEligibility
+      ? [
+        ...safetyBoundaryReasons("testnet_eligibility", testnetEligibility.safety),
+        ...testnetEligibilityDirectSafetyReasons(testnetEligibility),
+      ]
+      : [],
+    experimentReport ? safetyBoundaryReasons("experiment_report", experimentReport.safety) : [],
+    experimentReport
+      ? [
+        ...testnetBoundarySafetyReasons(experimentReport.metrics.testnet_boundary),
+        ...statisticalGateSummarySafetyReasons(
+          experimentReport.metrics.testnet_boundary?.statistical_gate,
+        ),
+      ]
+      : [],
+  );
 
   return (
     <div className="space-y-6">
@@ -238,17 +271,7 @@ export default function ResearchPage() {
         }
       />
 
-      <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
-        <div className="flex items-start gap-3">
-          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
-          <div>
-            <p className="font-medium text-[var(--color-text)]">Barreira de segurança ativa</p>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              Somente pesquisa e shadow. Envio de ordens: bloqueado. Autorização de execução: nenhuma.
-            </p>
-          </div>
-        </div>
-      </div>
+      <SafetyBoundaryPanel violations={safetyReasons} />
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card><CardContent><Metric icon={Activity} label="Experimentos" value={experiments.length} /></CardContent></Card>
@@ -286,7 +309,7 @@ export default function ResearchPage() {
                       <Badge variant={statusVariant[experiment.status]}>{experiment.status}</Badge>
                     </div>
                     <p className="mt-1 font-mono text-xs text-[var(--color-text-faint)]">
-                      {experiment.experiment_sha256 ?? "Rascunho ainda sem hash imutável"}
+                      Experimento: {shortHash(experiment.experiment_sha256)}
                     </p>
                   </div>
                   <div className="flex gap-6 text-sm">
@@ -299,6 +322,30 @@ export default function ResearchPage() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function SafetyBoundaryPanel({ violations }: { violations: string[] }) {
+  const ok = violations.length === 0;
+  return (
+    <div className={`rounded-xl border p-4 ${ok ? "border-emerald-500/30 bg-emerald-500/10" : "border-red-500/30 bg-red-500/10"}`}>
+      <div className="flex items-start gap-3">
+        {ok ? (
+          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
+        ) : (
+          <Ban className="mt-0.5 h-5 w-5 shrink-0 text-red-400" />
+        )}
+        <div>
+          <p className="font-medium text-[var(--color-text)]">
+            {ok ? "Barreira de segurança ativa" : "Violação de barreira de segurança"}
+          </p>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            Somente pesquisa e shadow. Envio de ordens: bloqueado. Autorização de execução: nenhuma.
+          </p>
+          <GateReasonList title="Violações de safety" reasons={violations} tone="danger" />
+        </div>
+      </div>
     </div>
   );
 }
@@ -317,6 +364,7 @@ function ExperimentReportPanel({
   const testnetBoundary = report?.metrics.testnet_boundary;
   const eventChain = report?.metrics.experiment_event_chain;
   const shadowLedger = report?.metrics.shadow_ledger;
+  const statisticalGate = testnetBoundary?.statistical_gate;
   const reportReady = (
     book?.eligible === true
     && shadow?.positive === true
@@ -361,6 +409,10 @@ function ExperimentReportPanel({
             <GateMetric label="Book streak" value={`${book?.longest_complete_streak_days ?? 0}/60`} />
             <GateMetric label="Book gate" value={book?.eligible ? "ok" : "travado"} />
             <GateMetric label="Stat gate" value={testnetBoundary?.approved_statistical_gate_verified ? "ok" : "sem hash"} />
+            <GateMetric label="Hash stat gate" value={shortHash(statisticalGate?.statistical_gate_sha256)} />
+            <GateMetric label="Decisão stat" value={statisticalGate?.statistical_gate_decision ?? "n/a"} />
+            <GateMetric label="Hipóteses stat" value={statisticalGate?.attempted_hypotheses ?? "n/a"} />
+            <GateMetric label="Estratégias ok" value={statisticalGate?.approved_strategy_count ?? "n/a"} />
             <GateMetric label="Ledger imutável" value={eventChain?.verified ? "ok" : "quebrado"} />
             <GateMetric label="Eventos ledger" value={eventChain?.event_count ?? 0} />
             <GateMetric label="Último evento" value={shortHash(eventChain?.latest_event_sha256)} />
@@ -572,6 +624,59 @@ function collectReasons(
         reasons.push(reason);
       }
     }
+  }
+  return reasons;
+}
+
+function safetyBoundaryReasons(label: string, safety: SafetyBoundary | null | undefined): string[] {
+  if (!safety) return [];
+  const reasons: string[] = [];
+  if (safety.research_only !== true) {
+    reasons.push(`${label}_research_only_not_true`);
+  }
+  if (safety.order_submission_allowed !== false) {
+    reasons.push(`${label}_order_submission_allowed_not_false`);
+  }
+  if (safety.execution_authorization !== "none") {
+    reasons.push(`${label}_execution_authorization_not_none`);
+  }
+  return reasons;
+}
+
+function testnetEligibilityDirectSafetyReasons(status: TestnetEligibility): string[] {
+  const reasons: string[] = [];
+  if (status.order_submission_allowed !== false) {
+    reasons.push("testnet_eligibility_direct_order_submission_allowed_not_false");
+  }
+  if (status.execution_authorization !== "none") {
+    reasons.push("testnet_eligibility_direct_execution_authorization_not_none");
+  }
+  return reasons;
+}
+
+function statisticalGateSummarySafetyReasons(summary: StatisticalGateSummary | null | undefined): string[] {
+  if (!summary) return [];
+  const reasons: string[] = [];
+  if (summary.research_only !== true) {
+    reasons.push("statistical_gate_research_only_not_true");
+  }
+  if (summary.order_submission_allowed !== false) {
+    reasons.push("statistical_gate_order_submission_allowed_not_false");
+  }
+  if (summary.execution_authorization !== "none") {
+    reasons.push("statistical_gate_execution_authorization_not_none");
+  }
+  return reasons;
+}
+
+function testnetBoundarySafetyReasons(boundary: ExperimentReport["metrics"]["testnet_boundary"]): string[] {
+  if (!boundary) return [];
+  const reasons: string[] = [];
+  if (boundary.order_submission_allowed !== false) {
+    reasons.push("experiment_report_testnet_boundary_order_submission_allowed_not_false");
+  }
+  if (boundary.execution_authorization !== "none") {
+    reasons.push("experiment_report_testnet_boundary_execution_authorization_not_none");
   }
   return reasons;
 }

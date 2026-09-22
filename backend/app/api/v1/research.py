@@ -548,6 +548,10 @@ async def get_experiment_report(
     testnet_release = await _get_testnet_release(db, experiment.id)
     explicit_testnet_release = testnet_release is not None
     event_chain = await research_experiment_repository.event_chain_status(db, experiment.id)
+    statistical_gate_evidence = await _latest_statistical_gate_evidence(
+        db,
+        experiment.id,
+    )
     approved_statistical_gate_verified = await _approved_statistical_gate_verified(
         db,
         experiment.id,
@@ -591,6 +595,7 @@ async def get_experiment_report(
             "approved_statistical_gate_verified": approved_statistical_gate_verified,
             "release_request_required": not explicit_testnet_release,
             "explicit_testnet_release": explicit_testnet_release,
+            "statistical_gate": statistical_gate_evidence,
             "order_submission_allowed": False,
             "execution_authorization": "none",
         },
@@ -912,41 +917,62 @@ async def _approved_statistical_gate_verified(
     db: AsyncSession,
     experiment_id: str,
 ) -> bool:
+    evidence = await _latest_statistical_gate_evidence(db, experiment_id)
+    if evidence is None:
+        return False
+    return (
+        evidence.get("decision_status") == "APPROVED"
+        and evidence.get("statistical_gate_decision") == "APPROVED"
+        and evidence.get("approved_strategy_count", 0) > 0
+        and evidence.get("research_only") is True
+        and evidence.get("order_submission_allowed") is False
+        and evidence.get("execution_authorization") == "none"
+    )
+
+
+async def _latest_statistical_gate_evidence(
+    db: AsyncSession,
+    experiment_id: str,
+) -> dict[str, object] | None:
     events = await research_experiment_repository.list_events(
         db,
         experiment_id,
     )
     if not verify_research_event_chain(events).verified:
-        return False
+        return None
     decision_events = [event for event in events if event.kind == "DECISION_RECORDED"]
     for event in reversed(decision_events):
         try:
             payload = json.loads(event.payload_json)
         except json.JSONDecodeError:
-            return False
-        if payload.get("status") != "APPROVED":
-            return False
+            return None
         evidence = payload.get("evidence")
         if not isinstance(evidence, dict):
-            return False
+            return None
         gate_sha256 = evidence.get("statistical_gate_sha256")
         if (
             not isinstance(gate_sha256, str)
             or len(gate_sha256) != 64
             or any(character not in "0123456789abcdef" for character in gate_sha256)
         ):
-            return False
+            return None
         approved_strategy_count = evidence.get("approved_strategy_count")
         if type(approved_strategy_count) is not int:
-            return False
-        return (
-            evidence.get("statistical_gate_decision") == "APPROVED"
-            and approved_strategy_count > 0
-            and evidence.get("research_only") is True
-            and evidence.get("order_submission_allowed") is False
-            and evidence.get("execution_authorization") == "none"
-        )
-    return False
+            return None
+        attempted_hypotheses = evidence.get("attempted_hypotheses")
+        return {
+            "decision_status": payload.get("status"),
+            "statistical_gate_sha256": gate_sha256,
+            "statistical_gate_decision": evidence.get("statistical_gate_decision"),
+            "attempted_hypotheses": (
+                attempted_hypotheses if type(attempted_hypotheses) is int else None
+            ),
+            "approved_strategy_count": approved_strategy_count,
+            "research_only": evidence.get("research_only"),
+            "order_submission_allowed": evidence.get("order_submission_allowed"),
+            "execution_authorization": evidence.get("execution_authorization"),
+        }
+    return None
 
 
 def _serialize_testnet_release(

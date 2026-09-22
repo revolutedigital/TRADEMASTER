@@ -134,6 +134,7 @@ def test_microstructure_spec_marks_returned_experiment_report_fields_required() 
     assert "frozen_at" in schemas["Experiment"]["required"]
     assert "metrics" in schemas["ExperimentReport"]["required"]
     assert "artifact_sha256" in schemas["ExperimentReport"]["required"]
+    assert "statistical_gate summary" in schemas["ExperimentReport"]["properties"]["metrics"]["description"]
 
 
 def test_microstructure_spec_publishes_research_only_shadow_signal_contract() -> None:

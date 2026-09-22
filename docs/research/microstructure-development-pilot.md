@@ -573,7 +573,10 @@ expected/stress mean bps, shadow completeness/positivity, and the Testnet bounda
 flags. It also reports `shadow_ledger` counts/verification/reasons and the
 immutable experiment-event hash chain with
 `event_count`, `verified`, `latest_event_sha256`, and failure `reasons`; a broken
-chain prevents `approved_statistical_gate_verified=true`. It also emits a
+chain prevents `approved_statistical_gate_verified=true`. When that chain
+verifies, the Testnet boundary section also exposes the terminal statistical-gate
+artifact hash, decision, attempted hypothesis count, approved strategy count, and
+research-only safety flags; a broken chain hides that summary. It also emits a
 deterministic `artifact_sha256` for that report payload.
 
 Once an offline/statistical gate has produced its terminal result, the decision

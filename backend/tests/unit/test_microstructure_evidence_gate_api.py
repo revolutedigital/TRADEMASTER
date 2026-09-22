@@ -1289,6 +1289,26 @@ async def test_experiment_report_exposes_evidence_and_shadow_metrics(
         response["metrics"]["testnet_boundary"]["approved_statistical_gate_verified"]
         is True
     )
+    assert (
+        response["metrics"]["testnet_boundary"]["statistical_gate"]["statistical_gate_sha256"]
+        == "a" * 64
+    )
+    assert (
+        response["metrics"]["testnet_boundary"]["statistical_gate"]["statistical_gate_decision"]
+        == "APPROVED"
+    )
+    assert (
+        response["metrics"]["testnet_boundary"]["statistical_gate"]["attempted_hypotheses"]
+        == 44
+    )
+    assert (
+        response["metrics"]["testnet_boundary"]["statistical_gate"]["approved_strategy_count"]
+        == 1
+    )
+    assert (
+        response["metrics"]["testnet_boundary"]["statistical_gate"]["order_submission_allowed"]
+        is False
+    )
     assert response["metrics"]["testnet_boundary"]["order_submission_allowed"] is False
     assert response["safety"]["execution_authorization"] == "none"
 
@@ -1339,6 +1359,7 @@ async def test_experiment_report_flags_tampered_event_chain(
         response["metrics"]["testnet_boundary"]["approved_statistical_gate_verified"]
         is False
     )
+    assert response["metrics"]["testnet_boundary"]["statistical_gate"] is None
 
 
 async def test_record_experiment_decision_is_terminal_and_research_only(

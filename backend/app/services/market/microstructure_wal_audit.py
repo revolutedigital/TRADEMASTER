@@ -33,7 +33,7 @@ DEFAULT_MIN_ROWS_BY_TYPE = {
 DEFAULT_MAX_RECEIVE_GAP_SECONDS = {
     MarketEventType.TRADE: 30.0,
     MarketEventType.DEPTH: 30.0,
-    MarketEventType.MARK_PRICE: 10.0,
+    MarketEventType.MARK_PRICE: 30.0,
 }
 CONTIGUOUS_SEQUENCE_TYPES = {MarketEventType.AGG_TRADE, MarketEventType.DEPTH}
 

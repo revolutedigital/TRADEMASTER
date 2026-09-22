@@ -100,7 +100,7 @@ class MicrostructureRecorder:
         stream_base_url: str = FUTURES_STREAM_URL,
         include_spot_trades: bool = False,
         spot_stream_base_url: str = SPOT_STREAM_URL,
-        include_rest_mark_price_poller: bool = False,
+        include_rest_mark_price_poller: bool = True,
         batch_size: int = 500,
         queue_size: int = 50_000,
         snapshot_fetcher: Callable[[], Awaitable[dict[str, Any]]] | None = None,

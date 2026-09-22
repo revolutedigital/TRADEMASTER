@@ -11,7 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.api.v1 import research
 from app.models.base import Base
-from app.models.research_experiment import ResearchExperiment, ResearchShadowSignal
+from app.models.research_experiment import ResearchDataUse, ResearchExperiment, ResearchShadowSignal
+from app.schemas.research_experiment import RecordShadowOutcomeRequest, RecordShadowSignalRequest
 from app.services.market.microstructure_wal_audit import build_evidence_gate_status
 
 
@@ -111,6 +112,80 @@ def test_evidence_gate_status_accepts_iso_dates_in_artifact() -> None:
     assert parsed.audited_start_date == date(2026, 1, 1)
     assert parsed.audited_end_date == date(2026, 1, 2)
     assert parsed.book_evidence_gate.incomplete_days == [date(2026, 1, 1)]
+
+
+async def test_shadow_signal_api_records_hypothetical_signal_without_order_fields(
+    db: AsyncSession,
+) -> None:
+    await _seed_shadow_experiment(db, opened=True)
+
+    response = await research.record_shadow_signal(
+        "experiment",
+        RecordShadowSignalRequest(
+            decision_time=datetime.now(UTC),
+            side="BUY",
+            horizon_seconds=300,
+            probability=0.8,
+            threshold=0.7,
+            model_sha256="d" * 64,
+            feature_vector={"flow": 0.5},
+        ),
+        db=db,
+        _user={"sub": "operator"},
+    )
+
+    assert response.experiment_id == "experiment"
+    assert response.would_enter is True
+    assert response.outcome_recorded is False
+    assert response.expected_net_bps is None
+    assert response.safety.order_submission_allowed is False
+    assert not hasattr(response, "order_id")
+
+
+async def test_shadow_outcome_api_records_once_and_rejects_overwrite(db: AsyncSession) -> None:
+    await _seed_shadow_experiment(db, opened=True)
+    signal = await research.record_shadow_signal(
+        "experiment",
+        RecordShadowSignalRequest(
+            decision_time=datetime.now(UTC),
+            side="SELL",
+            horizon_seconds=120,
+            probability=0.8,
+            threshold=0.7,
+            model_sha256="d" * 64,
+            feature_vector={"flow": -0.5},
+        ),
+        db=db,
+        _user={"sub": "operator"},
+    )
+
+    outcome = await research.record_shadow_outcome(
+        signal.id,
+        RecordShadowOutcomeRequest(
+            expected_net_bps=1.2,
+            stress_net_bps=0.4,
+            label_sha256="e" * 64,
+        ),
+        db=db,
+        _user={"sub": "operator"},
+    )
+
+    assert outcome.outcome_recorded is True
+    assert outcome.expected_net_bps == 1.2
+    assert outcome.stress_net_bps == 0.4
+    assert outcome.label_sha256 == "e" * 64
+    with pytest.raises(research.HTTPException) as error:
+        await research.record_shadow_outcome(
+            signal.id,
+            RecordShadowOutcomeRequest(
+                expected_net_bps=2.0,
+                stress_net_bps=1.0,
+                label_sha256="e" * 64,
+            ),
+            db=db,
+            _user={"sub": "operator"},
+        )
+    assert error.value.status_code == 409
 
 
 async def test_testnet_eligibility_remains_metadata_without_explicit_release(
@@ -341,3 +416,30 @@ def _eligible_evidence_payload() -> dict[str, object]:
         "safety": safety,
         "generated_at": "2026-03-02T00:00:00+00:00",
     }
+
+
+async def _seed_shadow_experiment(db: AsyncSession, *, opened: bool) -> None:
+    now = datetime.now(UTC)
+    db.add(
+        ResearchExperiment(
+            id="experiment",
+            name="shadow",
+            status="FROZEN",
+            code_revision="a" * 40,
+            protocol_sha256="b" * 64,
+            product_json="{}",
+            cost_profile_json="{}",
+            approval_gate_json="{}",
+        )
+    )
+    db.add(
+        ResearchDataUse(
+            experiment_id="experiment",
+            role="PROSPECTIVE_SHADOW",
+            start_at=now,
+            end_at=now + timedelta(days=20),
+            manifest_sha256="c" * 64,
+            opened_at=now if opened else None,
+        )
+    )
+    await db.flush()

@@ -6,8 +6,9 @@ import json
 import math
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path as ApiPath, Query, status
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +21,9 @@ from app.schemas.research_experiment import (
     EvidenceGateStatusResponse,
     ExperimentReportResponse,
     ExperimentResponse,
+    RecordShadowOutcomeRequest,
+    RecordShadowSignalRequest,
+    ShadowSignalResponse,
     TestnetEligibilityResponse,
 )
 from app.services.data.research_registry import (
@@ -31,6 +35,7 @@ from app.services.data.research_registry import (
     research_registry,
 )
 from app.services.market.microstructure_wal_audit import build_evidence_gate_status
+from app.services.research.shadow_recorder import ShadowRecorderError, research_shadow_recorder
 from app.services.research.testnet_release_gate import evaluate_testnet_eligibility
 
 
@@ -101,6 +106,61 @@ async def get_testnet_eligibility(
         safety=_safety(),
         generated_at=datetime.now(UTC),
     )
+
+
+@router.post(
+    "/experiments/{experiment_id}/shadow-signals",
+    response_model=ShadowSignalResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def record_shadow_signal(
+    experiment_id: str,
+    body: RecordShadowSignalRequest,
+    db: AsyncSession = Depends(get_db),
+    _user: dict = Depends(require_auth),
+) -> ShadowSignalResponse:
+    try:
+        signal = await research_shadow_recorder.record(
+            db,
+            experiment_id=experiment_id,
+            decision_time=body.decision_time,
+            side=body.side,
+            horizon_seconds=body.horizon_seconds,
+            probability=body.probability,
+            threshold=body.threshold,
+            model_sha256=body.model_sha256,
+            feature_vector=body.feature_vector,
+        )
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ShadowRecorderError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return _serialize_shadow_signal(signal)
+
+
+@router.post(
+    "/shadow-signals/{signal_id}/outcome",
+    response_model=ShadowSignalResponse,
+)
+async def record_shadow_outcome(
+    signal_id: Annotated[int, ApiPath(ge=1)],
+    body: RecordShadowOutcomeRequest,
+    db: AsyncSession = Depends(get_db),
+    _user: dict = Depends(require_auth),
+) -> ShadowSignalResponse:
+    try:
+        signal = await research_shadow_recorder.record_outcome(
+            db,
+            signal_id=signal_id,
+            expected_net_bps=body.expected_net_bps,
+            stress_net_bps=body.stress_net_bps,
+            label_sha256=body.label_sha256,
+        )
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ShadowRecorderError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return _serialize_shadow_signal(signal)
 
 
 def _read_evidence_gate_status() -> EvidenceGateStatusResponse:
@@ -264,6 +324,41 @@ def _fallback_evidence_gate_status(reason: str) -> EvidenceGateStatusResponse:
         status_reasons=(reason,),
     )
     return EvidenceGateStatusResponse.model_validate(payload)
+
+
+def _serialize_shadow_signal(signal: ResearchShadowSignal) -> ShadowSignalResponse:
+    outcome = _parse_shadow_outcome(signal)
+    return ShadowSignalResponse(
+        id=signal.id,
+        experiment_id=signal.experiment_id,
+        decision_time=signal.decision_time,
+        recorded_at=signal.recorded_at,
+        side=signal.side,
+        horizon_seconds=signal.horizon_seconds,
+        probability=signal.probability,
+        threshold=signal.threshold,
+        would_enter=signal.would_enter,
+        model_sha256=signal.model_sha256,
+        feature_vector_sha256=signal.feature_vector_sha256,
+        outcome_recorded=outcome is not None,
+        expected_net_bps=None if outcome is None else outcome["expected_net_bps"],
+        stress_net_bps=None if outcome is None else outcome["stress_net_bps"],
+        label_sha256=None if outcome is None else outcome["label_sha256"],
+        safety=_safety(),
+    )
+
+
+def _parse_shadow_outcome(signal: ResearchShadowSignal) -> dict[str, object] | None:
+    if signal.outcome_json is None:
+        return None
+    payload = json.loads(signal.outcome_json)
+    if not isinstance(payload, dict):
+        return None
+    return {
+        "expected_net_bps": payload.get("expected_net_bps"),
+        "stress_net_bps": payload.get("stress_net_bps"),
+        "label_sha256": payload.get("label_sha256"),
+    }
 
 
 def _summarize_shadow_outcomes(signals: list[ResearchShadowSignal]) -> dict[str, object]:

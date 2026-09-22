@@ -32,6 +32,8 @@ def test_microstructure_spec_is_openapi_31_and_research_only() -> None:
         "/research/microstructure/experiments",
         "/research/microstructure/experiments/{experiment_id}",
         "/research/microstructure/experiments/{experiment_id}/testnet-eligibility",
+        "/research/microstructure/experiments/{experiment_id}/shadow-signals",
+        "/research/microstructure/shadow-signals/{signal_id}/outcome",
         "/research/microstructure/experiments/{experiment_id}/freeze",
         "/research/microstructure/experiments/{experiment_id}/report",
     }
@@ -98,6 +100,18 @@ def test_microstructure_spec_publishes_metadata_only_testnet_eligibility() -> No
     assert "prospective_shadow_positive" in eligibility["required"]
     assert properties["order_submission_allowed"]["const"] is False
     assert properties["execution_authorization"]["const"] == "none"
+
+
+def test_microstructure_spec_publishes_research_only_shadow_signal_contract() -> None:
+    schemas = _load_spec()["components"]["schemas"]
+    shadow_signal = schemas["ShadowSignal"]
+
+    assert shadow_signal["additionalProperties"] is False
+    assert "feature_vector_sha256" in shadow_signal["required"]
+    assert "outcome_recorded" in shadow_signal["required"]
+    assert "safety" in shadow_signal["required"]
+    assert "order_id" not in shadow_signal["properties"]
+    assert "execution_authorization" not in shadow_signal["properties"]
 
 
 def test_preregistration_hash_matches_the_frozen_document() -> None:

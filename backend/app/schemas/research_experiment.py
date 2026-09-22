@@ -149,6 +149,54 @@ class TestnetEligibilityResponse(BaseModel):
     generated_at: datetime
 
 
+class RecordShadowSignalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision_time: datetime
+    side: Literal["BUY", "SELL"]
+    horizon_seconds: Literal[120, 300]
+    probability: float = Field(ge=0, le=1)
+    threshold: float = Field(ge=0, le=1)
+    model_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    feature_vector: dict[str, float] = Field(min_length=1)
+
+    @field_validator("decision_time")
+    @classmethod
+    def require_decision_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("decision_time must be timezone-aware")
+        return value
+
+
+class RecordShadowOutcomeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_net_bps: float
+    stress_net_bps: float
+    label_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class ShadowSignalResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    experiment_id: str
+    decision_time: datetime
+    recorded_at: datetime
+    side: Literal["BUY", "SELL"]
+    horizon_seconds: Literal[120, 300]
+    probability: float
+    threshold: float
+    would_enter: bool
+    model_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    feature_vector_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    outcome_recorded: bool
+    expected_net_bps: float | None
+    stress_net_bps: float | None
+    label_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    safety: SafetyBoundary
+
+
 class ExperimentResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

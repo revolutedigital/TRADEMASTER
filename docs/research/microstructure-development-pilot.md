@@ -194,3 +194,14 @@ only when every shadow signal has immutable outcome evidence and both expected
 and stress mean bps are positive. Outcomes are recorded once through the research
 shadow recorder with `expected_net_bps`, `stress_net_bps`, and `label_sha256`;
 overwrite, missing, malformed, or non-finite `outcome_json` is fail-closed.
+
+Shadow runners can append evidence through the research API:
+
+- `POST /api/v1/research/microstructure/experiments/{experiment_id}/shadow-signals`
+  records a hypothetical decision after the `PROSPECTIVE_SHADOW` partition is
+  explicitly opened. It stores `feature_vector_sha256`, not raw feature values.
+- `POST /api/v1/research/microstructure/shadow-signals/{signal_id}/outcome`
+  records the one-shot outcome for that signal.
+
+Both endpoints are metadata-only and return
+`order_submission_allowed=false` and `execution_authorization=none`.

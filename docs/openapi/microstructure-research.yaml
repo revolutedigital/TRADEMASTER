@@ -131,6 +131,73 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+  /research/microstructure/experiments/{experiment_id}/shadow-signals:
+    post:
+      operationId: recordMicrostructureShadowSignal
+      summary: Record a hypothetical shadow signal for a frozen experiment.
+      description: |
+        Appends a model decision to the research-only shadow ledger. The request
+        stores a feature-vector hash, not raw feature values, and never submits
+        or schedules an exchange order.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ExperimentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordShadowSignalRequest'
+      responses:
+        '201':
+          description: Hypothetical shadow signal recorded without execution access.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShadowSignal'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Experiment is not frozen, partition is not open, or signal is invalid.
+  /research/microstructure/shadow-signals/{signal_id}/outcome:
+    post:
+      operationId: recordMicrostructureShadowOutcome
+      summary: Attach immutable outcome evidence to one shadow signal.
+      description: |
+        Records expected/stress net bps for a previously appended hypothetical
+        signal. Outcomes are one-shot evidence and cannot be overwritten. This
+        endpoint grants no Testnet or LIVE authority.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: signal_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordShadowOutcomeRequest'
+      responses:
+        '200':
+          description: Shadow outcome recorded as immutable research evidence.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShadowSignal'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Outcome is invalid or was already recorded.
   /research/microstructure/experiments/{experiment_id}/freeze:
     post:
       operationId: freezeMicrostructureExperiment
@@ -502,6 +569,119 @@ components:
         generated_at:
           type: string
           format: date-time
+    RecordShadowSignalRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - decision_time
+        - side
+        - horizon_seconds
+        - probability
+        - threshold
+        - model_sha256
+        - feature_vector
+      properties:
+        decision_time:
+          type: string
+          format: date-time
+        side:
+          type: string
+          enum: [BUY, SELL]
+        horizon_seconds:
+          type: integer
+          enum: [120, 300]
+        probability:
+          type: number
+          minimum: 0
+          maximum: 1
+        threshold:
+          type: number
+          minimum: 0
+          maximum: 1
+        model_sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        feature_vector:
+          type: object
+          additionalProperties:
+            type: number
+    RecordShadowOutcomeRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expected_net_bps
+        - stress_net_bps
+        - label_sha256
+      properties:
+        expected_net_bps:
+          type: number
+        stress_net_bps:
+          type: number
+        label_sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+    ShadowSignal:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - experiment_id
+        - decision_time
+        - recorded_at
+        - side
+        - horizon_seconds
+        - probability
+        - threshold
+        - would_enter
+        - model_sha256
+        - feature_vector_sha256
+        - outcome_recorded
+        - expected_net_bps
+        - stress_net_bps
+        - label_sha256
+        - safety
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        experiment_id:
+          type: string
+          format: uuid
+        decision_time:
+          type: string
+          format: date-time
+        recorded_at:
+          type: string
+          format: date-time
+        side:
+          type: string
+          enum: [BUY, SELL]
+        horizon_seconds:
+          type: integer
+          enum: [120, 300]
+        probability:
+          type: number
+        threshold:
+          type: number
+        would_enter:
+          type: boolean
+        model_sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        feature_vector_sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        outcome_recorded:
+          type: boolean
+        expected_net_bps:
+          type: [number, 'null']
+        stress_net_bps:
+          type: [number, 'null']
+        label_sha256:
+          type: [string, 'null']
+          pattern: '^[a-f0-9]{64}$'
+        safety:
+          $ref: '#/components/schemas/SafetyBoundary'
     CreateExperimentRequest:
       type: object
       additionalProperties: false

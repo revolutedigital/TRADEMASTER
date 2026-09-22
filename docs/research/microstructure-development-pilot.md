@@ -335,6 +335,18 @@ check, or if the prospective shadow report is missing, dry-run, incomplete, or
 non-positive under stress costs, the gate records the concrete reason and fails
 closed.
 
+The research API enforces that boundary at decision time. The endpoint
+`POST /api/v1/research/microstructure/experiments/{experiment_id}/decision`
+can record `REJECTED` or `INCONCLUSIVE` decisions with manual reasons, but an
+`APPROVED` decision must include the research-only `statistical_gate` artifact
+from `evaluate_statistical_gate.py`. Approval is rejected unless that artifact
+has `research_only=true`, `order_submission_allowed=false`,
+`execution_authorization=none`, monotonic top-p calibration, positive committed
+prospective shadow evidence, and at least one portfolio result with
+`decision=APPROVED` and every gate condition true. The API stores only the gate
+artifact hash and summary in the append-only decision event; it still does not
+activate Testnet or submit orders.
+
 ## Decision and next evidence gate
 
 The trade-flow-only candidate is rejected. It must not be extended into an audit,

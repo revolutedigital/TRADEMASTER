@@ -38,6 +38,7 @@ from app.schemas.research_experiment import (
     RecordTestnetReleaseRequest,
     ResearchTestnetReleaseResponse,
     ShadowSignalResponse,
+    StatisticalGateEvidence,
     TestnetEligibilityResponse,
 )
 from app.services.data.research_registry import (
@@ -429,11 +430,13 @@ async def record_experiment_decision(
     _user: dict = Depends(require_auth),
 ) -> dict[str, object]:
     try:
+        decision_evidence = _decision_evidence_or_raise(body)
         experiment = await research_registry.record_decision(
             db,
             experiment_id,
             status=body.status,
             reasons=body.reasons,
+            evidence=decision_evidence,
         )
         return await _serialize_experiment(db, experiment)
     except LookupError as error:
@@ -585,6 +588,118 @@ def _serialize_shadow_signal(signal: ResearchShadowSignal) -> ShadowSignalRespon
         stress_net_bps=None if outcome is None else outcome["stress_net_bps"],
         label_sha256=None if outcome is None else outcome["label_sha256"],
         safety=_safety(),
+    )
+
+
+def _decision_evidence_or_raise(
+    body: RecordExperimentDecisionRequest,
+) -> dict[str, object] | None:
+    statistical_gate = body.statistical_gate
+    if body.status != "APPROVED":
+        if statistical_gate is None:
+            return None
+        gate_payload = statistical_gate.model_dump(mode="json")
+        return {
+            "statistical_gate_sha256": _report_sha256(gate_payload),
+            "statistical_gate_decision": _best_statistical_gate_decision(statistical_gate),
+            "order_submission_allowed": False,
+            "execution_authorization": "none",
+        }
+
+    if statistical_gate is None:
+        _raise_approval_gate_conflict(("statistical_gate_artifact_required_for_approval",))
+
+    reasons = _statistical_gate_approval_reasons(statistical_gate)
+    if reasons:
+        _raise_approval_gate_conflict(tuple(reasons))
+
+    gate_payload = statistical_gate.model_dump(mode="json")
+    return {
+        "statistical_gate_sha256": _report_sha256(gate_payload),
+        "statistical_gate_decision": "APPROVED",
+        "attempted_hypotheses": statistical_gate.attempted_hypotheses,
+        "approved_strategy_count": _approved_statistical_gate_count(statistical_gate),
+        "order_submission_allowed": False,
+        "execution_authorization": "none",
+    }
+
+
+def _statistical_gate_approval_reasons(gate: StatisticalGateEvidence) -> list[str]:
+    reasons: list[str] = []
+    if gate.top_p_monotonic is not True:
+        reasons.append("top_p_calibration_not_monotonic")
+        reasons.extend(gate.top_p_monotonic_reasons)
+    if gate.prospective_shadow_positive is not True:
+        reasons.append("prospective_shadow_not_positive")
+        reasons.extend(gate.prospective_shadow_reasons)
+    approved_results = [
+        result for result in gate.results if str(result.get("decision", "")).upper() == "APPROVED"
+    ]
+    if not approved_results:
+        reasons.append("statistical_gate_has_no_approved_portfolio")
+        return reasons
+    if int(gate.decision_counts.get("APPROVED", 0)) < len(approved_results):
+        reasons.append("statistical_gate_decision_counts_do_not_match_results")
+    for index, result in enumerate(approved_results):
+        reasons.extend(_approved_result_reasons(index, result))
+    return reasons
+
+
+def _approved_result_reasons(index: int, result: dict[str, object]) -> list[str]:
+    prefix = f"approved_result_{index}"
+    reasons: list[str] = []
+    if int(result.get("trade_count") or 0) < 200:
+        reasons.append(f"{prefix}_has_fewer_than_200_trades")
+    if int(result.get("distinct_days") or 0) < 20:
+        reasons.append(f"{prefix}_has_fewer_than_20_days")
+    if (_finite_float(result.get("expected_mean_bps")) or 0.0) <= 0:
+        reasons.append(f"{prefix}_expected_mean_not_positive")
+    if (_finite_float(result.get("stress_mean_bps")) or 0.0) <= 0:
+        reasons.append(f"{prefix}_stress_mean_not_positive")
+    lower_bound = _finite_float(result.get("adjusted_lower_confidence_bound_bps"))
+    if lower_bound is None or lower_bound <= 0:
+        reasons.append(f"{prefix}_adjusted_lower_bound_not_positive")
+    pbo = _finite_float(result.get("probability_of_backtest_overfitting"))
+    if pbo is None or pbo > 0.20:
+        reasons.append(f"{prefix}_pbo_above_20_percent")
+    result_reasons = result.get("reasons")
+    if isinstance(result_reasons, list) and result_reasons:
+        reasons.append(f"{prefix}_has_failure_reasons")
+    conditions = result.get("conditions")
+    if not isinstance(conditions, dict) or not conditions:
+        reasons.append(f"{prefix}_conditions_missing")
+    else:
+        failed_conditions = [
+            str(name)
+            for name, passed in conditions.items()
+            if passed is not True
+        ]
+        reasons.extend(f"{prefix}_{name}_failed" for name in failed_conditions)
+    return reasons
+
+
+def _approved_statistical_gate_count(gate: StatisticalGateEvidence) -> int:
+    return sum(1 for result in gate.results if str(result.get("decision", "")).upper() == "APPROVED")
+
+
+def _best_statistical_gate_decision(gate: StatisticalGateEvidence) -> str:
+    if _approved_statistical_gate_count(gate):
+        return "APPROVED"
+    if int(gate.decision_counts.get("REJECTED", 0)) > 0:
+        return "REJECTED"
+    if int(gate.decision_counts.get("INCONCLUSIVE", 0)) > 0:
+        return "INCONCLUSIVE"
+    return "UNKNOWN"
+
+
+def _raise_approval_gate_conflict(reasons: tuple[str, ...]) -> None:
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "reasons": list(reasons),
+            "order_submission_allowed": False,
+            "execution_authorization": "none",
+        },
     )
 
 

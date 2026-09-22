@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from fastapi import Response
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.api.v1 import research
@@ -15,6 +16,7 @@ from app.models.base import Base
 from app.models.research_experiment import (
     ResearchDataUse,
     ResearchExperiment,
+    ResearchExperimentEvent,
     ResearchHypothesisAttempt,
     ResearchShadowSignal,
 )
@@ -883,6 +885,135 @@ async def test_record_experiment_decision_is_terminal_and_research_only(
     assert error.value.status_code == 409
 
 
+async def test_approved_experiment_decision_requires_statistical_gate_artifact(
+    db: AsyncSession,
+) -> None:
+    db.add(
+        ResearchExperiment(
+            id="experiment",
+            name="candidate",
+            status="FROZEN",
+            code_revision="a" * 40,
+            protocol_sha256="b" * 64,
+            product_json="{}",
+            cost_profile_json="{}",
+            approval_gate_json="{}",
+            experiment_sha256="9" * 64,
+            frozen_at=datetime(2026, 3, 1, tzinfo=UTC),
+        )
+    )
+    await db.flush()
+
+    with pytest.raises(research.HTTPException) as error:
+        await research.record_experiment_decision(
+            "experiment",
+            RecordExperimentDecisionRequest(
+                status="APPROVED",
+                reasons=["all_gates_passed"],
+            ),
+            db=db,
+            _user={"sub": "operator"},
+        )
+
+    assert error.value.status_code == 409
+    assert error.value.detail["reasons"] == [
+        "statistical_gate_artifact_required_for_approval"
+    ]
+    assert error.value.detail["order_submission_allowed"] is False
+    assert error.value.detail["execution_authorization"] == "none"
+
+
+async def test_approved_experiment_decision_records_statistical_gate_hash(
+    db: AsyncSession,
+) -> None:
+    db.add(
+        ResearchExperiment(
+            id="experiment",
+            name="candidate",
+            status="FROZEN",
+            code_revision="a" * 40,
+            protocol_sha256="b" * 64,
+            product_json="{}",
+            cost_profile_json="{}",
+            approval_gate_json="{}",
+            experiment_sha256="9" * 64,
+            frozen_at=datetime(2026, 3, 1, tzinfo=UTC),
+        )
+    )
+    await db.flush()
+
+    response = await research.record_experiment_decision(
+        "experiment",
+        RecordExperimentDecisionRequest(
+            status="APPROVED",
+            reasons=["all_statistical_gates_passed"],
+            statistical_gate=_approved_statistical_gate_payload(),
+        ),
+        db=db,
+        _user={"sub": "operator"},
+    )
+
+    assert response["status"] == "APPROVED"
+    assert response["safety"]["order_submission_allowed"] is False
+    assert response["safety"]["execution_authorization"] == "none"
+    result = await db.execute(
+        select(ResearchExperimentEvent)
+        .where(
+            ResearchExperimentEvent.experiment_id == "experiment",
+            ResearchExperimentEvent.kind == "DECISION_RECORDED",
+        )
+        .order_by(ResearchExperimentEvent.id.desc())
+    )
+    event = result.scalars().first()
+    assert event is not None
+    payload = json.loads(event.payload_json)
+    assert payload["status"] == "APPROVED"
+    assert payload["evidence"]["statistical_gate_decision"] == "APPROVED"
+    assert payload["evidence"]["attempted_hypotheses"] == 44
+    assert payload["evidence"]["approved_strategy_count"] == 1
+    assert len(payload["evidence"]["statistical_gate_sha256"]) == 64
+    assert payload["evidence"]["order_submission_allowed"] is False
+    assert payload["evidence"]["execution_authorization"] == "none"
+
+
+async def test_approved_experiment_decision_rejects_failed_statistical_gate(
+    db: AsyncSession,
+) -> None:
+    db.add(
+        ResearchExperiment(
+            id="experiment",
+            name="candidate",
+            status="FROZEN",
+            code_revision="a" * 40,
+            protocol_sha256="b" * 64,
+            product_json="{}",
+            cost_profile_json="{}",
+            approval_gate_json="{}",
+            experiment_sha256="9" * 64,
+            frozen_at=datetime(2026, 3, 1, tzinfo=UTC),
+        )
+    )
+    await db.flush()
+    statistical_gate = _approved_statistical_gate_payload()
+    statistical_gate["results"][0]["conditions"]["positive_stress_mean"] = False
+
+    with pytest.raises(research.HTTPException) as error:
+        await research.record_experiment_decision(
+            "experiment",
+            RecordExperimentDecisionRequest(
+                status="APPROVED",
+                reasons=["all_statistical_gates_passed"],
+                statistical_gate=statistical_gate,
+            ),
+            db=db,
+            _user={"sub": "operator"},
+        )
+
+    assert error.value.status_code == 409
+    assert "approved_result_0_positive_stress_mean_failed" in error.value.detail["reasons"]
+    assert error.value.detail["order_submission_allowed"] is False
+
+
 def _eligible_evidence_payload() -> dict[str, object]:
     safety = {
         "research_only": True,
@@ -913,6 +1044,45 @@ def _eligible_evidence_payload() -> dict[str, object]:
         "status_reasons": [],
         "safety": safety,
         "generated_at": "2026-03-02T00:00:00+00:00",
+    }
+
+
+def _approved_statistical_gate_payload() -> dict[str, object]:
+    return {
+        "research_only": True,
+        "order_submission_allowed": False,
+        "execution_authorization": "none",
+        "attempted_hypotheses": 44,
+        "top_p_monotonic": True,
+        "top_p_monotonic_reasons": [],
+        "prospective_shadow_positive": True,
+        "prospective_shadow_reasons": [],
+        "decision_counts": {"APPROVED": 1},
+        "results": [
+            {
+                "strategy": "policy=trail_12bps-top=5%",
+                "decision": "APPROVED",
+                "trade_count": 240,
+                "distinct_days": 24,
+                "expected_mean_bps": 2.4,
+                "stress_mean_bps": 0.8,
+                "adjusted_one_sided_alpha": 0.0011363636363636363,
+                "adjusted_lower_confidence_bound_bps": 0.2,
+                "probability_of_backtest_overfitting": 0.1,
+                "conditions": {
+                    "three_temporal_folds": True,
+                    "minimum_200_trades": True,
+                    "minimum_20_days": True,
+                    "positive_expected_mean": True,
+                    "adjusted_lower_bound_positive": True,
+                    "positive_stress_mean": True,
+                    "top_p_monotonic": True,
+                    "pbo_at_most_20_percent": True,
+                    "prospective_positive": True,
+                },
+                "reasons": [],
+            }
+        ],
     }
 
 

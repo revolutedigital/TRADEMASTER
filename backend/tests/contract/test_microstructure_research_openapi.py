@@ -151,6 +151,15 @@ def test_microstructure_spec_publishes_terminal_decision_as_metadata_only() -> N
     assert decision_path["post"]["operationId"] == "recordMicrostructureExperimentDecision"
     assert request["additionalProperties"] is False
     assert request["properties"]["status"]["enum"] == ["REJECTED", "INCONCLUSIVE", "APPROVED"]
+    assert "statistical_gate" in request["properties"]
+    gate = spec["components"]["schemas"]["StatisticalGateEvidence"]
+    gate_properties = gate["properties"]
+    assert gate["additionalProperties"] is False
+    assert gate_properties["research_only"]["const"] is True
+    assert gate_properties["order_submission_allowed"]["const"] is False
+    assert gate_properties["execution_authorization"]["const"] == "none"
+    assert gate_properties["attempted_hypotheses"]["minimum"] == 1
+    assert gate_properties["results"]["minItems"] == 1
     assert "order_submission_allowed" not in request["properties"]
     assert "execution_authorization" not in request["properties"]
 

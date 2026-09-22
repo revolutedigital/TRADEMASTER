@@ -262,6 +262,7 @@ class ResearchRegistry:
         *,
         status: str,
         reasons: Iterable[str],
+        evidence: dict[str, Any] | None = None,
     ) -> ResearchExperiment:
         experiment = await self._require_experiment(db, experiment_id, for_update=True)
         normalized_status = status.strip().upper()
@@ -272,6 +273,8 @@ class ResearchRegistry:
         normalized_reasons = [reason.strip() for reason in reasons if reason.strip()]
         if not normalized_reasons:
             raise ResearchRegistryError("A research decision requires at least one reason")
+        if normalized_status == "APPROVED" and not evidence:
+            raise ResearchRegistryError("Approved research decisions require gate evidence")
         experiment.status = normalized_status
         experiment.decision_reasons_json = _canonical_json(normalized_reasons)
         experiment.decided_at = datetime.now(UTC)
@@ -279,7 +282,11 @@ class ResearchRegistry:
             db,
             experiment_id,
             "DECISION_RECORDED",
-            {"status": normalized_status, "reasons": normalized_reasons},
+            {
+                "status": normalized_status,
+                "reasons": normalized_reasons,
+                "evidence": evidence or {},
+            },
         )
         await db.flush()
         return experiment

@@ -20,6 +20,7 @@ from app.services.data.research_registry import (
     FrozenExperimentError,
     PartitionDefinition,
     ResearchRegistry,
+    ResearchRegistryError,
     V1_GATE,
     V1_PRODUCT,
 )
@@ -199,6 +200,12 @@ async def test_decision_is_terminal_and_carries_no_execution_authority(database)
         experiment.id,
         status="APPROVED",
         reasons=["All offline and prospective evidence gates passed."],
+        evidence={
+            "statistical_gate_sha256": "d" * 64,
+            "statistical_gate_decision": "APPROVED",
+            "order_submission_allowed": False,
+            "execution_authorization": "none",
+        },
     )
 
     assert approved.status == "APPROVED"
@@ -209,4 +216,19 @@ async def test_decision_is_terminal_and_carries_no_execution_authority(database)
             experiment.id,
             status="REJECTED",
             reasons=["Cannot overwrite an approval."],
+        )
+
+
+@pytest.mark.asyncio
+async def test_approved_decision_requires_gate_evidence(database) -> None:
+    registry = ResearchRegistry()
+    experiment = await _draft_with_hypothesis(registry, database)
+    await registry.freeze(database, experiment.id)
+
+    with pytest.raises(ResearchRegistryError, match="require gate evidence"):
+        await registry.record_decision(
+            database,
+            experiment.id,
+            status="APPROVED",
+            reasons=["Cannot approve without statistical gate evidence."],
         )

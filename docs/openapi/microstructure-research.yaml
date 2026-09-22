@@ -304,8 +304,11 @@ paths:
       summary: Record the terminal research decision for a frozen experiment.
       description: |
         Stores the gate decision and reasons in the immutable research ledger.
-        This is metadata only: it does not start Testnet, activate a strategy,
-        submit an order, or grant execution authorization.
+        `APPROVED` decisions require the research-only statistical gate artifact
+        emitted by `evaluate_statistical_gate.py`; manual reasons alone can only
+        reject or mark a candidate inconclusive. This is metadata only: it does
+        not start Testnet, activate a strategy, submit an order, or grant
+        execution authorization.
       security:
         - bearerAuth: []
       parameters:
@@ -856,6 +859,62 @@ components:
           items:
             type: string
             minLength: 1
+        statistical_gate:
+          anyOf:
+            - $ref: '#/components/schemas/StatisticalGateEvidence'
+            - type: 'null'
+          description: Required when status is APPROVED; optional audit evidence for REJECTED or INCONCLUSIVE.
+    StatisticalGateEvidence:
+      type: object
+      additionalProperties: false
+      required:
+        - research_only
+        - order_submission_allowed
+        - execution_authorization
+        - attempted_hypotheses
+        - top_p_monotonic
+        - top_p_monotonic_reasons
+        - prospective_shadow_positive
+        - prospective_shadow_reasons
+        - decision_counts
+        - results
+      properties:
+        research_only:
+          type: boolean
+          const: true
+        order_submission_allowed:
+          type: boolean
+          const: false
+        execution_authorization:
+          type: string
+          const: none
+        attempted_hypotheses:
+          type: integer
+          minimum: 1
+        top_p_monotonic:
+          type: boolean
+          description: Must be true for APPROVED decisions.
+        top_p_monotonic_reasons:
+          type: array
+          items: { type: string }
+        prospective_shadow_positive:
+          type: boolean
+          description: Must be true for APPROVED decisions.
+        prospective_shadow_reasons:
+          type: array
+          items: { type: string }
+        decision_counts:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+        results:
+          type: array
+          minItems: 1
+          description: At least one result with `decision=APPROVED` and all conditions true is required for APPROVED decisions.
+          items:
+            type: object
+            additionalProperties: true
     ShadowSignal:
       type: object
       additionalProperties: false

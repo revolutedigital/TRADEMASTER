@@ -254,11 +254,29 @@ class RecordShadowOutcomeRequest(BaseModel):
     label_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
+class StatisticalGateEvidence(BaseModel):
+    """Research-only statistical gate artifact required for APPROVED decisions."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    research_only: Literal[True]
+    order_submission_allowed: Literal[False]
+    execution_authorization: Literal["none"]
+    attempted_hypotheses: int = Field(gt=0)
+    top_p_monotonic: bool
+    top_p_monotonic_reasons: list[str] = Field(default_factory=list)
+    prospective_shadow_positive: bool
+    prospective_shadow_reasons: list[str] = Field(default_factory=list)
+    decision_counts: dict[str, int] = Field(default_factory=dict)
+    results: list[dict[str, Any]] = Field(min_length=1)
+
+
 class RecordExperimentDecisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: Literal["REJECTED", "INCONCLUSIVE", "APPROVED"]
     reasons: list[str] = Field(min_length=1, max_length=50)
+    statistical_gate: StatisticalGateEvidence | None = None
 
     @field_validator("reasons")
     @classmethod

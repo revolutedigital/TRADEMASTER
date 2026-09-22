@@ -14,4 +14,4 @@ COPY . .
 
 RUN mkdir -p /data/microstructure-v1
 
-CMD ["python", "-m", "scripts.research.record_microstructure", "--root", "/data/microstructure-v1"]
+CMD ["python", "-m", "scripts.research.record_microstructure", "--root", "/data/microstructure-v1", "--include-spot-trades"]

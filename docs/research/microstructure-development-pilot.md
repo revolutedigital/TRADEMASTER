@@ -37,7 +37,7 @@ explicitly discarded and is not treated as a market trade.
 The isolated `microstructure-recorder` Railway service began writing to its
 50 GB persistent volume in Singapore at `2026-09-22T03:09:51Z`. No API key is
 present and the process has no order-submission path. The first durability check
-observed all three files growing on the mounted volume:
+observed the original three-stream command growing on the mounted volume:
 
 | Stream | Initial gzip size | Size 25s later |
 | --- | ---: | ---: |
@@ -45,9 +45,13 @@ observed all three files growing on the mounted volume:
 | reconstructed depth | 385,539 bytes | 631,237 bytes |
 | mark price | 11,688 bytes | 20,279 bytes |
 
-The earliest eligible end of the pre-registered 60-complete-day book evidence
-window is `2026-11-21T03:09:51Z`, subject to daily completeness and sequence-gap
-validation. Starting the recorder does not approve a model or activate Testnet.
+After the evidence gate was tightened to require `spot_trade` alongside futures
+`trade`, `depth`, and `mark_price`, the production recorder command was updated
+to start with `--include-spot-trades`. The earlier three-stream clock is
+durability evidence only; it is not an eligible four-stream evidence window. The
+60-complete-day gate starts only after the deployed recorder is running with all
+four required streams and daily audits validate complete UTC days. Starting or
+restarting the recorder does not approve a model or activate Testnet.
 
 A repeatable WAL audit was added at
 `backend/scripts/research/audit_microstructure_wal.py`. It verifies, per UTC day,

@@ -85,7 +85,8 @@ paths:
         target execution mode. TESTNET activation first verifies the latest
         research-only Testnet release snapshot, approved experiment status,
         positive 60-day book/spot WAL evidence, positive 20-to-30-day shadow
-        outcome evidence, and an intact research event hash chain. LIVE
+        outcome evidence, a shadow signal/outcome ledger verified against its
+        hash-chained events, and an intact research event hash chain. LIVE
         activation still does not authorize an order; the live guard must
         separately be ready and armed. LIVE activation also requires a valid
         operator TOTP code.

@@ -5,10 +5,17 @@ import math
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.models.base import Base
-from app.models.research_experiment import ResearchDataUse, ResearchExperiment
+from app.models.research_experiment import (
+    ResearchDataUse,
+    ResearchExperiment,
+    ResearchExperimentEvent,
+)
+from app.repositories.research_experiment_repo import verify_research_event_chain
+from app.services.research.shadow_ledger import research_shadow_ledger_status
 from app.services.research.shadow_recorder import (
     ResearchShadowRecorder,
     ShadowRecorderError,
@@ -79,6 +86,10 @@ async def test_shadow_signal_records_hypothetical_decision_only(db: AsyncSession
     assert signal.would_enter is True
     assert signal.outcome_json is None
     assert not hasattr(signal, "order_id")
+    events = await _events(db)
+    assert [event.kind for event in events] == ["SHADOW_SIGNAL_RECORDED"]
+    assert verify_research_event_chain(events).verified is True
+    assert (await research_shadow_ledger_status(db, "experiment")).verified is True
 
 
 @pytest.mark.asyncio
@@ -231,6 +242,13 @@ async def test_shadow_outcome_is_recorded_once_without_execution_fields(db: Asyn
     assert outcome["order_submission_allowed"] is False
     assert outcome["execution_authorization"] == "none"
     assert "order_id" not in outcome
+    events = await _events(db)
+    assert [event.kind for event in events] == [
+        "SHADOW_SIGNAL_RECORDED",
+        "SHADOW_OUTCOME_RECORDED",
+    ]
+    assert verify_research_event_chain(events).verified is True
+    assert (await research_shadow_ledger_status(db, "experiment")).verified is True
     with pytest.raises(ShadowRecorderError, match="immutable"):
         await recorder.record_outcome(
             db,
@@ -239,6 +257,47 @@ async def test_shadow_outcome_is_recorded_once_without_execution_fields(db: Asyn
             stress_net_bps=1.0,
             label_sha256="e" * 64,
         )
+
+
+@pytest.mark.asyncio
+async def test_shadow_ledger_detects_direct_outcome_tampering(db: AsyncSession) -> None:
+    now = datetime.now(UTC)
+    await seed(
+        db,
+        opened=True,
+        start_at=now - timedelta(hours=1),
+        end_at=now + timedelta(days=20),
+    )
+    recorder = ResearchShadowRecorder()
+    signal = await recorder.record(
+        db,
+        experiment_id="experiment",
+        decision_time=now - timedelta(seconds=121),
+        side="SELL",
+        horizon_seconds=120,
+        probability=0.8,
+        threshold=0.7,
+        model_sha256="d" * 64,
+        feature_vector={"flow": 0.5},
+    )
+    await recorder.record_outcome(
+        db,
+        signal_id=signal.id,
+        expected_net_bps=1.0,
+        stress_net_bps=0.5,
+        label_sha256="e" * 64,
+        now=now,
+    )
+
+    tampered_outcome = json.loads(signal.outcome_json or "{}")
+    tampered_outcome["expected_net_bps"] = 99.0
+    signal.outcome_json = json.dumps(tampered_outcome, sort_keys=True)
+    await db.flush()
+
+    status = await research_shadow_ledger_status(db, "experiment")
+
+    assert status.verified is False
+    assert status.reasons == (f"shadow_signal_{signal.id}_outcome_event_mismatch",)
 
 
 @pytest.mark.asyncio
@@ -304,3 +363,13 @@ async def test_shadow_outcome_rejects_immature_signal_horizon(db: AsyncSession) 
             label_sha256="e" * 64,
             now=now,
         )
+
+
+async def _events(db: AsyncSession) -> list[ResearchExperimentEvent]:
+    result = await db.execute(
+        select(ResearchExperimentEvent).order_by(
+            ResearchExperimentEvent.occurred_at,
+            ResearchExperimentEvent.id,
+        )
+    )
+    return list(result.scalars().all())

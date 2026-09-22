@@ -102,8 +102,11 @@ def test_microstructure_spec_publishes_metadata_only_testnet_eligibility() -> No
     assert "prospective_shadow_outcome_days" in eligibility["required"]
     assert "prospective_shadow_outcome_signal_count" in eligibility["required"]
     assert "prospective_shadow_positive" in eligibility["required"]
+    assert "shadow_ledger_verified" in eligibility["required"]
+    assert "shadow_ledger_reasons" in eligibility["required"]
     assert "approved_statistical_gate_verified" in eligibility["required"]
     assert "book_evidence_eligible" in eligibility["required"]
+    assert properties["shadow_ledger_verified"]["type"] == "boolean"
     assert properties["order_submission_allowed"]["const"] is False
     assert properties["execution_authorization"]["const"] == "none"
 

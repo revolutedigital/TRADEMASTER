@@ -495,7 +495,8 @@ The separate
 endpoint records the explicit manual research release only after the experiment
 is already `APPROVED` with a verified statistical-gate decision event, the
 60-day book gate passes, the prospective shadow block is complete and positive,
-and there are no unresolved evidence failures. It is idempotent and stores a
+the shadow signal/outcome ledger matches the hash-chained events, and there are
+no unresolved evidence failures. It is idempotent and stores a
 snapshot hashable release record; it still does not activate Testnet, start a
 strategy, load credentials, or submit orders. After that record exists, the
 eligibility checklist may return
@@ -507,16 +508,19 @@ Runtime strategy activation now consumes that release gate too:
 any TESTNET strategy unless the latest research-only release snapshot is intact,
 the experiment is still `APPROVED`, the event hash chain verifies, book evidence
 has the 60-day eligible window, prospective shadow has 20-to-30 days of complete
-positive outcomes, the statistical gate was verified, and unresolved failures are
-zero. Walk-forward strategy evidence alone is therefore not enough to unlock
-Testnet runtime exposure.
+positive outcomes, the shadow ledger was verified against its hash-chained
+events, the statistical gate was verified, and unresolved failures are zero.
+Walk-forward strategy evidence alone is therefore not enough to unlock Testnet
+runtime exposure. Older release snapshots without `shadow_ledger_verified=true`
+fail closed at runtime.
 
 The experiment report endpoint,
 `GET /api/v1/research/microstructure/experiments/{experiment_id}/report`, now
 returns concrete report metrics instead of an empty placeholder: experiment hash,
 book-evidence availability/streak/reasons, shadow signal/outcome counts,
 expected/stress mean bps, shadow completeness/positivity, and the Testnet boundary
-flags. It also reports the immutable experiment-event hash chain with
+flags. It also reports `shadow_ledger` counts/verification/reasons and the
+immutable experiment-event hash chain with
 `event_count`, `verified`, `latest_event_sha256`, and failure `reasons`; a broken
 chain prevents `approved_statistical_gate_verified=true`. It also emits a
 deterministic `artifact_sha256` for that report payload.
@@ -543,6 +547,12 @@ Shadow runners can append evidence through the research API:
 
 Both endpoints are metadata-only and return
 `order_submission_allowed=false` and `execution_authorization=none`.
+They also append hash-chained research events:
+`SHADOW_SIGNAL_RECORDED` for the hypothetical decision and
+`SHADOW_OUTCOME_RECORDED` for the replay settlement. Testnet eligibility does
+not trust mutable `research_shadow_signals` rows alone; every shadow row and
+outcome must match its event-chain payload, or the gate returns
+`shadow_ledger_unverified` with the concrete mismatch/missing-event reasons.
 
 When the complete event path for a shadow signal is available, settlement should
 be produced by `app.services.research.shadow_outcome_settlement`: it replays the

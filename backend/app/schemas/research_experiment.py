@@ -172,6 +172,8 @@ class TestnetEligibilityResponse(BaseModel):
     prospective_shadow_expected_mean_bps: float | None
     prospective_shadow_stress_mean_bps: float | None
     prospective_shadow_positive: bool
+    shadow_ledger_verified: bool
+    shadow_ledger_reasons: list[str]
     approved_statistical_gate_verified: bool
     unresolved_failures: int = Field(ge=0)
     explicit_testnet_release: bool

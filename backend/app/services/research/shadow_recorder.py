@@ -15,7 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.research_experiment import (
     ResearchDataUse,
     ResearchExperiment,
+    ResearchExperimentEvent,
     ResearchShadowSignal,
+)
+from app.repositories.research_experiment_repo import (
+    ResearchExperimentRepository,
+    research_experiment_repository,
 )
 
 
@@ -30,6 +35,12 @@ class ShadowRecorderError(ValueError):
 
 class ResearchShadowRecorder:
     """Records what a frozen model would do, never what an exchange should do."""
+
+    def __init__(
+        self,
+        repository: ResearchExperimentRepository | None = None,
+    ) -> None:
+        self._repository = repository or research_experiment_repository
 
     async def record(
         self,
@@ -111,6 +122,15 @@ class ResearchShadowRecorder:
         )
         db.add(signal)
         await db.flush()
+        await self._repository.append_event(
+            db,
+            ResearchExperimentEvent(
+                experiment_id=experiment_id,
+                kind="SHADOW_SIGNAL_RECORDED",
+                payload_json=_canonical_json(shadow_signal_event_payload(signal)),
+                occurred_at=_normalize_utc(signal.recorded_at),
+            ),
+        )
         return signal
 
     async def record_outcome(
@@ -128,7 +148,10 @@ class ResearchShadowRecorder:
             raise LookupError("research shadow signal was not found")
         if signal.outcome_json is not None:
             raise ShadowRecorderError("shadow outcome is immutable once recorded")
-        recorded_at = _normalize_utc(now or datetime.now(UTC))
+        recorded_at = max(
+            _normalize_utc(now or datetime.now(UTC)),
+            _normalize_utc(signal.recorded_at),
+        )
         horizon_end = _normalize_utc(signal.decision_time) + timedelta(
             seconds=signal.horizon_seconds
         )
@@ -140,19 +163,65 @@ class ResearchShadowRecorder:
             raise ShadowRecorderError("shadow outcome bps must be finite")
         if not SHA256.fullmatch(label_sha256):
             raise ShadowRecorderError("label_sha256 must be a lowercase SHA-256")
-        signal.outcome_json = _canonical_json(
-            {
-                "expected_net_bps": expected_net_bps,
-                "stress_net_bps": stress_net_bps,
-                "label_sha256": label_sha256,
-                "recorded_at": recorded_at.isoformat(),
-                "research_only": True,
-                "order_submission_allowed": False,
-                "execution_authorization": "none",
-            }
-        )
+        outcome_payload = {
+            "expected_net_bps": expected_net_bps,
+            "stress_net_bps": stress_net_bps,
+            "label_sha256": label_sha256,
+            "recorded_at": recorded_at.isoformat(),
+            "research_only": True,
+            "order_submission_allowed": False,
+            "execution_authorization": "none",
+        }
+        signal.outcome_json = _canonical_json(outcome_payload)
         await db.flush()
+        await self._repository.append_event(
+            db,
+            ResearchExperimentEvent(
+                experiment_id=signal.experiment_id,
+                kind="SHADOW_OUTCOME_RECORDED",
+                payload_json=_canonical_json(shadow_outcome_event_payload(signal, outcome_payload)),
+                occurred_at=recorded_at,
+            ),
+        )
         return signal
+
+
+def shadow_signal_event_payload(signal: ResearchShadowSignal) -> dict[str, object]:
+    """Stable event payload proving a shadow decision row was not execution intent."""
+    return {
+        "signal_id": signal.id,
+        "decision_time": _normalize_utc(signal.decision_time).isoformat(),
+        "recorded_at": _normalize_utc(signal.recorded_at).isoformat(),
+        "side": signal.side,
+        "horizon_seconds": signal.horizon_seconds,
+        "probability": signal.probability,
+        "threshold": signal.threshold,
+        "would_enter": signal.would_enter,
+        "model_sha256": signal.model_sha256,
+        "feature_vector_sha256": signal.feature_vector_sha256,
+        "research_only": True,
+        "order_submission_allowed": False,
+        "execution_authorization": "none",
+    }
+
+
+def shadow_outcome_event_payload(
+    signal: ResearchShadowSignal,
+    outcome_payload: dict[str, object],
+) -> dict[str, object]:
+    """Stable event payload proving a settled outcome is replay-only evidence."""
+    return {
+        "signal_id": signal.id,
+        "decision_time": _normalize_utc(signal.decision_time).isoformat(),
+        "horizon_seconds": signal.horizon_seconds,
+        "expected_net_bps": outcome_payload.get("expected_net_bps"),
+        "stress_net_bps": outcome_payload.get("stress_net_bps"),
+        "label_sha256": outcome_payload.get("label_sha256"),
+        "recorded_at": outcome_payload.get("recorded_at"),
+        "research_only": True,
+        "order_submission_allowed": False,
+        "execution_authorization": "none",
+    }
 
 
 def _sha256(value: Any) -> str:

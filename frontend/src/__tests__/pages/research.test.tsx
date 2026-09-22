@@ -84,6 +84,8 @@ const testnetEligibility = {
   prospective_shadow_expected_mean_bps: 3.2,
   prospective_shadow_stress_mean_bps: 1.1,
   prospective_shadow_positive: true,
+  shadow_ledger_verified: false,
+  shadow_ledger_reasons: ["shadow_signal_7_outcome_event_mismatch"],
   approved_statistical_gate_verified: false,
   unresolved_failures: 0,
   explicit_testnet_release: false,
@@ -118,6 +120,14 @@ const experimentReport = {
       stress_mean_bps: 1.1,
       positive: true,
       complete: true,
+    },
+    shadow_ledger: {
+      signal_count: 18,
+      outcome_count: 18,
+      signal_event_count: 18,
+      outcome_event_count: 17,
+      verified: false,
+      reasons: ["shadow_signal_7_outcome_event_mismatch"],
     },
     hypothesis_ledger: {
       attempt_count: 1,
@@ -175,10 +185,13 @@ describe("ResearchPage", () => {
     expect(screen.getAllByText(/mark_price_gap_detected/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/approved_statistical_gate_evidence_missing/)).toBeInTheDocument();
     expect(screen.getByText(/prospective_shadow_signal_outcomes_incomplete/)).toBeInTheDocument();
+    expect(screen.getAllByText(/shadow_signal_7_outcome_event_mismatch/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/statistical_gate_decision_counts_do_not_match_results/)).toBeInTheDocument();
     expect(screen.getByText(/event_2_hash_mismatch/)).toBeInTheDocument();
     expect(screen.getByText("Ledger imutável")).toBeInTheDocument();
     expect(screen.getByText("Eventos ledger")).toBeInTheDocument();
+    expect(screen.getByText("Shadow ledger")).toBeInTheDocument();
+    expect(screen.getByText("Ledger shadow")).toBeInTheDocument();
     expect(screen.getByText("abcdef1234…")).toBeInTheDocument();
     expect(screen.getByText("Sem release")).toBeInTheDocument();
     expect(screen.getByText("Incompleto")).toBeInTheDocument();

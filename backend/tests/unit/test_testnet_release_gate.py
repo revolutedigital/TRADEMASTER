@@ -252,6 +252,40 @@ async def test_runtime_testnet_readiness_rejects_broken_event_chain() -> None:
     assert "research_event_chain_unverified" in readiness.reasons
 
 
+@pytest.mark.asyncio
+async def test_runtime_testnet_readiness_rejects_release_without_shadow_ledger() -> None:
+    database = AsyncMock()
+    legacy_snapshot = _eligible_release_snapshot()
+    legacy_snapshot.pop("shadow_ledger")
+    legacy_snapshot.pop("shadow_ledger_verified")
+    legacy_snapshot.pop("shadow_ledger_reasons")
+    release = SimpleNamespace(
+        release_sha256="c" * 64,
+        evidence_snapshot_json=json.dumps(legacy_snapshot),
+    )
+    approved_experiment = experiment("APPROVED")
+    approved_experiment.experiment_sha256 = "9" * 64
+    result = MagicMock()
+    result.first.return_value = SimpleNamespace(tuple=lambda: (release, approved_experiment))
+    database.execute = AsyncMock(return_value=result)
+
+    with patch(
+        "app.services.research.testnet_release_gate.research_experiment_repository.event_chain_status",
+        new=AsyncMock(
+            return_value=ResearchEventChainStatus(
+                event_count=3,
+                verified=True,
+                latest_event_sha256="a" * 64,
+                reasons=(),
+            )
+        ),
+    ):
+        readiness = await research_testnet_release_readiness(database)
+
+    assert readiness.ready is False
+    assert "release_snapshot_shadow_ledger_unverified" in readiness.reasons
+
+
 def _eligible_release_snapshot() -> dict[str, object]:
     return {
         "experiment_status": "APPROVED",
@@ -267,6 +301,16 @@ def _eligible_release_snapshot() -> dict[str, object]:
         "prospective_shadow_expected_mean_bps": 1.2,
         "prospective_shadow_stress_mean_bps": 0.4,
         "prospective_shadow_positive": True,
+        "shadow_ledger": {
+            "signal_count": 20,
+            "outcome_count": 20,
+            "signal_event_count": 20,
+            "outcome_event_count": 20,
+            "verified": True,
+            "reasons": [],
+        },
+        "shadow_ledger_verified": True,
+        "shadow_ledger_reasons": [],
         "approved_statistical_gate_verified": True,
         "unresolved_failures": 0,
         "generated_at": "2026-03-22T12:00:00+00:00",

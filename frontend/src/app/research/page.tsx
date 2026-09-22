@@ -65,6 +65,8 @@ interface TestnetEligibility {
   prospective_shadow_expected_mean_bps: number | null;
   prospective_shadow_stress_mean_bps: number | null;
   prospective_shadow_positive: boolean;
+  shadow_ledger_verified: boolean;
+  shadow_ledger_reasons: string[];
   approved_statistical_gate_verified: boolean;
   unresolved_failures: number;
   explicit_testnet_release: boolean;
@@ -96,6 +98,14 @@ interface ExperimentReport {
       stress_mean_bps?: number | null;
       positive?: boolean;
       complete?: boolean;
+    };
+    shadow_ledger?: {
+      signal_count?: number;
+      outcome_count?: number;
+      signal_event_count?: number;
+      outcome_event_count?: number;
+      verified?: boolean;
+      reasons?: string[];
     };
     hypothesis_ledger?: {
       attempt_count?: number;
@@ -306,9 +316,11 @@ function ExperimentReportPanel({
   const book = report?.metrics.book_evidence;
   const testnetBoundary = report?.metrics.testnet_boundary;
   const eventChain = report?.metrics.experiment_event_chain;
+  const shadowLedger = report?.metrics.shadow_ledger;
   const reportReady = (
     book?.eligible === true
     && shadow?.positive === true
+    && shadowLedger?.verified === true
     && testnetBoundary?.approved_statistical_gate_verified === true
     && eventChain?.verified === true
   );
@@ -320,6 +332,7 @@ function ExperimentReportPanel({
     report?.decision_reasons,
     book?.status_reasons,
     book?.gate_reasons,
+    shadowLedger?.reasons,
     eventChain?.reasons,
   );
 
@@ -351,6 +364,8 @@ function ExperimentReportPanel({
             <GateMetric label="Ledger imutável" value={eventChain?.verified ? "ok" : "quebrado"} />
             <GateMetric label="Eventos ledger" value={eventChain?.event_count ?? 0} />
             <GateMetric label="Último evento" value={shortHash(eventChain?.latest_event_sha256)} />
+            <GateMetric label="Ledger shadow" value={shadowLedger?.verified ? "ok" : "quebrado"} />
+            <GateMetric label="Eventos shadow" value={`${shadowLedger?.outcome_event_count ?? 0}/${shadowLedger?.signal_event_count ?? 0}`} />
             <GateMetric label="Shadow" value={`${shadow?.outcome_signal_count ?? 0}/${shadow?.signal_count ?? 0}`} />
             <GateMetric label="Expected" value={formatBps(shadow?.expected_mean_bps)} />
             <GateMetric label="Stress" value={formatBps(shadow?.stress_mean_bps)} />
@@ -385,9 +400,11 @@ function TestnetEligibilityPanel({
   const checklistReady = status?.eligible === true;
   const bookGateReady = status?.book_evidence_eligible === true;
   const statGateReady = status?.approved_statistical_gate_verified === true;
+  const shadowLedgerReady = status?.shadow_ledger_verified === true;
   const visibleReasons = collectReasons(
     error,
     status?.reasons,
+    status?.shadow_ledger_reasons,
     hasExperiments ? null : "nenhum_experimento_registrado",
   );
   const badgeLabel = checklistReady
@@ -420,6 +437,7 @@ function TestnetEligibilityPanel({
           <div className="grid min-w-72 grid-cols-2 gap-3 text-sm md:grid-cols-5">
             <GateMetric label="Book gate" value={bookGateReady ? "ok" : "travado"} />
             <GateMetric label="Stat gate" value={statGateReady ? "ok" : "sem hash"} />
+            <GateMetric label="Shadow ledger" value={shadowLedgerReady ? "ok" : "quebrado"} />
             <GateMetric label="Book" value={`${status?.book_evidence_contiguous_days ?? 0}/60`} />
             <GateMetric label="Shadow" value={`${status?.prospective_shadow_days ?? 0}/20`} />
             <GateMetric

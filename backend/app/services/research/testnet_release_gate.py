@@ -169,6 +169,17 @@ def _release_snapshot_rejection_reasons(
         reasons.append("release_snapshot_shadow_signal_outcomes_incomplete")
     if snapshot.get("prospective_shadow_positive") is not True:
         reasons.append("release_snapshot_shadow_not_positive")
+    if snapshot.get("shadow_ledger_verified") is not True:
+        reasons.append("release_snapshot_shadow_ledger_unverified")
+        shadow_ledger = snapshot.get("shadow_ledger")
+        if isinstance(shadow_ledger, dict):
+            ledger_reasons = shadow_ledger.get("reasons")
+            if isinstance(ledger_reasons, list):
+                reasons.extend(
+                    f"release_snapshot_{reason}"
+                    for reason in ledger_reasons
+                    if isinstance(reason, str)
+                )
     expected_mean = _float_value(snapshot.get("prospective_shadow_expected_mean_bps"))
     stress_mean = _float_value(snapshot.get("prospective_shadow_stress_mean_bps"))
     if expected_mean <= 0:

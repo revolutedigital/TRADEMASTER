@@ -20,7 +20,10 @@ from app.models.research_experiment import (
     ResearchHypothesisAttempt,
     ResearchShadowSignal,
 )
-from app.repositories.research_experiment_repo import build_research_event_hash
+from app.repositories.research_experiment_repo import (
+    build_research_event_hash,
+    research_experiment_repository,
+)
 from app.schemas.research_experiment import (
     RecordExperimentDecisionRequest,
     RecordShadowOutcomeRequest,
@@ -28,6 +31,10 @@ from app.schemas.research_experiment import (
     RecordTestnetReleaseRequest,
 )
 from app.services.market.microstructure_wal_audit import build_evidence_gate_status
+from app.services.research.shadow_recorder import (
+    shadow_outcome_event_payload,
+    shadow_signal_event_payload,
+)
 
 
 @pytest.fixture
@@ -415,6 +422,7 @@ async def test_testnet_eligibility_remains_metadata_without_explicit_release(
             )
         )
     await db.flush()
+    await _append_shadow_ledger_events(db)
 
     response = await research.get_testnet_eligibility(
         "experiment",
@@ -438,6 +446,63 @@ async def test_testnet_eligibility_remains_metadata_without_explicit_release(
     assert response.order_submission_allowed is False
     assert response.execution_authorization == "none"
     assert response.reasons == ["explicit_testnet_release_is_missing"]
+
+
+async def test_testnet_eligibility_rejects_shadow_rows_without_event_ledger(
+    tmp_path: Path,
+    monkeypatch,
+    db: AsyncSession,
+) -> None:
+    artifact = tmp_path / "evidence-gate-status.json"
+    artifact.write_text(json.dumps(_eligible_evidence_payload()), encoding="utf-8")
+    monkeypatch.setattr(
+        research.settings,
+        "microstructure_evidence_status_path",
+        str(artifact),
+    )
+    db.add(
+        ResearchExperiment(
+            id="experiment",
+            name="candidate",
+            status="APPROVED",
+            code_revision="a" * 40,
+            protocol_sha256="b" * 64,
+            product_json="{}",
+            cost_profile_json="{}",
+            approval_gate_json="{}",
+        )
+    )
+    db.add(_approved_decision_event())
+    start = datetime(2026, 3, 2, tzinfo=UTC)
+    for day_offset in range(20):
+        db.add(
+            ResearchShadowSignal(
+                experiment_id="experiment",
+                decision_time=start + timedelta(days=day_offset),
+                recorded_at=start + timedelta(days=day_offset, seconds=1),
+                side="BUY",
+                horizon_seconds=300,
+                probability=0.8,
+                threshold=0.7,
+                would_enter=True,
+                model_sha256="d" * 64,
+                feature_vector_sha256=f"{day_offset:064x}"[-64:],
+                outcome_json=_safe_shadow_outcome_json(),
+            )
+        )
+    await db.flush()
+
+    response = await research.get_testnet_eligibility(
+        "experiment",
+        db=db,
+        _user={"sub": "operator"},
+    )
+
+    assert response.eligible is False
+    assert response.prospective_shadow_positive is True
+    assert response.shadow_ledger_verified is False
+    assert "shadow_ledger_unverified" in response.reasons
+    assert "shadow_signal_1_event_missing" in response.reasons
 
 
 async def test_testnet_eligibility_rejects_legacy_approved_status_without_gate_event(
@@ -781,6 +846,7 @@ async def test_research_testnet_release_requires_eligible_book_gate_even_with_60
             )
         )
     await db.flush()
+    await _append_shadow_ledger_events(db)
 
     with pytest.raises(research.HTTPException) as error:
         await research.record_testnet_release(
@@ -908,6 +974,7 @@ async def test_research_testnet_release_makes_checklist_eligible_without_executi
             )
         )
     await db.flush()
+    await _append_shadow_ledger_events(db)
 
     release_response = Response()
     release = await research.record_testnet_release(
@@ -1649,3 +1716,53 @@ async def _seed_shadow_experiment(db: AsyncSession, *, opened: bool) -> None:
         )
     )
     await db.flush()
+
+
+async def _append_shadow_ledger_events(
+    db: AsyncSession,
+    experiment_id: str = "experiment",
+) -> None:
+    signals = await research_experiment_repository.list_shadow_signals(db, experiment_id)
+    event_rows: list[tuple[datetime, str, dict[str, object]]] = []
+    for signal in signals:
+        event_rows.append(
+            (
+                _as_utc(signal.recorded_at),
+                "SHADOW_SIGNAL_RECORDED",
+                shadow_signal_event_payload(signal),
+            )
+        )
+        if signal.outcome_json is None:
+            continue
+        outcome_payload = json.loads(signal.outcome_json)
+        event_rows.append(
+            (
+                _parse_test_datetime(str(outcome_payload["recorded_at"])),
+                "SHADOW_OUTCOME_RECORDED",
+                shadow_outcome_event_payload(signal, outcome_payload),
+            )
+        )
+
+    for occurred_at, kind, payload in sorted(event_rows, key=lambda row: row[0]):
+        await research_experiment_repository.append_event(
+            db,
+            ResearchExperimentEvent(
+                experiment_id=experiment_id,
+                kind=kind,
+                payload_json=json.dumps(
+                    payload,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ),
+                occurred_at=occurred_at,
+            ),
+        )
+
+
+def _parse_test_datetime(value: str) -> datetime:
+    return _as_utc(datetime.fromisoformat(value.replace("Z", "+00:00")))
+
+
+def _as_utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

@@ -87,6 +87,11 @@ def test_lot_conversions_and_flooring_never_round_up() -> None:
     assert floor_to_lot_step(-5, EURUSD) == 0
 
 
+def test_floor_to_lot_step_tolerates_float_boundaries_without_under_sizing() -> None:
+    assert floor_to_lot_step(11_999.999999999998, EURUSD) == 12_000
+    assert floor_to_lot_step(11_999.99, EURUSD) == 11_000
+
+
 def test_sizing_takes_the_largest_lot_inside_the_risk_budget() -> None:
     # $5,000 at 1% risk is $50; a 25 pip stop risks $2.50 per 0.10 lot? Check with per-pip value.
     result = size_for_risk(

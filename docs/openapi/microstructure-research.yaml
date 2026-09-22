@@ -624,6 +624,8 @@ components:
         - prospective_shadow_expected_mean_bps
         - prospective_shadow_stress_mean_bps
         - prospective_shadow_positive
+        - shadow_ledger_verified
+        - shadow_ledger_reasons
         - approved_statistical_gate_verified
         - unresolved_failures
         - explicit_testnet_release
@@ -672,9 +674,16 @@ components:
           description: Stress mean over counted safe replay outcomes only; null when any outcome is missing or invalid.
         prospective_shadow_positive:
           type: boolean
+        shadow_ledger_verified:
+          type: boolean
+          description: True only when every shadow signal/outcome row is represented by matching hash-chained research events.
+        shadow_ledger_reasons:
+          type: array
+          items: { type: string }
+          description: Fail-closed reasons when the shadow signal/outcome rows do not match the immutable event ledger.
         approved_statistical_gate_verified:
           type: boolean
-          description: True only when the latest APPROVED decision event carries statistical gate hash evidence and research-only safety fields.
+          description: True only when the latest APPROVED decision event carries statistical gate hash evidence, research-only safety fields, and the event chain is intact.
         unresolved_failures:
           type: integer
           minimum: 0

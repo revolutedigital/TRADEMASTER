@@ -111,7 +111,11 @@ def floor_to_lot_step(units: float, instrument: Instrument) -> int:
     if units <= 0:
         return 0
     step_units = round(instrument.lot_step * STANDARD_LOT_UNITS)
-    return int(units // step_units) * step_units
+    quotient = units / step_units
+    nearest_step_count = round(quotient)
+    if math.isclose(quotient, nearest_step_count, rel_tol=1e-12, abs_tol=1e-12):
+        return nearest_step_count * step_units
+    return math.floor(quotient) * step_units
 
 
 @dataclass(frozen=True)

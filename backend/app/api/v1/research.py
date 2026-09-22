@@ -54,6 +54,7 @@ from app.services.data.research_registry import (
     research_registry,
 )
 from app.services.market.microstructure_wal_audit import build_evidence_gate_status
+from app.services.research.shadow_ledger import research_shadow_ledger_status
 from app.services.research.shadow_recorder import ShadowRecorderError, research_shadow_recorder
 from app.services.research.testnet_release_gate import evaluate_testnet_eligibility
 
@@ -101,6 +102,7 @@ async def get_testnet_eligibility(
         experiment_id,
     )
     shadow_summary = _summarize_shadow_outcomes(shadow_signals)
+    shadow_ledger = await research_shadow_ledger_status(db, experiment_id)
     unresolved_failures = len(evidence_status.status_reasons)
     testnet_release = await _get_testnet_release(db, experiment_id)
     explicit_testnet_release = testnet_release is not None
@@ -127,11 +129,16 @@ async def get_testnet_eligibility(
         unresolved_failures=unresolved_failures,
         explicit_testnet_release=explicit_testnet_release,
     )
+    eligibility_reasons = _eligibility_reasons_with_shadow_ledger(
+        eligibility_reasons=list(eligibility.reasons),
+        shadow_ledger_verified=shadow_ledger.verified,
+        shadow_ledger_reasons=shadow_ledger.reasons,
+    )
     return TestnetEligibilityResponse(
         experiment_id=experiment.id,
         experiment_status=experiment.status,
-        eligible=eligibility.eligible,
-        reasons=list(eligibility.reasons),
+        eligible=eligibility.eligible and shadow_ledger.verified,
+        reasons=eligibility_reasons,
         book_evidence_eligible=eligibility.book_evidence_eligible,
         book_evidence_contiguous_days=eligibility.book_evidence_contiguous_days,
         prospective_shadow_days=eligibility.prospective_shadow_days,
@@ -141,6 +148,8 @@ async def get_testnet_eligibility(
         prospective_shadow_expected_mean_bps=shadow_summary["expected_mean_bps"],
         prospective_shadow_stress_mean_bps=shadow_summary["stress_mean_bps"],
         prospective_shadow_positive=eligibility.prospective_shadow_positive,
+        shadow_ledger_verified=shadow_ledger.verified,
+        shadow_ledger_reasons=list(shadow_ledger.reasons),
         approved_statistical_gate_verified=eligibility.approved_statistical_gate_verified,
         unresolved_failures=unresolved_failures,
         explicit_testnet_release=explicit_testnet_release,
@@ -177,6 +186,7 @@ async def record_testnet_release(
     evidence_status = await _read_evidence_gate_status()
     shadow_signals = await research_experiment_repository.list_shadow_signals(db, experiment_id)
     shadow_summary = _summarize_shadow_outcomes(shadow_signals)
+    shadow_ledger = await research_shadow_ledger_status(db, experiment_id)
     unresolved_failures = len(evidence_status.status_reasons)
     approved_statistical_gate_verified = await _approved_statistical_gate_verified(
         db,
@@ -201,11 +211,16 @@ async def record_testnet_release(
         unresolved_failures=unresolved_failures,
         explicit_testnet_release=True,
     )
-    if not eligibility.eligible:
+    eligibility_reasons = _eligibility_reasons_with_shadow_ledger(
+        eligibility_reasons=list(eligibility.reasons),
+        shadow_ledger_verified=shadow_ledger.verified,
+        shadow_ledger_reasons=shadow_ledger.reasons,
+    )
+    if not eligibility.eligible or not shadow_ledger.verified:
         raise HTTPException(
             status_code=409,
             detail={
-                "reasons": list(eligibility.reasons),
+                "reasons": eligibility_reasons,
                 "order_submission_allowed": False,
                 "execution_authorization": "none",
             },
@@ -216,6 +231,7 @@ async def record_testnet_release(
         experiment=experiment,
         evidence_status=evidence_status,
         shadow_summary=shadow_summary,
+        shadow_ledger=shadow_ledger.to_dict(),
         unresolved_failures=unresolved_failures,
         approved_statistical_gate_verified=approved_statistical_gate_verified,
         generated_at=release_time,
@@ -490,6 +506,7 @@ async def get_experiment_report(
     hypotheses = await research_experiment_repository.list_hypotheses(db, experiment.id)
     shadow_signals = await research_experiment_repository.list_shadow_signals(db, experiment.id)
     shadow_summary = _summarize_shadow_outcomes(shadow_signals)
+    shadow_ledger = await research_shadow_ledger_status(db, experiment.id)
     testnet_release = await _get_testnet_release(db, experiment.id)
     explicit_testnet_release = testnet_release is not None
     event_chain = await research_experiment_repository.event_chain_status(db, experiment.id)
@@ -519,6 +536,7 @@ async def get_experiment_report(
                 and shadow_summary["outcome_days"] == shadow_summary["decision_days"]
             ),
         },
+        "shadow_ledger": shadow_ledger.to_dict(),
         "hypothesis_ledger": {
             "attempt_count": len(hypotheses),
             "attempts": [
@@ -883,6 +901,7 @@ def _testnet_release_evidence_snapshot(
     experiment: ResearchExperiment,
     evidence_status: EvidenceGateStatusResponse,
     shadow_summary: dict[str, object],
+    shadow_ledger: dict[str, object],
     unresolved_failures: int,
     approved_statistical_gate_verified: bool,
     generated_at: datetime,
@@ -907,12 +926,30 @@ def _testnet_release_evidence_snapshot(
         "prospective_shadow_expected_mean_bps": shadow_summary["expected_mean_bps"],
         "prospective_shadow_stress_mean_bps": shadow_summary["stress_mean_bps"],
         "prospective_shadow_positive": shadow_summary["positive"],
+        "shadow_ledger": shadow_ledger,
+        "shadow_ledger_verified": shadow_ledger.get("verified") is True,
+        "shadow_ledger_reasons": shadow_ledger.get("reasons", []),
         "approved_statistical_gate_verified": approved_statistical_gate_verified,
         "unresolved_failures": unresolved_failures,
         "generated_at": generated_at.isoformat(),
         "order_submission_allowed": False,
         "execution_authorization": "none",
     }
+
+
+def _eligibility_reasons_with_shadow_ledger(
+    *,
+    eligibility_reasons: list[str],
+    shadow_ledger_verified: bool,
+    shadow_ledger_reasons: tuple[str, ...],
+) -> list[str]:
+    if shadow_ledger_verified:
+        return eligibility_reasons
+    return [
+        *eligibility_reasons,
+        "shadow_ledger_unverified",
+        *shadow_ledger_reasons,
+    ]
 
 
 def _parse_shadow_outcome(signal: ResearchShadowSignal) -> dict[str, object] | None:

@@ -266,6 +266,10 @@ feature hash match. It has no exchange adapter and no order-submission path.
 The online feature engine keeps futures/perp trades and spot trades in separate
 state, so spot auxiliary columns (`spot_*`, `spot_perp_*`) match the offline
 research vectorization instead of contaminating the primary perp flow.
+For dry-run replay of chronological `MicrostructureEvent` streams before any
+database write, use
+`app.services.research.online_shadow_policy.score_online_frozen_top_p_shadow_events`;
+it produces the same frozen top-p decision objects without touching the ledger.
 
 For partition batches, use the dry-run-first CLI. Without `--commit`, it only
 scores the frozen policy and prints the selected shadow entries:

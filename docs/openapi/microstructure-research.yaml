@@ -1,0 +1,413 @@
+openapi: 3.1.0
+info:
+  title: TradeMaster Microstructure Research API
+  version: 1.0.0
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+  description: |
+    Research-only control plane for immutable BTCUSDT microstructure experiments.
+    It records experiment configuration, freezes preregistrations, and exposes
+    evidence. It never submits an order, activates a strategy, starts a trading
+    engine, changes execution mode, arms LIVE, or authorizes TESTNET or LIVE.
+servers:
+  - url: /api/v1
+paths:
+  /research/microstructure/experiments:
+    post:
+      operationId: createMicrostructureExperiment
+      summary: Create a mutable draft experiment from the bounded v1 protocol.
+      description: |
+        Creates metadata only. Market outcomes may not be opened until the draft
+        has a complete dataset manifest and cost profile and is frozen.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateExperimentRequest'
+      responses:
+        '201':
+          description: Draft experiment created without starting a research job.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Experiment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: The dataset or prospective partition conflicts with burned-data lineage.
+    get:
+      operationId: listMicrostructureExperiments
+      summary: List experiment metadata and evidence status.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/ExperimentStatus'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: Experiments ordered from newest to oldest.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Experiment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /research/microstructure/experiments/{experiment_id}:
+    get:
+      operationId: getMicrostructureExperiment
+      summary: Read one experiment and its immutable lineage identifiers.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ExperimentId'
+      responses:
+        '200':
+          description: Experiment metadata and current research status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Experiment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /research/microstructure/experiments/{experiment_id}/freeze:
+    post:
+      operationId: freezeMicrostructureExperiment
+      summary: Freeze a complete draft before opening protected outcomes.
+      description: |
+        Freezing is irreversible. It creates a content hash over the protocol,
+        code revision, dataset manifest, cost profile, latency profile, temporal
+        partitions, candidate universe, and approval gate. It does not start a
+        job and grants no execution permission.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ExperimentId'
+      responses:
+        '200':
+          description: Experiment frozen and ready for a separately scheduled offline job.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Experiment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Draft is incomplete, already frozen, or references burned data illegally.
+  /research/microstructure/experiments/{experiment_id}/report:
+    get:
+      operationId: getMicrostructureExperimentReport
+      summary: Read evidence without changing experiment or execution state.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ExperimentId'
+      responses:
+        '200':
+          description: Current immutable report and gate decision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExperimentReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    ExperimentId:
+      name: experiment_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    Unauthorized:
+      description: Authentication is required.
+    NotFound:
+      description: Experiment does not exist.
+  schemas:
+    ExperimentStatus:
+      type: string
+      enum: [DRAFT, FROZEN, REJECTED, INCONCLUSIVE, APPROVED]
+    SafetyBoundary:
+      type: object
+      additionalProperties: false
+      required: [research_only, order_submission_allowed, execution_authorization]
+      properties:
+        research_only:
+          type: boolean
+          const: true
+        order_submission_allowed:
+          type: boolean
+          const: false
+        execution_authorization:
+          type: string
+          const: none
+    ProductContract:
+      type: object
+      additionalProperties: false
+      required:
+        - execution_venue
+        - execution_product
+        - symbol
+        - directions
+        - auxiliary_signal_venue
+        - horizons_seconds
+        - position_model
+      properties:
+        execution_venue:
+          type: string
+          const: binance_usdm_futures
+        execution_product:
+          type: string
+          const: perpetual
+        symbol:
+          type: string
+          const: BTCUSDT
+        directions:
+          type: array
+          const: [LONG, SHORT]
+          items:
+            type: string
+            enum: [LONG, SHORT]
+        auxiliary_signal_venue:
+          type: string
+          const: binance_spot
+        horizons_seconds:
+          type: array
+          const: [5, 15, 30, 120, 300]
+          items:
+            type: integer
+        position_model:
+          type: string
+          const: one_net_position
+    CostProfile:
+      type: object
+      additionalProperties: false
+      required:
+        - maker_fee_bps_per_side
+        - taker_fee_bps_per_side
+        - expected_slippage_bps_per_side
+        - expected_latency_ms
+        - stress_roundtrip_bps
+        - default_order_style
+      properties:
+        maker_fee_bps_per_side:
+          type: number
+          minimum: 0
+        taker_fee_bps_per_side:
+          type: number
+          minimum: 0
+        expected_slippage_bps_per_side:
+          type: number
+          minimum: 0
+        expected_latency_ms:
+          type: integer
+          minimum: 0
+        stress_roundtrip_bps:
+          type: number
+          minimum: 20
+          description: Must also be at least twice the complete expected round-trip friction.
+        default_order_style:
+          type: string
+          const: marketable_taker
+    DatasetPartition:
+      type: object
+      additionalProperties: false
+      required: [role, start_at, end_at, manifest_sha256]
+      properties:
+        role:
+          type: string
+          enum: [DEVELOPMENT, TRAINING, SELECTION, AUDIT, PROSPECTIVE_SHADOW]
+        start_at:
+          type: string
+          format: date-time
+        end_at:
+          type: string
+          format: date-time
+        manifest_sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+    ApprovalGate:
+      type: object
+      additionalProperties: false
+      required:
+        - min_oos_folds
+        - min_oos_portfolio_trades
+        - min_oos_utc_days
+        - adjusted_one_sided_confidence
+        - min_expected_cost_lcb_bps
+        - min_stress_cost_mean_bps
+        - max_probability_backtest_overfitting
+        - prospective_shadow_min_days
+        - prospective_shadow_max_days
+        - top_p_tails_pct
+      properties:
+        min_oos_folds: { type: integer, const: 3 }
+        min_oos_portfolio_trades: { type: integer, const: 200 }
+        min_oos_utc_days: { type: integer, const: 20 }
+        adjusted_one_sided_confidence: { type: number, const: 0.95 }
+        min_expected_cost_lcb_bps: { type: number, exclusiveMinimum: 0 }
+        min_stress_cost_mean_bps: { type: number, exclusiveMinimum: 0 }
+        max_probability_backtest_overfitting: { type: number, const: 0.2 }
+        prospective_shadow_min_days: { type: integer, const: 20 }
+        prospective_shadow_max_days: { type: integer, const: 30 }
+        top_p_tails_pct:
+          type: array
+          const: [1, 2, 5, 10]
+          items: { type: integer }
+    CreateExperimentRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - code_revision
+        - protocol_sha256
+        - product
+        - cost_profile
+        - dataset_partitions
+        - approval_gate
+        - hypotheses
+      properties:
+        name:
+          type: string
+          minLength: 3
+          maxLength: 120
+        code_revision:
+          type: string
+          pattern: '^[a-f0-9]{40}$'
+        protocol_sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        product:
+          $ref: '#/components/schemas/ProductContract'
+        cost_profile:
+          $ref: '#/components/schemas/CostProfile'
+        dataset_partitions:
+          type: array
+          minItems: 4
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/DatasetPartition'
+        approval_gate:
+          $ref: '#/components/schemas/ApprovalGate'
+        hypotheses:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/HypothesisDefinition'
+    HypothesisDefinition:
+      type: object
+      additionalProperties: false
+      required: [kind, definition]
+      properties:
+        kind:
+          type: string
+          minLength: 1
+          maxLength: 40
+        definition:
+          type: object
+          additionalProperties: true
+    Experiment:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - status
+        - code_revision
+        - protocol_sha256
+        - product
+        - cost_profile
+        - dataset_partitions
+        - approval_gate
+        - safety
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          $ref: '#/components/schemas/ExperimentStatus'
+        code_revision:
+          type: string
+          pattern: '^[a-f0-9]{40}$'
+        protocol_sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        experiment_sha256:
+          type: [string, 'null']
+          pattern: '^[a-f0-9]{64}$'
+        product:
+          $ref: '#/components/schemas/ProductContract'
+        cost_profile:
+          $ref: '#/components/schemas/CostProfile'
+        dataset_partitions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatasetPartition'
+        approval_gate:
+          $ref: '#/components/schemas/ApprovalGate'
+        safety:
+          $ref: '#/components/schemas/SafetyBoundary'
+        created_at:
+          type: string
+          format: date-time
+        frozen_at:
+          type: [string, 'null']
+          format: date-time
+    ExperimentReport:
+      type: object
+      additionalProperties: false
+      required: [experiment_id, status, decision_reasons, safety, generated_at]
+      properties:
+        experiment_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [FROZEN, REJECTED, INCONCLUSIVE, APPROVED]
+        decision_reasons:
+          type: array
+          items: { type: string }
+        metrics:
+          type: object
+          additionalProperties: true
+        artifact_sha256:
+          type: [string, 'null']
+          pattern: '^[a-f0-9]{64}$'
+        safety:
+          $ref: '#/components/schemas/SafetyBoundary'
+        generated_at:
+          type: string
+          format: date-time

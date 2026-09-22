@@ -20,6 +20,7 @@ const labelMap: Record<string, string> = {
   optimizer: "Optimizer",
   fees: "Fees",
   compare: "Compare",
+  research: "Pesquisa",
 };
 
 export function Breadcrumbs({ className }: { className?: string }) {

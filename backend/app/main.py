@@ -66,6 +66,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         import app.models.asset_study_job  # noqa: F401
         import app.models.strategy_deployment  # noqa: F401
         import app.models.market_opportunity_scan  # noqa: F401
+        import app.models.research_experiment  # noqa: F401
 
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)

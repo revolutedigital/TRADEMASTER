@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Logo } from "./logo";
-import { CandlestickChart, Briefcase, Settings, Shield, Menu, X, History } from "lucide-react";
+import { Activity, CandlestickChart, Briefcase, Settings, Shield, Menu, X, History } from "lucide-react";
 
 interface NavItem {
   href: string;
@@ -17,6 +17,7 @@ const navItems: NavItem[] = [
   { href: "/operar", label: "Operar", icon: CandlestickChart },
   { href: "/portfolio", label: "Portfólio", icon: Briefcase },
   { href: "/trading/history", label: "Histórico", icon: History },
+  { href: "/research", label: "Pesquisa", icon: Activity },
   { href: "/settings", label: "Configurações", icon: Settings },
 ];
 

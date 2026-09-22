@@ -18,6 +18,7 @@ from app.api.v1.ml import router as ml_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.portfolio import router as portfolio_router
 from app.api.v1.risk import router as risk_router
+from app.api.v1.research import router as research_router
 from app.api.v1.security_txt import router as security_txt_router
 from app.api.v1.settings import router as settings_router
 from app.api.v1.signals import router as signals_router
@@ -48,6 +49,11 @@ api_router.include_router(
 )
 api_router.include_router(export_router, prefix="/export", tags=["export"])
 api_router.include_router(risk_router, prefix="/risk", tags=["risk"])
+api_router.include_router(
+    research_router,
+    prefix="/research/microstructure",
+    tags=["microstructure-research"],
+)
 api_router.include_router(notifications_router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(settings_router, prefix="/settings", tags=["settings"])
 api_router.include_router(audit_router)

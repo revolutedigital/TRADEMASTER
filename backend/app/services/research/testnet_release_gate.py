@@ -18,6 +18,8 @@ class TestnetEligibility:
     reasons: tuple[str, ...]
     book_evidence_contiguous_days: int
     prospective_shadow_days: int
+    prospective_shadow_outcome_days: int
+    prospective_shadow_positive: bool
     execution_authorization: str = "none"
     order_submission_allowed: bool = False
 
@@ -27,6 +29,8 @@ def evaluate_testnet_eligibility(
     *,
     book_evidence_contiguous_days: int,
     prospective_shadow_days: int,
+    prospective_shadow_outcome_days: int,
+    prospective_shadow_positive: bool,
     unresolved_failures: int,
     explicit_testnet_release: bool,
 ) -> TestnetEligibility:
@@ -40,6 +44,10 @@ def evaluate_testnet_eligibility(
         reasons.append("prospective_shadow_has_fewer_than_20_days")
     if prospective_shadow_days > MAX_PROSPECTIVE_SHADOW_DAYS:
         reasons.append("prospective_shadow_exceeds_30_days")
+    if prospective_shadow_outcome_days < prospective_shadow_days:
+        reasons.append("prospective_shadow_outcomes_incomplete")
+    if not prospective_shadow_positive:
+        reasons.append("prospective_shadow_block_not_positive")
     if unresolved_failures > 0:
         reasons.append("unresolved_reconciliation_or_data_failures")
     if not explicit_testnet_release:
@@ -49,4 +57,6 @@ def evaluate_testnet_eligibility(
         reasons=tuple(reasons),
         book_evidence_contiguous_days=book_evidence_contiguous_days,
         prospective_shadow_days=prospective_shadow_days,
+        prospective_shadow_outcome_days=prospective_shadow_outcome_days,
+        prospective_shadow_positive=prospective_shadow_positive,
     )

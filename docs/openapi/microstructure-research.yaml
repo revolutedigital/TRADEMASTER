@@ -433,7 +433,11 @@ components:
         - reasons
         - book_evidence_contiguous_days
         - prospective_shadow_days
+        - prospective_shadow_outcome_days
         - prospective_shadow_signal_count
+        - prospective_shadow_expected_mean_bps
+        - prospective_shadow_stress_mean_bps
+        - prospective_shadow_positive
         - unresolved_failures
         - explicit_testnet_release
         - release_request_required
@@ -460,9 +464,18 @@ components:
         prospective_shadow_days:
           type: integer
           minimum: 0
+        prospective_shadow_outcome_days:
+          type: integer
+          minimum: 0
         prospective_shadow_signal_count:
           type: integer
           minimum: 0
+        prospective_shadow_expected_mean_bps:
+          type: [number, 'null']
+        prospective_shadow_stress_mean_bps:
+          type: [number, 'null']
+        prospective_shadow_positive:
+          type: boolean
         unresolved_failures:
           type: integer
           minimum: 0

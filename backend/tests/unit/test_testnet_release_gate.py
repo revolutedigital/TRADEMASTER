@@ -22,6 +22,8 @@ def test_approved_research_still_needs_separate_testnet_release() -> None:
         experiment("APPROVED"),
         book_evidence_contiguous_days=60,
         prospective_shadow_days=30,
+        prospective_shadow_outcome_days=30,
+        prospective_shadow_positive=True,
         unresolved_failures=0,
         explicit_testnet_release=False,
     )
@@ -35,6 +37,8 @@ def test_eligibility_is_metadata_not_execution_authorization() -> None:
         experiment("APPROVED"),
         book_evidence_contiguous_days=60,
         prospective_shadow_days=30,
+        prospective_shadow_outcome_days=30,
+        prospective_shadow_positive=True,
         unresolved_failures=0,
         explicit_testnet_release=True,
     )
@@ -48,6 +52,8 @@ def test_testnet_requires_sixty_complete_book_evidence_days() -> None:
         experiment("APPROVED"),
         book_evidence_contiguous_days=59,
         prospective_shadow_days=20,
+        prospective_shadow_outcome_days=20,
+        prospective_shadow_positive=True,
         unresolved_failures=0,
         explicit_testnet_release=True,
     )
@@ -61,8 +67,38 @@ def test_shadow_window_cannot_exceed_preregistered_maximum() -> None:
         experiment("APPROVED"),
         book_evidence_contiguous_days=60,
         prospective_shadow_days=31,
+        prospective_shadow_outcome_days=31,
+        prospective_shadow_positive=True,
         unresolved_failures=0,
         explicit_testnet_release=True,
     )
     assert result.eligible is False
     assert "prospective_shadow_exceeds_30_days" in result.reasons
+
+
+def test_testnet_requires_positive_prospective_shadow_block() -> None:
+    result = evaluate_testnet_eligibility(
+        experiment("APPROVED"),
+        book_evidence_contiguous_days=60,
+        prospective_shadow_days=20,
+        prospective_shadow_outcome_days=20,
+        prospective_shadow_positive=False,
+        unresolved_failures=0,
+        explicit_testnet_release=True,
+    )
+    assert result.eligible is False
+    assert "prospective_shadow_block_not_positive" in result.reasons
+
+
+def test_testnet_requires_complete_shadow_outcomes() -> None:
+    result = evaluate_testnet_eligibility(
+        experiment("APPROVED"),
+        book_evidence_contiguous_days=60,
+        prospective_shadow_days=20,
+        prospective_shadow_outcome_days=19,
+        prospective_shadow_positive=True,
+        unresolved_failures=0,
+        explicit_testnet_release=True,
+    )
+    assert result.eligible is False
+    assert "prospective_shadow_outcomes_incomplete" in result.reasons

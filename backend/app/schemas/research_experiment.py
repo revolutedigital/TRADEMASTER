@@ -133,7 +133,11 @@ class TestnetEligibilityResponse(BaseModel):
     reasons: list[str]
     book_evidence_contiguous_days: int = Field(ge=0)
     prospective_shadow_days: int = Field(ge=0)
+    prospective_shadow_outcome_days: int = Field(ge=0)
     prospective_shadow_signal_count: int = Field(ge=0)
+    prospective_shadow_expected_mean_bps: float | None
+    prospective_shadow_stress_mean_bps: float | None
+    prospective_shadow_positive: bool
     unresolved_failures: int = Field(ge=0)
     explicit_testnet_release: Literal[False]
     release_request_required: Literal[True]

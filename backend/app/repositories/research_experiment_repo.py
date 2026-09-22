@@ -86,6 +86,18 @@ class ResearchExperimentRepository:
         )
         return list(result.scalars().all())
 
+    async def list_shadow_signals(
+        self,
+        db: AsyncSession,
+        experiment_id: str,
+    ) -> list[ResearchShadowSignal]:
+        result = await db.execute(
+            select(ResearchShadowSignal)
+            .where(ResearchShadowSignal.experiment_id == experiment_id)
+            .order_by(ResearchShadowSignal.decision_time, ResearchShadowSignal.id)
+        )
+        return list(result.scalars().all())
+
     async def opened_uses_for_manifest(
         self,
         db: AsyncSession,

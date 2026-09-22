@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.dependencies import get_db, require_auth
-from app.models.research_experiment import ResearchExperiment
+from app.models.research_experiment import ResearchExperiment, ResearchShadowSignal
 from app.repositories.research_experiment_repo import research_experiment_repository
 from app.schemas.research_experiment import (
     CreateExperimentRequest,
@@ -57,11 +58,11 @@ async def get_testnet_eligibility(
         raise HTTPException(status_code=404, detail="Research experiment was not found")
 
     evidence_status = _read_evidence_gate_status()
-    shadow_decision_times = await research_experiment_repository.list_shadow_decision_times(
+    shadow_signals = await research_experiment_repository.list_shadow_signals(
         db,
         experiment_id,
     )
-    prospective_shadow_days = _count_distinct_utc_days(shadow_decision_times)
+    shadow_summary = _summarize_shadow_outcomes(shadow_signals)
     unresolved_failures = len(evidence_status.status_reasons)
     eligibility = evaluate_testnet_eligibility(
         experiment,
@@ -70,7 +71,9 @@ async def get_testnet_eligibility(
             if evidence_status.artifact_available
             else 0
         ),
-        prospective_shadow_days=prospective_shadow_days,
+        prospective_shadow_days=shadow_summary["decision_days"],
+        prospective_shadow_outcome_days=shadow_summary["outcome_days"],
+        prospective_shadow_positive=shadow_summary["positive"],
         unresolved_failures=unresolved_failures,
         explicit_testnet_release=False,
     )
@@ -81,7 +84,11 @@ async def get_testnet_eligibility(
         reasons=list(eligibility.reasons),
         book_evidence_contiguous_days=eligibility.book_evidence_contiguous_days,
         prospective_shadow_days=eligibility.prospective_shadow_days,
-        prospective_shadow_signal_count=len(shadow_decision_times),
+        prospective_shadow_outcome_days=eligibility.prospective_shadow_outcome_days,
+        prospective_shadow_signal_count=len(shadow_signals),
+        prospective_shadow_expected_mean_bps=shadow_summary["expected_mean_bps"],
+        prospective_shadow_stress_mean_bps=shadow_summary["stress_mean_bps"],
+        prospective_shadow_positive=eligibility.prospective_shadow_positive,
         unresolved_failures=unresolved_failures,
         explicit_testnet_release=False,
         release_request_required=True,
@@ -255,10 +262,61 @@ def _fallback_evidence_gate_status(reason: str) -> EvidenceGateStatusResponse:
     return EvidenceGateStatusResponse.model_validate(payload)
 
 
-def _count_distinct_utc_days(values: list[datetime]) -> int:
-    return len(
-        {
-            (value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)).date()
-            for value in values
-        }
+def _summarize_shadow_outcomes(signals: list[ResearchShadowSignal]) -> dict[str, object]:
+    decision_days = {_utc_day(signal.decision_time) for signal in signals}
+    outcome_days = set()
+    expected_values: list[float] = []
+    stress_values: list[float] = []
+
+    for signal in signals:
+        if not signal.outcome_json:
+            continue
+        try:
+            payload = json.loads(signal.outcome_json)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        expected_net_bps = _finite_float(payload.get("expected_net_bps"))
+        stress_net_bps = _finite_float(payload.get("stress_net_bps"))
+        if expected_net_bps is None or stress_net_bps is None:
+            continue
+        expected_values.append(expected_net_bps)
+        stress_values.append(stress_net_bps)
+        outcome_days.add(_utc_day(signal.decision_time))
+
+    expected_mean = _mean(expected_values)
+    stress_mean = _mean(stress_values)
+    positive = (
+        bool(decision_days)
+        and outcome_days == decision_days
+        and expected_mean is not None
+        and stress_mean is not None
+        and expected_mean > 0
+        and stress_mean > 0
     )
+    return {
+        "decision_days": len(decision_days),
+        "outcome_days": len(outcome_days),
+        "expected_mean_bps": expected_mean,
+        "stress_mean_bps": stress_mean,
+        "positive": positive,
+    }
+
+
+def _utc_day(value: datetime):
+    return (value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)).date()
+
+
+def _finite_float(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _mean(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None

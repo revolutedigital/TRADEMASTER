@@ -57,7 +57,11 @@ interface TestnetEligibility {
   reasons: string[];
   book_evidence_contiguous_days: number;
   prospective_shadow_days: number;
+  prospective_shadow_outcome_days: number;
   prospective_shadow_signal_count: number;
+  prospective_shadow_expected_mean_bps: number | null;
+  prospective_shadow_stress_mean_bps: number | null;
+  prospective_shadow_positive: boolean;
   unresolved_failures: number;
   explicit_testnet_release: false;
   release_request_required: true;
@@ -245,8 +249,8 @@ function TestnetEligibilityPanel({
                 </Badge>
               </div>
               <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                Cruza experimento, 60 dias de book e 20–30 dias de shadow. Mesmo quando ficar pronto,
-                este painel continua sem autorização de execução e exige release explícito separado.
+                Cruza experimento, 60 dias de book e 20–30 dias de shadow com outcomes positivos.
+                Mesmo quando ficar pronto, este painel continua sem autorização de execução e exige release explícito separado.
               </p>
               {visibleReason ? (
                 <p className="mt-2 font-mono text-xs text-red-300">{visibleReason}</p>
@@ -254,9 +258,13 @@ function TestnetEligibilityPanel({
             </div>
           </div>
 
-          <div className="grid min-w-72 grid-cols-3 gap-3 text-sm">
+          <div className="grid min-w-72 grid-cols-2 gap-3 text-sm md:grid-cols-4">
             <GateMetric label="Book" value={`${status?.book_evidence_contiguous_days ?? 0}/60`} />
             <GateMetric label="Shadow" value={`${status?.prospective_shadow_days ?? 0}/20`} />
+            <GateMetric
+              label="Outcome"
+              value={`${status?.prospective_shadow_outcome_days ?? 0}/${status?.prospective_shadow_days ?? 20}`}
+            />
             <GateMetric label="Falhas" value={status?.unresolved_failures ?? 0} />
           </div>
         </div>

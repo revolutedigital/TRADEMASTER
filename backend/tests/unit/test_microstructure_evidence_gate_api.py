@@ -151,6 +151,7 @@ async def test_testnet_eligibility_remains_metadata_without_explicit_release(
                 would_enter=True,
                 model_sha256="d" * 64,
                 feature_vector_sha256="e" * 64,
+                outcome_json=json.dumps({"expected_net_bps": 1.2, "stress_net_bps": 0.4}),
             )
         )
     await db.flush()
@@ -164,12 +165,74 @@ async def test_testnet_eligibility_remains_metadata_without_explicit_release(
     assert response.eligible is False
     assert response.book_evidence_contiguous_days == 60
     assert response.prospective_shadow_days == 20
+    assert response.prospective_shadow_outcome_days == 20
     assert response.prospective_shadow_signal_count == 20
+    assert response.prospective_shadow_expected_mean_bps == 1.2
+    assert response.prospective_shadow_stress_mean_bps == 0.4
+    assert response.prospective_shadow_positive is True
     assert response.explicit_testnet_release is False
     assert response.release_request_required is True
     assert response.order_submission_allowed is False
     assert response.execution_authorization == "none"
     assert response.reasons == ["explicit_testnet_release_is_missing"]
+
+
+async def test_testnet_eligibility_requires_positive_shadow_outcomes(
+    tmp_path: Path,
+    monkeypatch,
+    db: AsyncSession,
+) -> None:
+    artifact = tmp_path / "evidence-gate-status.json"
+    artifact.write_text(json.dumps(_eligible_evidence_payload()), encoding="utf-8")
+    monkeypatch.setattr(
+        research.settings,
+        "microstructure_evidence_status_path",
+        str(artifact),
+    )
+    db.add(
+        ResearchExperiment(
+            id="experiment",
+            name="candidate",
+            status="APPROVED",
+            code_revision="a" * 40,
+            protocol_sha256="b" * 64,
+            product_json="{}",
+            cost_profile_json="{}",
+            approval_gate_json="{}",
+        )
+    )
+    start = datetime(2026, 3, 2, tzinfo=UTC)
+    for day_offset in range(20):
+        db.add(
+            ResearchShadowSignal(
+                experiment_id="experiment",
+                decision_time=start + timedelta(days=day_offset),
+                recorded_at=start + timedelta(days=day_offset, seconds=1),
+                side="SELL",
+                horizon_seconds=300,
+                probability=0.8,
+                threshold=0.7,
+                would_enter=True,
+                model_sha256="d" * 64,
+                feature_vector_sha256="e" * 64,
+            )
+        )
+    await db.flush()
+
+    response = await research.get_testnet_eligibility(
+        "experiment",
+        db=db,
+        _user={"sub": "operator"},
+    )
+
+    assert response.eligible is False
+    assert response.prospective_shadow_days == 20
+    assert response.prospective_shadow_outcome_days == 0
+    assert response.prospective_shadow_positive is False
+    assert response.prospective_shadow_expected_mean_bps is None
+    assert "prospective_shadow_outcomes_incomplete" in response.reasons
+    assert "prospective_shadow_block_not_positive" in response.reasons
+    assert response.order_submission_allowed is False
 
 
 def _eligible_evidence_payload() -> dict[str, object]:

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from dataclasses import asdict, dataclass
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -21,6 +24,7 @@ BOOK_FEATURE_SETS = (
     "flow_price_book",
     "flow_price_book_session",
 )
+SHA256_HEX_LENGTH = 64
 
 
 @dataclass(frozen=True)
@@ -67,6 +71,23 @@ class WalkForwardResult:
                 for fold in self.folds
             ],
         }
+
+
+@dataclass(frozen=True)
+class FrozenTopPPolicy:
+    """Serializable research-only policy artifact for prospective shadow decisions."""
+
+    payload: dict[str, object]
+    model_sha256: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            **self.payload,
+            "model_sha256": self.model_sha256,
+        }
+
+    def to_json(self) -> str:
+        return _canonical_json(self.to_dict()) + "\n"
 
 
 def feature_columns(frame: pd.DataFrame, feature_set: str) -> tuple[str, ...]:
@@ -122,6 +143,165 @@ def feature_columns(frame: pd.DataFrame, feature_set: str) -> tuple[str, ...]:
     if not columns:
         raise ValueError(f"feature set {feature_set} has no available columns")
     return columns
+
+
+def freeze_top_p_policy(
+    frame: pd.DataFrame,
+    *,
+    horizon_seconds: int,
+    feature_set: str,
+    tail_fraction: float,
+    calibration_date: str,
+    dataset_manifest_sha256: str,
+    target_column: str = "target",
+    embargo_seconds: int = 300,
+) -> FrozenTopPPolicy:
+    """Fit and serialize the frozen probability + top-p rule for shadow use only."""
+    if tail_fraction <= 0 or tail_fraction >= 1:
+        raise ValueError("tail_fraction must be in (0, 1)")
+    if len(dataset_manifest_sha256) != SHA256_HEX_LENGTH or any(
+        character not in "0123456789abcdef" for character in dataset_manifest_sha256
+    ):
+        raise ValueError("dataset_manifest_sha256 must be a lowercase SHA-256")
+    if target_column not in frame.columns:
+        raise ValueError(f"target column is missing: {target_column}")
+    required = {"decision_time_ms", "horizon_seconds", target_column}
+    missing = required - set(frame.columns)
+    if missing:
+        raise ValueError(f"model frame is missing columns: {sorted(missing)}")
+    if embargo_seconds < horizon_seconds:
+        raise ValueError("embargo must be at least the label horizon")
+
+    horizon_frame = frame[frame["horizon_seconds"] == horizon_seconds].copy()
+    if horizon_frame.empty:
+        raise ValueError(f"no rows for horizon {horizon_seconds}")
+    horizon_frame["target"] = horizon_frame[target_column].astype("int8")
+    horizon_frame["utc_date"] = pd.to_datetime(
+        horizon_frame["decision_time_ms"], unit="ms", utc=True
+    ).dt.date.astype(str)
+    horizon_frame = horizon_frame.sort_values("decision_time_ms", kind="stable")
+    columns = feature_columns(horizon_frame, feature_set)
+    if feature_set in BOOK_FEATURE_SETS:
+        _require_complete_book_frame(horizon_frame)
+
+    calibration_start_ms = _date_start_ms(calibration_date)
+    train = horizon_frame[
+        horizon_frame["decision_time_ms"] < calibration_start_ms - embargo_seconds * 1000
+    ]
+    calibration = horizon_frame[horizon_frame["utc_date"] == calibration_date]
+    if train.empty or calibration.empty:
+        raise ValueError("training and calibration splits must be non-empty")
+    _require_binary(train["target"], "training")
+    _require_binary(calibration["target"], "calibration")
+
+    base_model = _new_base_model()
+    base_model.fit(_matrix(train, columns), train["target"].to_numpy())
+    calibration_scores = _decision_scores(base_model, calibration, columns)
+    calibrator = LogisticRegression(
+        C=1_000_000,
+        solver="lbfgs",
+        max_iter=500,
+        random_state=42,
+    )
+    calibrator.fit(calibration_scores.reshape(-1, 1), calibration["target"].to_numpy())
+    calibration_probabilities = calibrator.predict_proba(calibration_scores.reshape(-1, 1))[:, 1]
+    probability_threshold = float(np.quantile(calibration_probabilities, 1 - tail_fraction))
+    selected_mask = calibration_probabilities >= probability_threshold
+    selected_count = int(selected_mask.sum())
+
+    scaler = base_model.named_steps["scale"]
+    logistic = base_model.named_steps["logistic"]
+    payload: dict[str, object] = {
+        "schema_version": 1,
+        "artifact_kind": "research_top_p_shadow_policy",
+        "research_only": True,
+        "order_submission_allowed": False,
+        "execution_authorization": "none",
+        "model_family": "standardized_logistic_with_platt_sigmoid",
+        "horizon_seconds": horizon_seconds,
+        "feature_set": feature_set,
+        "feature_columns": list(columns),
+        "target_column": target_column,
+        "tail_fraction": tail_fraction,
+        "probability_threshold": probability_threshold,
+        "embargo_seconds": embargo_seconds,
+        "dataset_manifest_sha256": dataset_manifest_sha256,
+        "training": {
+            "row_count": int(len(train)),
+            "start_decision_time_ms": int(train["decision_time_ms"].min()),
+            "end_decision_time_ms": int(train["decision_time_ms"].max()),
+            "target_rate": float(train["target"].mean()),
+        },
+        "calibration": {
+            "utc_date": calibration_date,
+            "row_count": int(len(calibration)),
+            "target_rate": float(calibration["target"].mean()),
+            "selected_count": selected_count,
+            "selected_target_rate": (
+                float(calibration.loc[selected_mask, "target"].mean()) if selected_count else 0.0
+            ),
+        },
+        "transform": {
+            "log1p_nonnegative_prefixes": [
+                "trade_count_",
+                "quote_volume_",
+                "mean_interarrival_ms_",
+            ],
+            "scaler_mean": _float_list(scaler.mean_),
+            "scaler_scale": _float_list(scaler.scale_),
+        },
+        "base_model": {
+            "intercept": float(logistic.intercept_[0]),
+            "coefficients": _float_list(logistic.coef_[0]),
+            "regularization": {
+                "class": "LogisticRegression",
+                "C": 0.1,
+                "solver": "lbfgs",
+                "max_iter": 500,
+                "random_state": 42,
+            },
+        },
+        "calibrator": {
+            "method": "logistic_sigmoid_on_base_logit",
+            "intercept": float(calibrator.intercept_[0]),
+            "coefficient": float(calibrator.coef_[0][0]),
+        },
+    }
+    return FrozenTopPPolicy(payload=payload, model_sha256=_stable_sha256(payload))
+
+
+def predict_frozen_top_p_probability(
+    artifact: dict[str, Any],
+    feature_vector: dict[str, float],
+) -> float:
+    """Score one feature vector from a frozen JSON policy artifact."""
+    columns = tuple(str(column) for column in artifact["feature_columns"])
+    raw_values = np.array([float(feature_vector[column]) for column in columns], dtype=np.float64)
+    if not np.isfinite(raw_values).all():
+        raise ValueError("feature vector must contain finite values")
+    transformed = raw_values.copy()
+    for index, column in enumerate(columns):
+        if column.startswith(("trade_count_", "quote_volume_", "mean_interarrival_ms_")):
+            transformed[index] = math.log1p(max(transformed[index], 0.0))
+    transform = artifact["transform"]
+    scaler_mean = np.asarray(transform["scaler_mean"], dtype=np.float64)
+    scaler_scale = np.asarray(transform["scaler_scale"], dtype=np.float64)
+    if len(scaler_mean) != len(columns) or len(scaler_scale) != len(columns):
+        raise ValueError("artifact scaler shape does not match feature columns")
+    scaled = (transformed - scaler_mean) / scaler_scale
+    base_model = artifact["base_model"]
+    coefficients = np.asarray(base_model["coefficients"], dtype=np.float64)
+    if len(coefficients) != len(columns):
+        raise ValueError("artifact coefficient shape does not match feature columns")
+    base_score = float(base_model["intercept"]) + float(np.dot(coefficients, scaled))
+    calibrator = artifact["calibrator"]
+    calibrated_score = float(calibrator["intercept"]) + float(calibrator["coefficient"]) * base_score
+    return _sigmoid(calibrated_score)
+
+
+def frozen_top_p_would_enter(artifact: dict[str, Any], feature_vector: dict[str, float]) -> bool:
+    probability = predict_frozen_top_p_probability(artifact, feature_vector)
+    return probability >= float(artifact["probability_threshold"])
 
 
 def run_calibrated_walk_forward(
@@ -209,21 +389,7 @@ def _run_calibrated_walk_forward(
         _require_binary(calibration["target"], "calibration")
         _require_binary(test["target"], "test")
 
-        base_model = Pipeline(
-            steps=(
-                ("scale", StandardScaler()),
-                (
-                    "logistic",
-                    LogisticRegression(
-                        C=0.1,
-                        l1_ratio=0,
-                        solver="lbfgs",
-                        max_iter=500,
-                        random_state=42,
-                    ),
-                ),
-            )
-        )
+        base_model = _new_base_model()
         base_model.fit(_matrix(train, columns), train["target"].to_numpy())
         calibrated = CalibratedClassifierCV(FrozenEstimator(base_model), method="sigmoid")
         calibrated.fit(_matrix(calibration, columns), calibration["target"].to_numpy())
@@ -345,6 +511,28 @@ def _matrix(frame: pd.DataFrame, columns: tuple[str, ...]) -> np.ndarray:
     return matrix
 
 
+def _new_base_model() -> Pipeline:
+    return Pipeline(
+        steps=(
+            ("scale", StandardScaler()),
+            (
+                "logistic",
+                LogisticRegression(
+                    C=0.1,
+                    l1_ratio=0,
+                    solver="lbfgs",
+                    max_iter=500,
+                    random_state=42,
+                ),
+            ),
+        )
+    )
+
+
+def _decision_scores(model: Pipeline, frame: pd.DataFrame, columns: tuple[str, ...]) -> np.ndarray:
+    return np.asarray(model.decision_function(_matrix(frame, columns)), dtype=np.float64)
+
+
 def _require_complete_book_frame(frame: pd.DataFrame) -> None:
     required = {"book_available", "book_update_age_ms"}
     missing = required - set(frame.columns)
@@ -367,3 +555,23 @@ def _require_binary(target: pd.Series, split: str) -> None:
 
 def _date_start_ms(value: str) -> int:
     return int(pd.Timestamp(value, tz="UTC").timestamp() * 1000)
+
+
+def _float_list(values: np.ndarray) -> list[float]:
+    return [float(value) for value in values]
+
+
+def _canonical_json(payload: dict[str, object]) -> str:
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _stable_sha256(payload: dict[str, object]) -> str:
+    return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+
+
+def _sigmoid(value: float) -> float:
+    if value >= 0:
+        z = math.exp(-value)
+        return 1 / (1 + z)
+    z = math.exp(value)
+    return z / (1 + z)

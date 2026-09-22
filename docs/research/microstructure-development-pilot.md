@@ -141,6 +141,28 @@ exist (`flow_book`, `flow_price_book`, `flow_price_book_session`). Without real
 book columns it continues to run only the historical flow/price/session families,
 so a missing WAL join cannot be mistaken for a book-edge test.
 
+Once a candidate is selected, the probability rule used for prospective shadow
+must be frozen into a deterministic artifact before any shadow partition opens:
+
+```bash
+cd backend
+./.venv/bin/python scripts/research/freeze_top_p_policy.py \
+  --dataset-root data/microstructure_v1/research-v1 \
+  --output data/microstructure_v1/models/frozen-shadow-policy.json \
+  --target stress \
+  --horizon-seconds 300 \
+  --feature-set flow_price_book_session \
+  --tail-fraction 0.05 \
+  --calibration-date YYYY-MM-DD
+```
+
+The artifact is JSON-only and includes feature columns, standardization values,
+logistic coefficients, sigmoid calibration parameters, the top-p probability
+threshold, the dataset-partition fingerprint, safety flags, and its own
+`model_sha256`. That hash is the value that shadow signals should record as
+`model_sha256`. The artifact is still research-only:
+`order_submission_allowed=false`, `execution_authorization=none`.
+
 ## Portfolio replay result
 
 The replay enforced 100 ms latency, one net position, true ordered trade paths,

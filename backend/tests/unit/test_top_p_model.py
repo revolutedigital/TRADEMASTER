@@ -6,6 +6,9 @@ import pytest
 
 from app.services.research.top_p_model import (
     feature_columns,
+    freeze_top_p_policy,
+    frozen_top_p_would_enter,
+    predict_frozen_top_p_probability,
     run_calibrated_walk_forward,
     summarize_walk_forward,
 )
@@ -121,3 +124,105 @@ def test_book_walk_forward_rejects_incomplete_book_rows() -> None:
             feature_set="flow_book",
             embargo_seconds=300,
         )
+
+
+def test_freeze_top_p_policy_is_deterministic_and_research_only() -> None:
+    frame = _model_frame(days=7, samples_per_day=60)
+
+    first = freeze_top_p_policy(
+        frame,
+        horizon_seconds=120,
+        feature_set="flow",
+        tail_fraction=0.10,
+        calibration_date="2026-01-06",
+        dataset_manifest_sha256="a" * 64,
+        embargo_seconds=300,
+    )
+    second = freeze_top_p_policy(
+        frame,
+        horizon_seconds=120,
+        feature_set="flow",
+        tail_fraction=0.10,
+        calibration_date="2026-01-06",
+        dataset_manifest_sha256="a" * 64,
+        embargo_seconds=300,
+    )
+    artifact = first.to_dict()
+
+    assert first.model_sha256 == second.model_sha256
+    assert first.to_json() == second.to_json()
+    assert len(first.model_sha256) == 64
+    assert artifact["research_only"] is True
+    assert artifact["order_submission_allowed"] is False
+    assert artifact["execution_authorization"] == "none"
+    assert artifact["calibration"]["utc_date"] == "2026-01-06"
+    assert 0 <= artifact["probability_threshold"] <= 1
+
+
+def test_frozen_top_p_policy_scores_feature_vectors_without_sklearn_state() -> None:
+    frame = _model_frame(days=7, samples_per_day=60)
+    policy = freeze_top_p_policy(
+        frame,
+        horizon_seconds=120,
+        feature_set="flow",
+        tail_fraction=0.10,
+        calibration_date="2026-01-06",
+        dataset_manifest_sha256="a" * 64,
+        embargo_seconds=300,
+    )
+    artifact = policy.to_dict()
+    feature_vector = {
+        "flow_imbalance_1s": 2.0,
+        "directed_flow_imbalance_1s": 2.0,
+        "trade_count_1s": 12.0,
+        "quote_volume_1s": 140.0,
+        "mean_interarrival_ms_1s": 20.0,
+    }
+
+    probability = predict_frozen_top_p_probability(artifact, feature_vector)
+
+    assert 0 <= probability <= 1
+    assert frozen_top_p_would_enter(artifact, feature_vector) is (
+        probability >= artifact["probability_threshold"]
+    )
+
+
+def test_frozen_top_p_policy_requires_complete_feature_vector() -> None:
+    frame = _model_frame(days=7, samples_per_day=60)
+    policy = freeze_top_p_policy(
+        frame,
+        horizon_seconds=120,
+        feature_set="flow",
+        tail_fraction=0.10,
+        calibration_date="2026-01-06",
+        dataset_manifest_sha256="a" * 64,
+        embargo_seconds=300,
+    )
+
+    with pytest.raises(KeyError):
+        predict_frozen_top_p_probability(policy.to_dict(), {"flow_imbalance_1s": 1.0})
+
+
+def _model_frame(*, days: int, samples_per_day: int) -> pd.DataFrame:
+    random = np.random.default_rng(123)
+    rows = []
+    for day in range(days):
+        day_start = pd.Timestamp("2026-01-01", tz="UTC") + pd.Timedelta(days=day)
+        for sample in range(samples_per_day):
+            signal = random.normal()
+            target = int(signal + random.normal(scale=0.3) > 0)
+            rows.append(
+                {
+                    "decision_time_ms": int(
+                        (day_start + pd.Timedelta(minutes=sample * 10)).timestamp() * 1000
+                    ),
+                    "horizon_seconds": 120,
+                    "target": target,
+                    "flow_imbalance_1s": signal,
+                    "directed_flow_imbalance_1s": signal,
+                    "trade_count_1s": 10 + abs(signal),
+                    "quote_volume_1s": 100 + abs(signal) * 20,
+                    "mean_interarrival_ms_1s": 20,
+                }
+            )
+    return pd.DataFrame(rows)

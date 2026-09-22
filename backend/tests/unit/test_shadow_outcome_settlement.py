@@ -18,7 +18,7 @@ from app.services.research.shadow_outcome_settlement import (
     settle_shadow_signal,
     settle_shadow_signals,
 )
-from scripts.research.settle_shadow_outcomes import _settlement_report
+from scripts.research.settle_shadow_outcomes import _settlement_report, _write_json_report
 
 
 POLICY = TrailingPolicy("test", 100, 100, 20, 150, 50)
@@ -122,6 +122,23 @@ def test_settlement_report_marks_outcome_completeness() -> None:
     assert report["incomplete_signal_ids"] == []
     assert len(report["outcomes"]) == 1
     assert report["outcomes"][0]["decision_time"] == "1970-01-01T00:00:00+00:00"
+
+
+def test_settlement_cli_report_writer_creates_gate_consumable_json(tmp_path) -> None:
+    output = tmp_path / "reports" / "prospective-shadow-settlement.json"
+    payload = {
+        "research_only": True,
+        "order_submission_allowed": False,
+        "execution_authorization": "none",
+        "committed": True,
+        "dry_run": False,
+        "signal_count": 1,
+    }
+
+    _write_json_report(output, payload)
+
+    assert json.loads(output.read_text(encoding="utf-8")) == payload
+    assert not output.with_name(f"{output.name}.tmp").exists()
 
 
 @pytest.mark.asyncio

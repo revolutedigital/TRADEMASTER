@@ -41,6 +41,11 @@ def main() -> int:
     parser.add_argument("--end-date", type=date.fromisoformat)
     parser.add_argument("--limit", type=int)
     parser.add_argument(
+        "--output",
+        type=Path,
+        help="Optional path to atomically write the scored batch shadow report.",
+    )
+    parser.add_argument(
         "--include-non-entries",
         action="store_true",
         help="Record every scored decision, not just probability >= top-p threshold.",
@@ -69,6 +74,8 @@ def main() -> int:
                 limit=arguments.limit,
             )
         )
+        if arguments.output is not None:
+            _write_json_report(arguments.output, result)
         print(json.dumps(result, indent=2, sort_keys=True, default=str))  # noqa: T201
         return 0
 
@@ -97,6 +104,8 @@ def main() -> int:
         }
         for decision in decisions
     ]
+    if arguments.output is not None:
+        _write_json_report(arguments.output, report)
     print(json.dumps(report, indent=2, sort_keys=True, default=str))  # noqa: T201
     return 0
 
@@ -153,6 +162,16 @@ def _partition_in_range(path: Path, *, start_date: date | None, end_date: date |
     if end_date is not None and partition_date > end_date:
         return False
     return True
+
+
+def _write_json_report(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_name(f"{path.name}.tmp")
+    temporary_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n",
+        encoding="utf-8",
+    )
+    temporary_path.replace(path)
 
 
 if __name__ == "__main__":

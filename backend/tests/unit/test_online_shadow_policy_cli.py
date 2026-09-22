@@ -9,6 +9,7 @@ import pandas as pd
 from app.schemas.microstructure import MarketEventType
 from scripts.research.run_online_shadow_policy import (
     _events_from_frames,
+    _write_json_report,
     decision_times_between,
     required_event_sources,
 )
@@ -124,3 +125,18 @@ def test_online_shadow_cli_detects_artifact_required_event_sources() -> None:
         "liquidation": True,
         "spot": True,
     }
+
+
+def test_online_shadow_cli_report_writer_creates_parent_directory(tmp_path) -> None:
+    output = tmp_path / "shadow" / "online-report.json"
+    payload = {
+        "research_only": True,
+        "order_submission_allowed": False,
+        "execution_authorization": "none",
+        "dry_run": True,
+    }
+
+    _write_json_report(output, payload)
+
+    assert output.read_text(encoding="utf-8").endswith("\n")
+    assert output.parent.exists()

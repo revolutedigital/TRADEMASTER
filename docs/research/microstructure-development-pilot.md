@@ -283,7 +283,8 @@ cd backend
   --policy-artifact data/microstructure_v1/models/frozen-shadow-policy.json \
   --start YYYY-MM-DDTHH:MM:SSZ \
   --end YYYY-MM-DDTHH:MM:SSZ \
-  --decision-stride-seconds 5
+  --decision-stride-seconds 5 \
+  --output data/microstructure_v1/reports/online-shadow-policy-dry-run.json
 ```
 
 The default `--trade-root` points to the local normalized Binance USD-M archive
@@ -299,7 +300,9 @@ with silent zeroed evidence. Re-running with `--commit` appends only through
 `record_frozen_top_p_shadow_selection`, skips matching existing
 `(decision_time, side, horizon)` signals, validates the opened
 `PROSPECTIVE_SHADOW` window, and still reports
-`order_submission_allowed=false`, `execution_authorization=none`.
+`order_submission_allowed=false`, `execution_authorization=none`. Any `--output`
+path is written atomically; a dry-run output remains explicitly `dry_run=true`
+and cannot satisfy the statistical gate.
 
 For partition batches, use the dry-run-first CLI. Without `--commit`, it only
 scores the frozen policy and prints the selected shadow entries:
@@ -311,7 +314,8 @@ cd backend
   --policy-artifact data/microstructure_v1/models/frozen-shadow-policy.json \
   --dataset-root data/microstructure_v1/research-v1 \
   --start-date YYYY-MM-DD \
-  --end-date YYYY-MM-DD
+  --end-date YYYY-MM-DD \
+  --output data/microstructure_v1/reports/shadow-policy-batch-dry-run.json
 ```
 
 Only after the experiment is `FROZEN` and the `PROSPECTIVE_SHADOW` partition has
@@ -621,10 +625,14 @@ cd backend
 ./.venv/bin/python scripts/research/settle_shadow_outcomes.py \
   --experiment-id EXPERIMENT_ID \
   --trade-root data/microstructure_v1/normalized/aggTrades \
-  --policy-name wide
+  --policy-name wide \
+  --output data/microstructure_v1/reports/prospective-shadow-settlement.json
 ```
 
 Re-run with `--commit` only to append immutable replay outcomes for already
 matured shadow signals. The policy name is explicit because changing trailing
 management changes P&L; the command refuses unknown policies and still has no
-exchange, Testnet, LIVE, credential, or order-submission path.
+exchange, Testnet, LIVE, credential, or order-submission path. The statistical
+gate should consume the committed settlement report written by `--output`; a
+dry-run settlement report is valid JSON but fails closed because
+`committed=false` and `dry_run=true`.

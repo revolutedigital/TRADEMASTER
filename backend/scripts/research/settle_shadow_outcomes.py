@@ -58,6 +58,11 @@ def main() -> int:
     parser.add_argument("--expected-round-trip-bps", type=float, default=12.0)
     parser.add_argument("--stress-round-trip-bps", type=float, default=24.0)
     parser.add_argument(
+        "--output",
+        type=Path,
+        help="Optional path to atomically write the settlement report consumed by the gate.",
+    )
+    parser.add_argument(
         "--commit",
         action="store_true",
         help="Append immutable replay outcomes to the research ledger.",
@@ -85,6 +90,8 @@ def main() -> int:
             commit=arguments.commit,
         )
     )
+    if arguments.output is not None:
+        _write_json_report(arguments.output, report)
     print(json.dumps(report, indent=2, sort_keys=True, default=str))  # noqa: T201
     return 0
 
@@ -257,6 +264,16 @@ def _normalize_utc(value: datetime) -> datetime:
 
 def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
+
+
+def _write_json_report(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_name(f"{path.name}.tmp")
+    temporary_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n",
+        encoding="utf-8",
+    )
+    temporary_path.replace(path)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 """Frozen policy shadow runner records scored decisions without execution fields."""
 
+import json
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
@@ -22,6 +23,7 @@ from app.services.research.top_p_model import (
     freeze_top_p_policy,
     predict_frozen_top_p_probability,
 )
+from scripts.research.run_shadow_policy_batch import _write_json_report
 
 
 @pytest.fixture
@@ -99,6 +101,21 @@ def test_frozen_policy_shadow_scoring_selects_entries_only() -> None:
     assert all(decision.probability >= decision.threshold for decision in selection.decisions)
     assert selection.order_submission_allowed is False
     assert selection.execution_authorization == "none"
+
+
+def test_shadow_policy_batch_cli_report_writer_creates_json(tmp_path) -> None:
+    output = tmp_path / "shadow" / "batch-report.json"
+    payload = {
+        "research_only": True,
+        "order_submission_allowed": False,
+        "execution_authorization": "none",
+        "dry_run": True,
+    }
+
+    _write_json_report(output, payload)
+
+    assert output.exists()
+    assert json.loads(output.read_text(encoding="utf-8")) == payload
 
 
 @pytest.mark.asyncio

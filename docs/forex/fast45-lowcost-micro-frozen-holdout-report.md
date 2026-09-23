@@ -176,3 +176,12 @@ Próximo gate:
 5. LIVE continua fora de escopo.
 
 Sem Testnet/LIVE.
+
+## Atualização pós-gate
+
+O próximo gate foi executado em Fast46–53. O candidato não sobreviveu ao período
+completo até 2026-09-20.
+
+Ver:
+
+`docs/forex/fast53-lowcost-micro-extended-holdout-report.md`

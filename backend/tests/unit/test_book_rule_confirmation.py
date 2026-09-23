@@ -47,6 +47,7 @@ def test_book_rule_confirmation_reports_confirmation_without_approval(
         conditions=({"feature": "directed_depth_imbalance", "direction": "high"},),
         decision_stride_seconds=5,
         minimum_selected_count=2,
+        cost_levels_bps=(0.0, 0.5, 1.0),
     )
 
     assert report["research_only"] is True
@@ -55,6 +56,11 @@ def test_book_rule_confirmation_reports_confirmation_without_approval(
     assert report["approved_strategy"] is False
     assert report["status"] == "CONFIRMATION_READY_FOR_REPLICATION"
     assert report["confirmation_metrics"]["selected_count"] >= 2
+    cost_sensitivity = report["confirmation_metrics"]["cost_sensitivity"]
+    assert [item["total_cost_bps"] for item in cost_sensitivity] == [0.0, 0.5, 1.0]
+    assert cost_sensitivity[1]["selected_net_mean_bps"] == (
+        report["confirmation_metrics"]["selected_gross_path_payoff_mean_bps"] - 0.5
+    )
 
 
 def test_book_rule_confirmation_fails_closed_when_confirmation_too_short(

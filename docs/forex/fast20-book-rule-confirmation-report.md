@@ -112,6 +112,16 @@ Resultado Q20:
 | Lift de payoff bruto | +0,749 bps |
 | Break-even de custo total | 0,688 bps |
 
+Sensibilidade líquida Q20:
+
+| Custo total | Net selecionado |
+|---:|---:|
+| 0,00 bps | +0,688 bps |
+| 0,25 bps | +0,438 bps |
+| 0,50 bps | +0,188 bps |
+| 1,00 bps | -0,312 bps |
+| 2,00 bps | -1,312 bps |
+
 Resultado Q33, mais largo:
 
 | Campo | Valor |
@@ -120,6 +130,8 @@ Resultado Q33, mais largo:
 | Payoff bruto selecionado | +0,115 bps |
 | Target rate selecionado | 35,25% |
 | Break-even de custo total | 0,115 bps |
+
+Q33 só fica positivo antes de custo. Com 0,25 bps de custo total já vira -0,135 bps.
 
 Q20 é a melhor versão confirmada; Q33 confirma direção, mas é fraca demais.
 
@@ -159,7 +171,7 @@ O que melhorou:
 O que ainda bloqueia operação:
 
 - +0,688 bps bruto é menor que custo/slippage comum;
-- qualquer custo total acima de 0,688 bps mata o edge;
+- qualquer custo total acima de 0,688 bps mata o edge, e com 1,0 bps a regra Q20 já fica negativa;
 - só temos duas janelas curtas;
 - não há confirmação em múltiplos regimes;
 - não passou por gate estatístico nem simulação de execução maker/taker;
@@ -187,10 +199,10 @@ Nenhuma ordem foi enviada.
   (`48a8d0affa6d4412cd934858e75bf09e15a5573888b5394d507177845cb5cf4c`)
 - Relatório confirmação Q20:
   `backend/data/microstructure_v1/reports/book-rule-confirmation-fast20-q20/report.json`
-  (`5c1f8ba2d0d3fc6f41d8403ac9cb0ad16ef0264c7c7b76bfe63e437b02065bf0`)
+  (`83a60a673416d77410db043ba9e6e29c3e0c42626d5b536b636b70e3b5e75de9`)
 - Relatório confirmação Q33:
   `backend/data/microstructure_v1/reports/book-rule-confirmation-fast20-q33/report.json`
-  (`2a41442d7db05c41708b55d68ae6a2560e092bb445122057498343370d38d7f7`)
+  (`4e8dffb860ad07604384b2cd6cc342d748d873183c105767ed2875c119acb8ed`)
 - Scout independente Fast20:
   `backend/data/microstructure_v1/reports/book-rule-scout-fast20-independent/report.json`
   (`365b50f517d01cac15c82d832d5f868ac58975b9444b14580451a2d587b279fa`)

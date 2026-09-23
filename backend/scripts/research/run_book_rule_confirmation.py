@@ -71,6 +71,7 @@ def main() -> int:
     parser.add_argument("--max-book-staleness-ms", type=int, default=1_000)
     parser.add_argument("--initial-stop-bps", type=float, default=20.0)
     parser.add_argument("--minimum-selected-count", type=int, default=20)
+    parser.add_argument("--cost-levels-bps", default="0,0.25,0.5,1,2")
     arguments = parser.parse_args()
     report = run_book_rule_confirmation(
         development_wal_root=arguments.development_wal_root,
@@ -84,6 +85,7 @@ def main() -> int:
         max_book_staleness_ms=arguments.max_book_staleness_ms,
         initial_stop_bps=arguments.initial_stop_bps,
         minimum_selected_count=arguments.minimum_selected_count,
+        cost_levels_bps=_parse_float_list(arguments.cost_levels_bps, allow_zero=True),
     )
     print(json.dumps(_console_summary(report), indent=2, sort_keys=True))  # noqa: T201
     return 0
@@ -104,6 +106,7 @@ def run_book_rule_confirmation(
     max_book_staleness_ms: int = 1_000,
     initial_stop_bps: float = 20.0,
     minimum_selected_count: int = 20,
+    cost_levels_bps: tuple[float, ...] = (0.0, 0.25, 0.5, 1.0, 2.0),
 ) -> dict[str, object]:
     _validate_parameters(
         horizon_seconds=horizon_seconds,
@@ -112,6 +115,7 @@ def run_book_rule_confirmation(
         conditions=conditions,
         initial_stop_bps=initial_stop_bps,
         minimum_selected_count=minimum_selected_count,
+        cost_levels_bps=cost_levels_bps,
     )
     config = ResearchDatasetConfig(
         decision_stride_seconds=decision_stride_seconds,
@@ -155,6 +159,7 @@ def run_book_rule_confirmation(
             name: asdict(summary) for name, summary in development["streams"].items()
         },
         "minimum_selected_count": minimum_selected_count,
+        "cost_levels_bps": list(cost_levels_bps),
     }
     if development["status"] != "READY":
         return _write_report(
@@ -195,7 +200,11 @@ def run_book_rule_confirmation(
             },
         )
     selected = apply_frozen_rule(confirmation["rows"], frozen_thresholds)
-    confirmation_metrics = summarize_selection(confirmation["rows"], selected)
+    confirmation_metrics = summarize_selection(
+        confirmation["rows"],
+        selected,
+        cost_levels_bps=cost_levels_bps,
+    )
     selected_count = int(confirmation_metrics["selected_count"])
     status = (
         "CONFIRMATION_READY_FOR_REPLICATION"
@@ -217,6 +226,7 @@ def run_book_rule_confirmation(
             "development_metrics": summarize_selection(
                 development["rows"],
                 apply_frozen_rule(development["rows"], frozen_thresholds),
+                cost_levels_bps=cost_levels_bps,
             ),
             "confirmation_metrics": confirmation_metrics,
         },
@@ -264,7 +274,12 @@ def apply_frozen_rule(
     return rows.loc[mask]
 
 
-def summarize_selection(rows: pd.DataFrame, selected: pd.DataFrame) -> dict[str, object]:
+def summarize_selection(
+    rows: pd.DataFrame,
+    selected: pd.DataFrame,
+    *,
+    cost_levels_bps: tuple[float, ...] = (0.0, 0.25, 0.5, 1.0, 2.0),
+) -> dict[str, object]:
     base_payoff = float(rows["gross_path_payoff_bps"].mean()) if len(rows) else 0.0
     selected_payoff = (
         float(selected["gross_path_payoff_bps"].mean()) if len(selected) else 0.0
@@ -288,6 +303,15 @@ def summarize_selection(rows: pd.DataFrame, selected: pd.DataFrame) -> dict[str,
         "selected_gross_path_payoff_mean_bps": selected_payoff,
         "gross_path_payoff_lift_bps": float(selected_payoff - base_payoff),
         "break_even_total_cost_bps": selected_payoff,
+        "cost_sensitivity": [
+            {
+                "total_cost_bps": float(cost_bps),
+                "base_net_mean_bps": float(base_payoff - cost_bps),
+                "selected_net_mean_bps": float(selected_payoff - cost_bps),
+                "selected_net_positive": bool(selected_payoff - cost_bps > 0),
+            }
+            for cost_bps in cost_levels_bps
+        ],
     }
 
 
@@ -391,6 +415,7 @@ def _validate_parameters(
     conditions: tuple[dict[str, str], ...],
     initial_stop_bps: float,
     minimum_selected_count: int,
+    cost_levels_bps: tuple[float, ...],
 ) -> None:
     if horizon_seconds <= 0:
         raise ValueError("horizon_seconds must be positive")
@@ -407,6 +432,20 @@ def _validate_parameters(
         raise ValueError("initial_stop_bps must be positive")
     if minimum_selected_count < 1:
         raise ValueError("minimum_selected_count must be positive")
+    if not cost_levels_bps or any(cost_bps < 0 for cost_bps in cost_levels_bps):
+        raise ValueError("cost_levels_bps must contain non-negative values")
+
+
+def _parse_float_list(value: str, *, allow_zero: bool = False) -> tuple[float, ...]:
+    values = tuple(float(part.strip()) for part in value.split(",") if part.strip())
+    if not values:
+        raise ValueError("list cannot be empty")
+    if allow_zero:
+        if any(item < 0 for item in values):
+            raise ValueError("list cannot contain negative values")
+    elif any(item <= 0 for item in values):
+        raise ValueError("list must contain positive values")
+    return values
 
 
 def _write_report(output_root: Path, report: dict[str, object]) -> dict[str, object]:

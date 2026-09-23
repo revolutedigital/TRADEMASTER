@@ -161,6 +161,51 @@ def test_book_wal_scout_filters_stale_book_decisions(tmp_path: Path) -> None:
     assert report["book_fresh_filter"]["dropped_decision_count"] == 1
 
 
+def test_book_wal_scout_filters_decisions_without_trade_path(tmp_path: Path) -> None:
+    wal_root = tmp_path / "wal"
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    for second in range(70):
+        event_time = start + timedelta(seconds=second)
+        price = 100 + second * 0.01
+        if not 31 <= second <= 40:
+            _append_gzip_jsonl(
+                wal_root / "trade" / "date=2026-01-01" / "events.jsonl.gz",
+                {
+                    "event_time": event_time.isoformat(),
+                    "product": "usdm_perpetual",
+                    "sequence_id": second + 1,
+                    "price": price,
+                    "quantity": 1.0,
+                    "is_buyer_maker": False,
+                },
+            )
+        _append_gzip_jsonl(
+            wal_root / "depth" / "date=2026-01-01" / "events.jsonl.gz",
+            {
+                "event_time": event_time.isoformat(),
+                "sequence_id": second + 1,
+                "bid_price": price - 0.5,
+                "bid_quantity": 2.0,
+                "ask_price": price + 0.5,
+                "ask_quantity": 3.0,
+            },
+        )
+
+    report = run_book_wal_scout(
+        wal_root=wal_root,
+        output_root=tmp_path / "out",
+        horizons_seconds=(5,),
+        decision_stride_seconds=5,
+        max_book_staleness_ms=1_000,
+        minimum_decisions_for_modeling=1,
+    )
+
+    assert report["status"] == "READY_FOR_SCOUT_MODELING"
+    assert report["book_fresh_filter"]["path_filter_applied"] is True
+    assert report["book_fresh_filter"]["book_staleness_filter_applied"] is False
+    assert report["book_fresh_filter"]["dropped_decision_count"] > 0
+
+
 def _append_gzip_jsonl(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with gzip.open(path, "at", encoding="utf-8") as handle:

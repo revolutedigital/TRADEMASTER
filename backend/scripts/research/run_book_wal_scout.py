@@ -236,6 +236,9 @@ def _build_research_rows_with_book_fresh_filter(
     mark_events: pd.DataFrame | None,
     spot_trade_events: pd.DataFrame | None,
 ) -> tuple[pd.DataFrame, dict[str, object]]:
+    original_decision_count = int(len(decisions))
+    decisions = _filter_decisions_with_complete_trade_paths(trades, decisions, config)
+    path_filtered_decision_count = int(len(decisions))
     try:
         rows = build_research_rows(
             trades,
@@ -246,11 +249,14 @@ def _build_research_rows_with_book_fresh_filter(
             spot_trade_events=spot_trade_events,
         )
         return rows, {
-            "applied": False,
+            "applied": original_decision_count != path_filtered_decision_count,
             "reason": None,
-            "original_decision_count": int(len(decisions)),
+            "path_filter_applied": original_decision_count != path_filtered_decision_count,
+            "book_staleness_filter_applied": False,
+            "original_decision_count": original_decision_count,
+            "path_filtered_decision_count": path_filtered_decision_count,
             "retained_decision_count": int(rows["decision_time_ms"].nunique()),
-            "dropped_decision_count": 0,
+            "dropped_decision_count": int(original_decision_count - path_filtered_decision_count),
             "max_book_staleness_ms": config.max_book_staleness_ms,
         }
     except ValueError as error:
@@ -273,11 +279,44 @@ def _build_research_rows_with_book_fresh_filter(
         return fresh_rows.reset_index(drop=True), {
             "applied": True,
             "reason": str(error),
-            "original_decision_count": int(len(decisions)),
+            "path_filter_applied": original_decision_count != path_filtered_decision_count,
+            "book_staleness_filter_applied": True,
+            "original_decision_count": original_decision_count,
+            "path_filtered_decision_count": path_filtered_decision_count,
             "retained_decision_count": retained_decision_count,
-            "dropped_decision_count": int(len(decisions) - retained_decision_count),
+            "dropped_decision_count": int(original_decision_count - retained_decision_count),
             "max_book_staleness_ms": config.max_book_staleness_ms,
         }
+
+
+def _filter_decisions_with_complete_trade_paths(
+    trades: pd.DataFrame,
+    decisions: np.ndarray,
+    config: ResearchDatasetConfig,
+) -> np.ndarray:
+    if len(decisions) == 0:
+        return decisions
+    times = trades.sort_values(["event_time_ms", "sequence_id"], kind="stable")[
+        "event_time_ms"
+    ].to_numpy(dtype=np.int64)
+    kept = []
+    for decision in np.asarray(decisions, dtype=np.int64):
+        entry_index = int(np.searchsorted(times, int(decision), side="right") - 1)
+        if entry_index < 0:
+            continue
+        complete = True
+        for horizon_seconds in config.horizons_seconds:
+            horizon_end = int(decision) + int(horizon_seconds) * 1000
+            if times[-1] < horizon_end:
+                complete = False
+                break
+            path_right = int(np.searchsorted(times, horizon_end, side="right"))
+            if entry_index + 1 >= path_right:
+                complete = False
+                break
+        if complete:
+            kept.append(int(decision))
+    return np.asarray(kept, dtype=np.int64)
 
 
 def summarize_stream(stream_root: Path) -> StreamSummary:

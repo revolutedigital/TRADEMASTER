@@ -73,12 +73,55 @@ def main() -> int:
         default=1_000,
         help="Maximum quote age when --require-book-features is set.",
     )
+    parser.add_argument(
+        "--decision-stride-seconds",
+        type=int,
+        default=5,
+        help="Seconds between candidate decisions.",
+    )
+    parser.add_argument(
+        "--horizons-seconds",
+        default="120,300",
+        help="Comma-separated path label horizons in seconds.",
+    )
+    parser.add_argument(
+        "--expected-cost-bps",
+        type=float,
+        default=12.0,
+        help="Expected round-trip cost used in path labels.",
+    )
+    parser.add_argument(
+        "--stress-cost-bps",
+        type=float,
+        default=24.0,
+        help="Stress round-trip cost used in path labels.",
+    )
+    parser.add_argument(
+        "--initial-stop-bps",
+        type=float,
+        default=20.0,
+        help="Initial stop used in path labels.",
+    )
     arguments = parser.parse_args()
     if arguments.end_date < arguments.start_date:
         parser.error("--end-date cannot precede --start-date")
     if arguments.require_book_features and arguments.book_source_root is None:
         parser.error("--require-book-features requires --book-source-root")
+    horizons_seconds = _parse_positive_ints(arguments.horizons_seconds)
+    if arguments.decision_stride_seconds <= 0:
+        parser.error("--decision-stride-seconds must be positive")
+    if arguments.expected_cost_bps < 0:
+        parser.error("--expected-cost-bps cannot be negative")
+    if arguments.stress_cost_bps < arguments.expected_cost_bps:
+        parser.error("--stress-cost-bps cannot be below --expected-cost-bps")
+    if arguments.initial_stop_bps <= 0:
+        parser.error("--initial-stop-bps must be positive")
     config = ResearchDatasetConfig(
+        decision_stride_seconds=arguments.decision_stride_seconds,
+        horizons_seconds=horizons_seconds,
+        expected_cost_bps=arguments.expected_cost_bps,
+        stress_cost_bps=arguments.stress_cost_bps,
+        initial_stop_bps=arguments.initial_stop_bps,
         require_book_features=arguments.require_book_features,
         max_book_staleness_ms=arguments.max_book_staleness_ms,
     )
@@ -97,6 +140,21 @@ def main() -> int:
         print(json.dumps(result.__dict__, sort_keys=True), flush=True)  # noqa: T201
         cursor += timedelta(days=1)
     return 0
+
+
+def _parse_positive_ints(raw: str) -> tuple[int, ...]:
+    values: list[int] = []
+    for part in raw.split(","):
+        item = part.strip()
+        if not item:
+            continue
+        value = int(item)
+        if value <= 0:
+            raise ValueError("horizons must be positive")
+        values.append(value)
+    if not values:
+        raise ValueError("at least one horizon is required")
+    return tuple(values)
 
 
 if __name__ == "__main__":

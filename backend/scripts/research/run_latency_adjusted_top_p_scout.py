@@ -25,8 +25,10 @@ sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.services.backtest.event_replay import OrderSide
 from app.services.backtest.trailing_portfolio import (
+    LOW_COST_TRAILING_POLICIES,
     V1_TRAILING_POLICIES,
     HistoricalTrailingSimulator,
+    TrailingPolicy,
     replay_one_position_portfolio,
     summarize_portfolio,
 )
@@ -70,6 +72,7 @@ def main() -> int:
     parser.add_argument("--target", choices=("expected", "stress"), default="stress")
     parser.add_argument("--latency-ms", type=int, default=100)
     parser.add_argument("--minimum-selected", type=int, default=50)
+    parser.add_argument("--policy-set", choices=("v1", "low_cost"), default="v1")
     arguments = parser.parse_args()
     if arguments.latency_ms < 0:
         parser.error("--latency-ms cannot be negative")
@@ -120,6 +123,9 @@ def main() -> int:
         predictions,
         trade_root=arguments.trade_root,
         latency_ms=arguments.latency_ms,
+        expected_round_trip_bps=label_config.expected_cost_bps,
+        stress_round_trip_bps=label_config.stress_cost_bps,
+        policies=_policies(arguments.policy_set),
         output_root=arguments.output_root,
     )
 
@@ -134,6 +140,7 @@ def main() -> int:
         ),
         "opened_dates": opened_dates,
         "latency_ms": arguments.latency_ms,
+        "policy_set": arguments.policy_set,
         "target_column": target_column,
         "label_config_source": label_config_source,
         "label_config": {
@@ -301,6 +308,9 @@ def run_portfolio_replay(
     *,
     trade_root: Path,
     latency_ms: int,
+    expected_round_trip_bps: float = 12.0,
+    stress_round_trip_bps: float = 24.0,
+    policies: tuple[TrailingPolicy, ...] = V1_TRAILING_POLICIES,
     output_root: Path,
 ) -> list[dict[str, object]]:
     if predictions.empty:
@@ -319,10 +329,12 @@ def run_portfolio_replay(
         trades["event_time_ms"].to_numpy(),
         trades["price"].to_numpy(),
         latency_ms=latency_ms,
+        expected_round_trip_bps=expected_round_trip_bps,
+        stress_round_trip_bps=stress_round_trip_bps,
     )
     output_root.mkdir(parents=True, exist_ok=True)
     results: list[dict[str, object]] = []
-    for policy in V1_TRAILING_POLICIES:
+    for policy in policies:
         for tail_fraction in TOP_P_TAILS:
             managed = replay_one_position_portfolio(
                 predictions,
@@ -409,6 +421,14 @@ def _has_book_features(frame: pd.DataFrame) -> bool:
             "microprice_displacement_bps",
         )
     )
+
+
+def _policies(policy_set: str) -> tuple[TrailingPolicy, ...]:
+    if policy_set == "v1":
+        return V1_TRAILING_POLICIES
+    if policy_set == "low_cost":
+        return LOW_COST_TRAILING_POLICIES
+    raise ValueError(f"unknown policy set: {policy_set}")
 
 
 def _has_auxiliary_features(frame: pd.DataFrame) -> bool:

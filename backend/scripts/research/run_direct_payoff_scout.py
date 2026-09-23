@@ -119,6 +119,7 @@ def main() -> int:
     parser.add_argument("--target", choices=("expected", "stress"), default="stress")
     parser.add_argument("--latency-ms", type=int, default=100)
     parser.add_argument("--minimum-selected", type=int, default=50)
+    parser.add_argument("--policy-set", choices=("v1", "low_cost"), default="v1")
     arguments = parser.parse_args()
     if arguments.latency_ms < 0:
         parser.error("--latency-ms cannot be negative")
@@ -174,6 +175,9 @@ def main() -> int:
         selected_predictions,
         trade_root=arguments.trade_root,
         latency_ms=arguments.latency_ms,
+        expected_round_trip_bps=label_config.expected_cost_bps,
+        stress_round_trip_bps=label_config.stress_cost_bps,
+        policies=_latency_policies(arguments.policy_set),
         output_root=arguments.output_root,
     )
     report = {
@@ -187,6 +191,7 @@ def main() -> int:
         ),
         "opened_dates": opened_dates,
         "latency_ms": arguments.latency_ms,
+        "policy_set": arguments.policy_set,
         "label_config_source": label_config_source,
         "target_column": target_column,
         "label_config": {
@@ -484,6 +489,7 @@ def _console_summary(report: dict[str, Any], output: Path) -> dict[str, Any]:
         "opened_dates": report["opened_dates"],
         "target_column": report["target_column"],
         "latency_ms": report["latency_ms"],
+        "policy_set": report["policy_set"],
         "candidate_selection": report["candidate_selection"],
         "best_expected_portfolio": best_expected,
         "best_stress_portfolio": best_stress,
@@ -495,6 +501,12 @@ def _dict(value: object) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise TypeError("expected dict")
     return value
+
+
+def _latency_policies(policy_set: str) -> tuple[Any, ...]:
+    from scripts.research.run_latency_adjusted_top_p_scout import _policies
+
+    return _policies(policy_set)
 
 
 if __name__ == "__main__":

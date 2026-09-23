@@ -8,6 +8,7 @@ from app.services.backtest.event_replay import OrderSide
 from app.services.backtest.trailing_portfolio import (
     ExitReason,
     HistoricalTrailingSimulator,
+    LOW_COST_TRAILING_POLICIES,
     TrailingPolicy,
     replay_one_position_portfolio,
     summarize_portfolio,
@@ -103,3 +104,13 @@ def test_portfolio_keeps_only_one_position() -> None:
 
     assert len(trades) == 2
     assert summary["trade_count"] == 2
+
+
+def test_low_cost_policies_are_micro_trailing_policies() -> None:
+    assert [policy.name for policy in LOW_COST_TRAILING_POLICIES] == [
+        "micro_2_1",
+        "micro_3_1",
+        "micro_5_2",
+        "micro_8_3",
+    ]
+    assert all(policy.trailing_distance_bps <= 3 for policy in LOW_COST_TRAILING_POLICIES)

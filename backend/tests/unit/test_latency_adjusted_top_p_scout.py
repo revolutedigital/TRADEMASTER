@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import pytest
 
+from datetime import UTC, datetime
+
+import pandas as pd
+
 from app.services.research.research_dataset import ResearchDatasetConfig
 from scripts.research.run_latency_adjusted_top_p_scout import (
     _consistent_label_config,
+    run_portfolio_replay,
     select_portfolio_candidate,
 )
 
@@ -119,3 +124,53 @@ def test_old_legacy_manifest_hash_is_reported_as_inferred(tmp_path) -> None:
 
     assert source == "legacy_manifest_inferred_path_label_config"
     assert label_config == ResearchDatasetConfig().path_label_config()
+
+
+def test_portfolio_replay_uses_manifest_cost_overrides(tmp_path) -> None:
+    trade_root = tmp_path / "trades"
+    partition = trade_root / "date=2026-01-01"
+    partition.mkdir(parents=True)
+    events = pd.DataFrame(
+        {
+            "event_time": [
+                datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC),
+                datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC),
+                datetime(2026, 1, 1, 0, 0, 2, tzinfo=UTC),
+            ],
+            "sequence_id": [1, 2, 3],
+            "product": ["usdm_perpetual", "usdm_perpetual", "usdm_perpetual"],
+            "price": [100.0, 101.0, 101.0],
+            "quantity": [1.0, 1.0, 1.0],
+            "is_buyer_maker": [False, False, False],
+        }
+    )
+    events.to_parquet(partition / "events.parquet", index=False)
+    predictions = pd.DataFrame(
+        {
+            "decision_time_ms": [
+                int(datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC).timestamp() * 1000)
+            ],
+            "side": ["BUY"],
+            "horizon_seconds": [2],
+            "probability": [1.0],
+            "threshold_top_1%": [0.5],
+            "threshold_top_2%": [0.5],
+            "threshold_top_5%": [0.5],
+            "threshold_top_10%": [0.5],
+        }
+    )
+
+    results = run_portfolio_replay(
+        predictions,
+        trade_root=trade_root,
+        latency_ms=0,
+        expected_round_trip_bps=1.0,
+        stress_round_trip_bps=2.0,
+        output_root=tmp_path / "out",
+    )
+
+    best = max(results, key=lambda row: row["summary"]["expected_mean_bps"])
+    assert best["summary"]["expected_mean_bps"] > 90
+    assert best["summary"]["stress_mean_bps"] == pytest.approx(
+        best["summary"]["expected_mean_bps"] - 1.0
+    )

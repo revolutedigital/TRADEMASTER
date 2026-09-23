@@ -61,6 +61,14 @@ V1_TRAILING_POLICIES = (
 )
 
 
+LOW_COST_TRAILING_POLICIES = (
+    TrailingPolicy("micro_2_1", 6, 2, 2, 3, 1),
+    TrailingPolicy("micro_3_1", 8, 3, 2, 5, 1),
+    TrailingPolicy("micro_5_2", 12, 5, 2, 8, 2),
+    TrailingPolicy("micro_8_3", 16, 8, 2, 12, 3),
+)
+
+
 @dataclass(frozen=True)
 class ManagedTrade:
     decision_time_ms: int

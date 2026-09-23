@@ -105,3 +105,18 @@ Não aprovar estratégia. Não Demo. Não Testnet. Não LIVE.
 Próximo passo técnico: corrigir a captura/settlement prospectivo para gravar
 `realized_vol_30s_bps` e `flow_imbalance_5s` junto do sinal top-p. Sem isso, a
 hipótese Fast80 não deve ser avaliada.
+
+## Correção de captura implementada
+
+Depois da execução inicial, o gravador de decisões Fast60/Fast69 foi ajustado
+para decisões futuras exportarem:
+
+- `causal_feature_values`, com o vetor causal calculado no momento da decisão;
+- `realized_vol_30s_bps` no topo da linha, quando existir no vetor;
+- `flow_imbalance_5s` no topo da linha, quando existir no vetor;
+- aliases já usados por gates anteriores, como `quote_volume_30s` e
+  `directed_flow_imbalance_30s`.
+
+Isso não altera scoring, não recalibra regra e não torna o dado antigo
+scoreável. Só garante que as próximas decisões top-p tenham evidência causal
+suficiente para o runner Fast80 aceitar ou rejeitar a hipótese sem proxy.

@@ -28,6 +28,7 @@ from scripts.research.run_fast60_fast57_shadow_dry_run import (  # noqa: E402
     align_datetime_to_stride,
     book_context_for_decision,
     build_book_context,
+    causal_feature_values,
     discover_default_wal_roots,
     infer_wal_trade_interval,
     parse_dates,
@@ -367,13 +368,14 @@ def shadow_decision_to_fast69_row(
     gate: DirectionalGate,
 ) -> dict[str, Any]:
     decision_time_ms = int(decision.decision_time.timestamp() * 1000)
+    feature_values = causal_feature_values(decision)
     gate_values = {
-        "quote_volume_30s": float(decision.feature_vector["quote_volume_30s"]),
-        "realized_vol_30s_bps": float(decision.feature_vector["realized_vol_30s_bps"]),
-        gate.directional_feature: float(decision.feature_vector[gate.directional_feature]),
+        "quote_volume_30s": float(feature_values["quote_volume_30s"]),
+        "realized_vol_30s_bps": float(feature_values["realized_vol_30s_bps"]),
+        gate.directional_feature: float(feature_values[gate.directional_feature]),
     }
     gate_passed = directional_gate_passed(gate_values, gate)
-    return {
+    row = {
         "label": label,
         "decision_time": decision.decision_time.isoformat(),
         "decision_time_ms": decision_time_ms,
@@ -387,7 +389,17 @@ def shadow_decision_to_fast69_row(
         "directional_gate_values": gate_values,
         "model_sha256": decision.model_sha256,
         "feature_vector_sha256": decision.feature_vector_sha256,
+        "causal_feature_values": feature_values,
     }
+    for feature in (
+        "quote_volume_30s",
+        "realized_vol_30s_bps",
+        "directed_flow_imbalance_30s",
+        "flow_imbalance_5s",
+    ):
+        if feature in feature_values:
+            row[feature] = feature_values[feature]
+    return row
 
 
 def directional_gate_passed(values: dict[str, float], gate: DirectionalGate) -> bool:

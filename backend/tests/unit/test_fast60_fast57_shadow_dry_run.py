@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 from app.schemas.microstructure import MarketEventType, MicrostructureEvent
 from scripts.research.run_fast60_fast57_shadow_dry_run import (
@@ -8,6 +9,7 @@ from scripts.research.run_fast60_fast57_shadow_dry_run import (
     build_book_context,
     fast60_run_status,
     fast60_status,
+    shadow_decision_to_row,
 )
 
 
@@ -77,6 +79,30 @@ def test_fast60_statuses_are_fail_closed() -> None:
 
     assert status == "FAST60_GATED_SHADOW_SIGNALS_RESEARCH_ONLY"
     assert "not_approved_strategy" in reasons
+
+
+def test_shadow_decision_row_exports_causal_features_for_future_audits() -> None:
+    decision = SimpleNamespace(
+        decision_time=datetime(2026, 1, 1, tzinfo=UTC),
+        side="BUY",
+        horizon_seconds=300,
+        probability=0.95,
+        threshold=0.90,
+        would_enter=True,
+        model_sha256="model",
+        feature_vector_sha256="features",
+        feature_vector={
+            "realized_vol_30s_bps": 50.0,
+            "flow_imbalance_5s": -0.3,
+            "quote_volume_30s": 123.0,
+        },
+    )
+
+    row = shadow_decision_to_row(decision, label="wal")
+
+    assert row["causal_feature_values"]["realized_vol_30s_bps"] == 50.0
+    assert row["realized_vol_30s_bps"] == 50.0
+    assert row["flow_imbalance_5s"] == -0.3
 
 
 def _decision(decision_time_ms: int, *, probability: float, side: str) -> dict[str, object]:

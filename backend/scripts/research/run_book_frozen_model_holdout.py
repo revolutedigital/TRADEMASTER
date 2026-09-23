@@ -84,6 +84,14 @@ def main() -> int:
     parser.add_argument("--profit-cost-bps", type=float, default=1.0)
     parser.add_argument("--stress-cost-bps", type=float, default=2.0)
     parser.add_argument("--minimum-executable-count", type=int, default=5)
+    parser.add_argument(
+        "--required-positive-modes",
+        default="independent,one_position",
+        help=(
+            "Comma-separated modes that must meet min executions and net-positive gates. "
+            "Allowed: independent, one_position."
+        ),
+    )
     arguments = parser.parse_args()
 
     report = run_book_frozen_model_holdout(
@@ -103,6 +111,9 @@ def main() -> int:
         profit_cost_bps=arguments.profit_cost_bps,
         stress_cost_bps=arguments.stress_cost_bps,
         minimum_executable_count=arguments.minimum_executable_count,
+        required_positive_modes=_parse_required_positive_modes(
+            arguments.required_positive_modes
+        ),
     )
     print(json.dumps(_console_summary(report), indent=2, sort_keys=True))  # noqa: T201
     return 0
@@ -126,6 +137,7 @@ def run_book_frozen_model_holdout(
     profit_cost_bps: float = 1.0,
     stress_cost_bps: float = 2.0,
     minimum_executable_count: int = 5,
+    required_positive_modes: tuple[str, ...] = ("independent", "one_position"),
 ) -> dict[str, object]:
     _validate_parameters(
         training_wal_root_refs=training_wal_root_refs,
@@ -143,6 +155,7 @@ def run_book_frozen_model_holdout(
         profit_cost_bps=profit_cost_bps,
         stress_cost_bps=stress_cost_bps,
         minimum_executable_count=minimum_executable_count,
+        required_positive_modes=required_positive_modes,
     )
     config = ResearchDatasetConfig(
         decision_stride_seconds=decision_stride_seconds,
@@ -183,6 +196,7 @@ def run_book_frozen_model_holdout(
             "profit_cost_bps": profit_cost_bps,
             "stress_cost_bps": stress_cost_bps,
             "minimum_executable_count": minimum_executable_count,
+            "required_positive_modes": list(required_positive_modes),
             "breakeven_trigger_equals_target_bps": True,
             "trailing_activation_equals_target_bps": True,
         },
@@ -300,6 +314,7 @@ def run_book_frozen_model_holdout(
         profit_cost_bps=profit_cost_bps,
         stress_cost_bps=stress_cost_bps,
         minimum_executable_count=minimum_executable_count,
+        required_positive_modes=required_positive_modes,
     )
 
     output_root.mkdir(parents=True, exist_ok=True)
@@ -396,27 +411,27 @@ def _status(
     profit_cost_bps: float,
     stress_cost_bps: float,
     minimum_executable_count: int,
+    required_positive_modes: tuple[str, ...],
 ) -> tuple[str, list[str]]:
     reasons = []
-    if int(one_position_summary["executable_count"]) < minimum_executable_count:
-        reasons.append(
-            "one_position_executable_count_below_minimum:"
-            f"{one_position_summary['executable_count']}<{minimum_executable_count}"
-        )
-    if int(independent_summary["executable_count"]) < minimum_executable_count:
-        reasons.append(
-            "independent_executable_count_below_minimum:"
-            f"{independent_summary['executable_count']}<{minimum_executable_count}"
-        )
-    if not _positive_at_cost(one_position_summary, profit_cost_bps):
-        reasons.append(f"one_position_net_at_{profit_cost_bps:g}bps_non_positive")
-    if not _positive_at_cost(independent_summary, profit_cost_bps):
-        reasons.append(f"independent_net_at_{profit_cost_bps:g}bps_non_positive")
+    summaries = {
+        "independent": independent_summary,
+        "one_position": one_position_summary,
+    }
+    for mode in required_positive_modes:
+        summary = summaries[mode]
+        if int(summary["executable_count"]) < minimum_executable_count:
+            reasons.append(
+                f"{mode}_executable_count_below_minimum:"
+                f"{summary['executable_count']}<{minimum_executable_count}"
+            )
+        if not _positive_at_cost(summary, profit_cost_bps):
+            reasons.append(f"{mode}_net_at_{profit_cost_bps:g}bps_non_positive")
     if reasons:
         return "FROZEN_MODEL_HOLDOUT_FAILED", reasons
-    if not _positive_at_cost(one_position_summary, stress_cost_bps) or not _positive_at_cost(
-        independent_summary,
-        stress_cost_bps,
+    if any(
+        not _positive_at_cost(summaries[mode], stress_cost_bps)
+        for mode in required_positive_modes
     ):
         return (
             "FROZEN_MODEL_HOLDOUT_PROFIT_COST_PASSED_STRESS_FRAGILE_RESEARCH_ONLY",
@@ -472,6 +487,7 @@ def _validate_parameters(
     profit_cost_bps: float,
     stress_cost_bps: float,
     minimum_executable_count: int,
+    required_positive_modes: tuple[str, ...],
 ) -> None:
     labels = [ref.label for ref in training_wal_root_refs]
     if not training_wal_root_refs:
@@ -500,6 +516,14 @@ def _validate_parameters(
         raise ValueError("initial_stop_bps must be positive")
     if minimum_executable_count < 1:
         raise ValueError("minimum_executable_count must be positive")
+    if not required_positive_modes:
+        raise ValueError("required_positive_modes cannot be empty")
+    allowed_modes = {"independent", "one_position"}
+    unknown_modes = sorted(set(required_positive_modes) - allowed_modes)
+    if unknown_modes:
+        raise ValueError(f"unsupported required positive modes: {unknown_modes}")
+    if len(set(required_positive_modes)) != len(required_positive_modes):
+        raise ValueError("required_positive_modes cannot contain duplicates")
     if not cost_levels_bps or any(value < 0 for value in cost_levels_bps):
         raise ValueError("cost_levels_bps must contain non-negative values")
     if profit_cost_bps not in cost_levels_bps:
@@ -513,6 +537,19 @@ def _parse_single_wal_root_ref(value: str) -> WalRootRef:
     if len(refs) != 1:
         raise ValueError("holdout WAL root must contain exactly one LABEL=path ref")
     return refs[0]
+
+
+def _parse_required_positive_modes(value: str) -> tuple[str, ...]:
+    modes = tuple(part.strip() for part in value.split(",") if part.strip())
+    allowed_modes = {"independent", "one_position"}
+    unknown_modes = sorted(set(modes) - allowed_modes)
+    if unknown_modes:
+        raise ValueError(f"unsupported required positive modes: {unknown_modes}")
+    if len(set(modes)) != len(modes):
+        raise ValueError("required positive modes cannot contain duplicates")
+    if not modes:
+        raise ValueError("at least one required positive mode is required")
+    return modes
 
 
 def _write_report(output_root: Path, report: dict[str, object]) -> dict[str, object]:

@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from scripts.research.run_book_frozen_model_holdout import (
+    _status,
     run_book_frozen_model_holdout,
 )
 from scripts.research.run_book_multi_window_model_scout import WalRootRef
@@ -49,6 +50,23 @@ def test_frozen_model_holdout_reports_without_strategy_approval(tmp_path: Path) 
     assert Path(report["one_position_trades_path"]).exists()
 
 
+def test_status_can_gate_only_one_position_mode() -> None:
+    independent_summary = _summary(executable_count=12, net_at_1bps=-0.5, net_at_2bps=-1.5)
+    one_position_summary = _summary(executable_count=6, net_at_1bps=2.0, net_at_2bps=1.0)
+
+    status, reasons = _status(
+        independent_summary=independent_summary,
+        one_position_summary=one_position_summary,
+        profit_cost_bps=1.0,
+        stress_cost_bps=2.0,
+        minimum_executable_count=5,
+        required_positive_modes=("one_position",),
+    )
+
+    assert status == "FROZEN_MODEL_HOLDOUT_PASSED_RESEARCH_ONLY"
+    assert "additional_prospective_windows_required" in reasons
+
+
 def _write_directional_wal(root: Path, *, seconds: int) -> Path:
     wal_root = root / "wal"
     start = datetime(2026, 1, 1, tzinfo=UTC)
@@ -88,3 +106,28 @@ def _append_gzip_jsonl(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with gzip.open(path, "at", encoding="utf-8") as handle:
         handle.write(json.dumps(payload, sort_keys=True) + "\n")
+
+
+def _summary(
+    *,
+    executable_count: int,
+    net_at_1bps: float,
+    net_at_2bps: float,
+) -> dict[str, object]:
+    gross_mean = net_at_1bps + 1.0
+    return {
+        "executable_count": executable_count,
+        "cost_sensitivity": [
+            {
+                "explicit_cost_bps": 1.0,
+                "net_executable_mean_bps": net_at_1bps,
+                "net_positive": net_at_1bps > 0,
+            },
+            {
+                "explicit_cost_bps": 2.0,
+                "net_executable_mean_bps": net_at_2bps,
+                "net_positive": net_at_2bps > 0,
+            },
+        ],
+        "gross_executable_mean_bps": gross_mean,
+    }

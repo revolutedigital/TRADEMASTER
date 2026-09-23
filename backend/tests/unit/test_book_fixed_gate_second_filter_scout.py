@@ -64,6 +64,26 @@ def test_second_filter_scout_rejects_authorized_report(tmp_path: Path) -> None:
         raise AssertionError("expected execution boundary validation to fail")
 
 
+def test_second_filter_fixed_candidate_single_holdout_passes(tmp_path: Path) -> None:
+    holdout = _write_window(tmp_path, "holdout", feature_values=(1.0, 2.0), payoffs=(4.0, -4.0))
+
+    report = run_book_fixed_gate_second_filter_scout(
+        settlement_report_refs=(SettlementReportRef("holdout", holdout),),
+        output_root=tmp_path / "out",
+        features=("test_feature",),
+        quantiles=(0.5,),
+        minimum_one_position_count_per_window=1,
+        profit_cost_bps=1.0,
+        stress_cost_bps=2.0,
+        cost_levels_bps=(0.0, 1.0, 2.0),
+        top_n=3,
+        fixed_candidate=Candidate("test_feature", "low", 1.5),
+    )
+
+    assert report["status"] == "SECOND_FILTER_FIXED_CANDIDATE_HOLDOUT_PASSED"
+    assert report["approved_strategy"] is False
+
+
 def _write_window(
     root: Path,
     label: str,

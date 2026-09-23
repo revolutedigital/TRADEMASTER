@@ -165,7 +165,13 @@ def run_book_fixed_gate_second_filter_scout(
         if fixed_candidate is not None
         else None
     )
-    status, reasons = _status(top_candidates=top_candidates, walkforward=walkforward)
+    status, reasons = _status(
+        top_candidates=top_candidates,
+        walkforward=walkforward,
+        fixed_candidate_result=fixed_candidate_result,
+        window_count=len(loaded),
+        minimum_one_position_count_per_window=minimum_one_position_count_per_window,
+    )
     return _write_report(
         output_root,
         {
@@ -364,6 +370,8 @@ def _walkforward_selection(
     stress_cost_bps: float,
     cost_levels_bps: tuple[float, ...],
 ) -> list[dict[str, object]]:
+    if len(window_labels) < 2:
+        return []
     folds: list[dict[str, object]] = []
     for holdout in window_labels:
         development_labels = tuple(label for label in window_labels if label != holdout)
@@ -451,9 +459,36 @@ def _status(
     *,
     top_candidates: list[dict[str, object]],
     walkforward: list[dict[str, object]],
+    fixed_candidate_result: dict[str, object] | None,
+    window_count: int,
+    minimum_one_position_count_per_window: int,
 ) -> tuple[str, list[str]]:
+    if window_count == 1 and fixed_candidate_result is not None:
+        if fixed_candidate_result["one_position_executable_count"] < minimum_one_position_count_per_window:
+            return (
+                "SECOND_FILTER_FIXED_CANDIDATE_HOLDOUT_FAILED",
+                [
+                    "fixed_candidate_one_position_count_below_minimum:"
+                    f"{fixed_candidate_result['one_position_executable_count']}"
+                    f"<{minimum_one_position_count_per_window}"
+                ],
+            )
+        if fixed_candidate_result["one_position_min_window_net_at_profit_cost_bps"] <= 0:
+            return (
+                "SECOND_FILTER_FIXED_CANDIDATE_HOLDOUT_FAILED",
+                ["fixed_candidate_profit_cost_non_positive"],
+            )
+        return (
+            "SECOND_FILTER_FIXED_CANDIDATE_HOLDOUT_PASSED",
+            ["more_future_holdouts_required_before_strategy_approval"],
+        )
     if not top_candidates:
         return "SECOND_FILTER_SCOUT_NO_CANDIDATE", ["no_candidate_met_minimum_counts"]
+    if not walkforward:
+        return (
+            "SECOND_FILTER_SCOUT_SINGLE_WINDOW_DIAGNOSTIC",
+            ["walkforward_requires_at_least_two_windows"],
+        )
     passed_folds = sum(fold["status"] == "HOLDOUT_PASSED_PROFIT_COST" for fold in walkforward)
     if passed_folds != len(walkforward):
         return (

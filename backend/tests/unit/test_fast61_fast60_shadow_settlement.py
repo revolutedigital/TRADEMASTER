@@ -71,6 +71,10 @@ def test_fast61_settlement_marks_incomplete_when_horizon_is_not_covered(
     )
     incomplete = _read_jsonl(Path(str(report["incomplete_signals_path"])))
     assert incomplete[0]["incomplete_reason"] == "horizon_not_fully_covered_by_wal"
+    assert incomplete[0]["flow_imbalance_5s"] == -0.3
+    complete = _read_jsonl(Path(str(report["one_position_settlements_path"])))
+    assert complete[0]["causal_feature_values"]["realized_vol_30s_bps"] == 50.0
+    assert complete[0]["realized_vol_30s_bps"] == 50.0
 
 
 def test_fast61_status_fails_when_stress_is_not_positive() -> None:
@@ -131,6 +135,12 @@ def _decision(label: str, decision_time: datetime, *, horizon_seconds: int) -> d
         "spread_bps": 0.01,
         "top_bid_notional_usdt": 100_000.0,
         "top_ask_notional_usdt": 100_000.0,
+        "causal_feature_values": {
+            "realized_vol_30s_bps": 50.0,
+            "flow_imbalance_5s": -0.3,
+        },
+        "realized_vol_30s_bps": 50.0,
+        "flow_imbalance_5s": -0.3,
     }
 
 

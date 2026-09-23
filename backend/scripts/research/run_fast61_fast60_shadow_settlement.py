@@ -38,6 +38,13 @@ DEFAULT_OUTPUT_ROOT = DEFAULT_DATA_ROOT / "reports" / "fast61-fast60-shadow-sett
 DEFAULT_POLICY_NAME = "micro_8_3"
 STRATEGY_MINIMUM_DAYS = 10
 STRATEGY_MINIMUM_TRADES = 100
+PRESERVED_DECISION_CONTEXT_FIELDS = (
+    "causal_feature_values",
+    "quote_volume_30s",
+    "realized_vol_30s_bps",
+    "directed_flow_imbalance_30s",
+    "flow_imbalance_5s",
+)
 
 
 def main() -> int:
@@ -308,6 +315,7 @@ def _settle_label_decisions(
                 "wal_first_event_time_ms": first_event_time_ms,
                 "wal_last_event_time_ms": last_event_time_ms,
                 "required_end_time_ms": required_end_ms,
+                **_preserved_decision_context(decision),
             }
         )
     return complete_rows, incomplete_rows
@@ -409,6 +417,15 @@ def _incomplete_row(
         "wal_first_event_time_ms": first_event_time_ms,
         "wal_last_event_time_ms": last_event_time_ms,
         "required_end_time_ms": required_end_time_ms,
+        **_preserved_decision_context(record),
+    }
+
+
+def _preserved_decision_context(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        field: record[field]
+        for field in PRESERVED_DECISION_CONTEXT_FIELDS
+        if field in record
     }
 
 

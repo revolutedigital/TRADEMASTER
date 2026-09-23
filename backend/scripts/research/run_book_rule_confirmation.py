@@ -287,6 +287,7 @@ def summarize_selection(rows: pd.DataFrame, selected: pd.DataFrame) -> dict[str,
         "base_gross_path_payoff_mean_bps": base_payoff,
         "selected_gross_path_payoff_mean_bps": selected_payoff,
         "gross_path_payoff_lift_bps": float(selected_payoff - base_payoff),
+        "break_even_total_cost_bps": selected_payoff,
     }
 
 

@@ -466,6 +466,7 @@ def _window_report(window: Any) -> dict[str, object]:
         "interval_start": window.interval_start,
         "interval_end": window.interval_end,
         "target_rate": float(window.rows["target"].mean()),
+        "book_fresh_filter": window.book_fresh_filter,
         "streams": window.streams,
     }
 

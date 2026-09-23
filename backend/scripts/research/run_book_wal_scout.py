@@ -13,7 +13,7 @@ import gzip
 import json
 import math
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -180,7 +180,7 @@ def run_book_wal_scout(
         if streams["spot_trade"].present
         else None
     )
-    rows = build_research_rows(
+    rows, book_fresh_filter = _build_research_rows_with_book_fresh_filter(
         trades,
         decisions,
         config,
@@ -188,6 +188,19 @@ def run_book_wal_scout(
         mark_events=mark_events,
         spot_trade_events=spot_events,
     )
+    if rows.empty:
+        return _write_report(
+            output_root,
+            {
+                **base_report,
+                "status": "INSUFFICIENT_FRESH_BOOK_DECISIONS",
+                "status_reasons": ["no_decisions_after_book_fresh_filter"],
+                "decision_count": 0,
+                "row_count": 0,
+                "modeling_ready": False,
+                "book_fresh_filter": book_fresh_filter,
+            },
+        )
     output_root.mkdir(parents=True, exist_ok=True)
     rows_path = output_root / "research_rows.parquet"
     rows.to_parquet(rows_path, index=False, compression="zstd")
@@ -209,8 +222,62 @@ def run_book_wal_scout(
         "interval_start": _iso(int(rows["decision_time_ms"].min())),
         "interval_end": _iso(int(rows["decision_time_ms"].max())),
         "summary": summary,
+        "book_fresh_filter": book_fresh_filter,
     }
     return _write_report(output_root, report)
+
+
+def _build_research_rows_with_book_fresh_filter(
+    trades: pd.DataFrame,
+    decisions: np.ndarray,
+    config: ResearchDatasetConfig,
+    *,
+    book_events: pd.DataFrame,
+    mark_events: pd.DataFrame | None,
+    spot_trade_events: pd.DataFrame | None,
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    try:
+        rows = build_research_rows(
+            trades,
+            decisions,
+            config,
+            book_events=book_events,
+            mark_events=mark_events,
+            spot_trade_events=spot_trade_events,
+        )
+        return rows, {
+            "applied": False,
+            "reason": None,
+            "original_decision_count": int(len(decisions)),
+            "retained_decision_count": int(rows["decision_time_ms"].nunique()),
+            "dropped_decision_count": 0,
+            "max_book_staleness_ms": config.max_book_staleness_ms,
+        }
+    except ValueError as error:
+        if not str(error).startswith("book features are incomplete:"):
+            raise
+        relaxed_config = replace(config, require_book_features=False)
+        rows = build_research_rows(
+            trades,
+            decisions,
+            relaxed_config,
+            book_events=book_events,
+            mark_events=mark_events,
+            spot_trade_events=spot_trade_events,
+        )
+        fresh_rows = rows[
+            (rows["book_available"] == 1)
+            & (rows["book_update_age_ms"] <= config.max_book_staleness_ms)
+        ].copy()
+        retained_decision_count = int(fresh_rows["decision_time_ms"].nunique())
+        return fresh_rows.reset_index(drop=True), {
+            "applied": True,
+            "reason": str(error),
+            "original_decision_count": int(len(decisions)),
+            "retained_decision_count": retained_decision_count,
+            "dropped_decision_count": int(len(decisions) - retained_decision_count),
+            "max_book_staleness_ms": config.max_book_staleness_ms,
+        }
 
 
 def summarize_stream(stream_root: Path) -> StreamSummary:

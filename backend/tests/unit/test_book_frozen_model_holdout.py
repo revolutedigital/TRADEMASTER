@@ -45,6 +45,7 @@ def test_frozen_model_holdout_reports_without_strategy_approval(tmp_path: Path) 
     assert report["modeling_ready"] is True
     assert report["feature_count"] > 0
     assert report["selected_signal_count"] > 0
+    assert report["holdout_window"]["book_fresh_filter"]["applied"] is False
     assert Path(report["selected_rows_path"]).exists()
     assert Path(report["trades_path"]).exists()
     assert Path(report["one_position_trades_path"]).exists()

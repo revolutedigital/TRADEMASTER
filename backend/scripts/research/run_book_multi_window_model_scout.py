@@ -17,7 +17,7 @@ import math
 import sys
 from collections import defaultdict
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -71,6 +71,7 @@ class LoadedWindow:
     row_count: int
     interval_start: str
     interval_end: str
+    book_fresh_filter: dict[str, object]
 
 
 def main() -> int:
@@ -498,7 +499,7 @@ def _load_window(
         if streams["spot_trade"].present
         else None
     )
-    rows = build_research_rows(
+    rows, book_fresh_filter = _build_research_rows_with_book_fresh_filter(
         trades,
         decisions,
         config,
@@ -507,6 +508,13 @@ def _load_window(
         spot_trade_events=spot_events,
     )
     rows = rows.copy()
+    if rows.empty:
+        return {
+            "reason": "insufficient_fresh_book_decisions",
+            "status_reasons": ["no_decisions_after_book_fresh_filter"],
+            "streams": {name: asdict(summary) for name, summary in streams.items()},
+            "book_fresh_filter": book_fresh_filter,
+        }
     rows["window_label"] = ref.label
     return LoadedWindow(
         label=ref.label,
@@ -517,7 +525,61 @@ def _load_window(
         row_count=int(len(rows)),
         interval_start=_iso(int(rows["decision_time_ms"].min())),
         interval_end=_iso(int(rows["decision_time_ms"].max())),
+        book_fresh_filter=book_fresh_filter,
     )
+
+
+def _build_research_rows_with_book_fresh_filter(
+    trades: pd.DataFrame,
+    decisions: np.ndarray,
+    config: ResearchDatasetConfig,
+    *,
+    book_events: pd.DataFrame,
+    mark_events: pd.DataFrame | None,
+    spot_trade_events: pd.DataFrame | None,
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    try:
+        rows = build_research_rows(
+            trades,
+            decisions,
+            config,
+            book_events=book_events,
+            mark_events=mark_events,
+            spot_trade_events=spot_trade_events,
+        )
+        return rows, {
+            "applied": False,
+            "reason": None,
+            "original_decision_count": int(len(decisions)),
+            "retained_decision_count": int(rows["decision_time_ms"].nunique()),
+            "dropped_decision_count": 0,
+            "max_book_staleness_ms": config.max_book_staleness_ms,
+        }
+    except ValueError as error:
+        if not str(error).startswith("book features are incomplete:"):
+            raise
+        relaxed_config = replace(config, require_book_features=False)
+        rows = build_research_rows(
+            trades,
+            decisions,
+            relaxed_config,
+            book_events=book_events,
+            mark_events=mark_events,
+            spot_trade_events=spot_trade_events,
+        )
+        fresh_rows = rows[
+            (rows["book_available"] == 1)
+            & (rows["book_update_age_ms"] <= config.max_book_staleness_ms)
+        ].copy()
+        retained_decision_count = int(fresh_rows["decision_time_ms"].nunique())
+        return fresh_rows.reset_index(drop=True), {
+            "applied": True,
+            "reason": str(error),
+            "original_decision_count": int(len(decisions)),
+            "retained_decision_count": retained_decision_count,
+            "dropped_decision_count": int(len(decisions) - retained_decision_count),
+            "max_book_staleness_ms": config.max_book_staleness_ms,
+        }
 
 
 def _select_top_fraction(
@@ -878,6 +940,7 @@ def _window_report(window: LoadedWindow) -> dict[str, object]:
         "interval_start": window.interval_start,
         "interval_end": window.interval_end,
         "target_rate": float(window.rows["target"].mean()),
+        "book_fresh_filter": window.book_fresh_filter,
         "streams": window.streams,
     }
 

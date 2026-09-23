@@ -567,7 +567,7 @@ def _prepare_trade_frame(
             columns=["event_time_ms", "sequence_id", "price", "quantity", "is_buyer_maker"]
         )
     prepared = frame.copy()
-    prepared["event_time"] = pd.to_datetime(prepared["event_time"], utc=True)
+    prepared["event_time"] = _parse_event_time(prepared["event_time"])
     prepared["event_time_ms"] = _datetime_to_epoch_ms(prepared["event_time"])
     start_ms = int(interval_start.timestamp() * 1000)
     end_ms = int(interval_end.timestamp() * 1000)
@@ -618,7 +618,7 @@ def _prepare_book_frame(
             ]
         )
     prepared = frame.copy()
-    prepared["event_time"] = pd.to_datetime(prepared["event_time"], utc=True)
+    prepared["event_time"] = _parse_event_time(prepared["event_time"])
     prepared["event_time_ms"] = _datetime_to_epoch_ms(prepared["event_time"])
     start_ms = int(interval_start.timestamp() * 1000)
     end_ms = int(interval_end.timestamp() * 1000)
@@ -653,7 +653,7 @@ def _prepare_mark_frame(
             columns=["event_time_ms", "mark_price", "index_price", "funding_rate"]
         )
     prepared = frame.copy()
-    prepared["event_time"] = pd.to_datetime(prepared["event_time"], utc=True)
+    prepared["event_time"] = _parse_event_time(prepared["event_time"])
     prepared["event_time_ms"] = _datetime_to_epoch_ms(prepared["event_time"])
     start_ms = int(interval_start.timestamp() * 1000)
     end_ms = int(interval_end.timestamp() * 1000)
@@ -677,7 +677,7 @@ def _prepare_liquidation_frame(
             columns=["event_time_ms", "sequence_id", "price", "quantity", "side"]
         )
     prepared = frame.copy()
-    prepared["event_time"] = pd.to_datetime(prepared["event_time"], utc=True)
+    prepared["event_time"] = _parse_event_time(prepared["event_time"])
     prepared["event_time_ms"] = _datetime_to_epoch_ms(prepared["event_time"])
     start_ms = int(interval_start.timestamp() * 1000)
     end_ms = int(interval_end.timestamp() * 1000)
@@ -768,7 +768,12 @@ def _epoch_ms_to_iso(value: int) -> str:
 
 
 def _datetime_to_epoch_ms(values: pd.Series) -> pd.Series:
-    return pd.to_datetime(values, utc=True).dt.as_unit("ms").astype("int64")
+    return _parse_event_time(values).dt.as_unit("ms").astype("int64")
+
+
+def _parse_event_time(values: pd.Series) -> pd.Series:
+    """Parse WAL/parquet event times with mixed ISO-8601 precision."""
+    return pd.to_datetime(values, utc=True, format="mixed")
 
 
 def _sha256(path: Path) -> str:

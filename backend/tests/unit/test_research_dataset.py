@@ -239,6 +239,16 @@ def test_load_mark_interval_reads_prospective_wal_jsonl(tmp_path: Path) -> None:
             )
             + "\n"
         )
+        handle.write(
+            json.dumps(
+                {
+                    "event_time": "2026-01-01T00:00:02Z",
+                    "price": 102.0,
+                    "payload": {"index_price": 101.0, "funding_rate": 0.0002},
+                }
+            )
+            + "\n"
+        )
 
     frame = load_mark_interval(
         tmp_path,
@@ -246,9 +256,12 @@ def test_load_mark_interval_reads_prospective_wal_jsonl(tmp_path: Path) -> None:
         datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
 
-    assert frame["event_time_ms"].tolist() == [int(event_time.timestamp() * 1000)]
-    assert frame["mark_price"].tolist() == [101.0]
-    assert frame["funding_rate"].tolist() == [0.0001]
+    assert frame["event_time_ms"].tolist() == [
+        int(event_time.timestamp() * 1000),
+        int(datetime(2026, 1, 1, 0, 0, 2, tzinfo=UTC).timestamp() * 1000),
+    ]
+    assert frame["mark_price"].tolist() == [101.0, 102.0]
+    assert frame["funding_rate"].tolist() == [0.0001, 0.0002]
 
 
 def test_load_liquidation_interval_reads_prospective_wal_jsonl(tmp_path: Path) -> None:

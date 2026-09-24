@@ -9,6 +9,7 @@ import pytest
 
 from scripts.research import fetch_binance_live_aggtrades_partition as live_fetch
 from scripts.research.fetch_binance_live_aggtrades_partition import (
+    extend_and_normalize_live_aggtrades_partition,
     fetch_aggregate_trades,
     fetch_and_normalize_live_aggtrades_partition,
     normalize_live_aggregate_trades,
@@ -137,3 +138,47 @@ async def test_fetch_and_normalize_refuses_to_replace_archive_verified_partition
             replace_partial=True,
             transport=httpx.MockTransport(lambda _request: httpx.Response(200, json=rows)),
         )
+
+
+@pytest.mark.asyncio
+async def test_extend_and_normalize_live_partition_fetches_only_tail(tmp_path: Path) -> None:
+    initial_rows = [
+        {"a": 10, "p": "100.0", "q": "2.0", "f": 10, "l": 10, "T": 1767225600000, "m": True},
+        {"a": 11, "p": "101.0", "q": "1.5", "f": 11, "l": 11, "T": 1767225601000, "m": False},
+    ]
+    normalized_path = tmp_path / "normalized" / "aggTrades" / "date=2026-01-01" / "events.parquet"
+    raw_path = tmp_path / "raw" / "initial.jsonl.gz"
+    write_raw_rows(raw_path, initial_rows)
+    normalize_live_aggregate_trades(
+        rows=initial_rows,
+        normalized_path=normalized_path,
+        raw_path=raw_path,
+        source_url="https://example.test/fapi/v1/aggTrades",
+        symbol="BTCUSDT",
+        utc_date=date(2026, 1, 1),
+    )
+    captured_params: dict[str, str] = {}
+    tail_rows = [
+        {"a": 12, "p": "102.0", "q": "1.0", "f": 12, "l": 12, "T": 1767225602000, "m": False}
+    ]
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        captured_params.update(dict(request.url.params))
+        return httpx.Response(200, json=tail_rows)
+
+    manifest = await extend_and_normalize_live_aggtrades_partition(
+        symbol="BTCUSDT",
+        utc_date=date(2026, 1, 1),
+        start_at=datetime(2026, 1, 1, tzinfo=UTC),
+        end_at=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        root=tmp_path,
+        market_base_url="https://example.test",
+        replace_partial=True,
+        transport=httpx.MockTransport(handler),
+    )
+
+    normalized = pd.read_parquet(normalized_path)
+    assert normalized["sequence_id"].tolist() == [10, 11, 12]
+    assert captured_params["startTime"] == "1767225601001"
+    assert manifest.row_count == 3
+    assert manifest.last_sequence_id == 12

@@ -24,6 +24,7 @@ sys.path.insert(0, str(BACKEND_ROOT))
 
 from scripts.research.fetch_binance_live_aggtrades_partition import (  # noqa: E402
     FUTURES_MARKET_URL,
+    extend_and_normalize_live_aggtrades_partition,
     fetch_and_normalize_live_aggtrades_partition,
     parse_utc_datetime,
 )
@@ -58,6 +59,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--market-base-url", default=FUTURES_MARKET_URL)
     parser.add_argument("--fast185-registry-path", type=Path, default=FAST185_REGISTRY_PATH)
     parser.add_argument("--replace-partial", action="store_true")
+    parser.add_argument(
+        "--full-replace",
+        action="store_true",
+        help="Fetch the full requested window instead of extending the existing live partial partition.",
+    )
     args = parser.parse_args(argv)
     result = asyncio.run(
         run_fast185_live_partial_refresh_snapshot(
@@ -67,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
             market_base_url=args.market_base_url,
             fast185_registry_path=args.fast185_registry_path,
             replace_partial=args.replace_partial,
+            incremental=not args.full_replace,
         )
     )
     print(json.dumps(console_summary(result), indent=2, sort_keys=True))  # noqa: T201
@@ -81,12 +88,18 @@ async def run_fast185_live_partial_refresh_snapshot(
     market_base_url: str = FUTURES_MARKET_URL,
     fast185_registry_path: Path = FAST185_REGISTRY_PATH,
     replace_partial: bool = False,
+    incremental: bool = True,
 ) -> dict[str, Any]:
     start_at = start_at.astimezone(UTC)
     end_at = end_at.astimezone(UTC)
     manifests = {}
     for symbol, root in SYMBOL_ROOTS.items():
-        manifest = await fetch_and_normalize_live_aggtrades_partition(
+        refresh = (
+            extend_and_normalize_live_aggtrades_partition
+            if incremental
+            else fetch_and_normalize_live_aggtrades_partition
+        )
+        manifest = await refresh(
             symbol=symbol,
             utc_date=utc_date,
             start_at=start_at,

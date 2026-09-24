@@ -120,6 +120,88 @@ async def fetch_and_normalize_live_aggtrades_partition(
     )
 
 
+async def extend_and_normalize_live_aggtrades_partition(
+    *,
+    symbol: str,
+    utc_date: date,
+    start_at: datetime,
+    end_at: datetime,
+    root: Path,
+    market_base_url: str = FUTURES_MARKET_URL,
+    replace_partial: bool = False,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> DatasetPartitionManifest:
+    """Extend an existing diagnostic live partial partition by fetching only the missing tail."""
+
+    validate_range(utc_date=utc_date, start_at=start_at, end_at=end_at)
+    symbol = symbol.upper()
+    normalized_path = root / "normalized" / "aggTrades" / f"date={utc_date.isoformat()}" / "events.parquet"
+    manifest_path = normalized_path.with_suffix(".manifest.json")
+    if not normalized_path.exists() or not manifest_path.exists():
+        return await fetch_and_normalize_live_aggtrades_partition(
+            symbol=symbol,
+            utc_date=utc_date,
+            start_at=start_at,
+            end_at=end_at,
+            root=root,
+            market_base_url=market_base_url,
+            replace_partial=replace_partial,
+            transport=transport,
+        )
+    assert_replace_is_safe(normalized_path=normalized_path, replace_partial=replace_partial)
+    existing_manifest = DatasetPartitionManifest.model_validate_json(
+        manifest_path.read_text(encoding="utf-8")
+    )
+    if existing_manifest.symbol != symbol:
+        raise ValueError(f"existing manifest symbol mismatch: {existing_manifest.symbol} != {symbol}")
+    if existing_manifest.utc_date != utc_date.isoformat():
+        raise ValueError(f"existing manifest utc_date mismatch: {existing_manifest.utc_date}")
+    if existing_manifest.last_event_time >= end_at:
+        return existing_manifest
+
+    fetch_start = max(start_at, existing_manifest.last_event_time.astimezone(UTC))
+    fetch_start = datetime.fromtimestamp(fetch_start.timestamp() + 0.001, UTC)
+    if fetch_start >= end_at:
+        return existing_manifest
+    rows = await fetch_aggregate_trades(
+        symbol=symbol,
+        start_at=fetch_start,
+        end_at=end_at,
+        market_base_url=market_base_url,
+        transport=transport,
+    )
+    if not rows:
+        return existing_manifest
+    raw_path = (
+        root
+        / "raw"
+        / "live-aggTrades"
+        / symbol
+        / f"date={utc_date.isoformat()}"
+        / f"{symbol}-aggTrades-{fetch_start:%H%M%S}-{end_at:%H%M%S}.jsonl.gz"
+    )
+    write_raw_rows(raw_path, rows)
+    existing = pd.read_parquet(normalized_path)
+    new = aggregate_trade_rows_to_frame(rows=rows, symbol=symbol, utc_date=utc_date)
+    merged = (
+        pd.concat([existing, new], ignore_index=True)
+        .sort_values(["sequence_id", "event_time"], kind="stable")
+        .drop_duplicates(subset=["sequence_id"], keep="last")
+    )
+    source_url = (
+        f"{market_base_url.rstrip('/')}/fapi/v1/aggTrades?"
+        f"symbol={symbol}&startTime={milliseconds(fetch_start)}&endTime={milliseconds(end_at)}&limit={PAGE_LIMIT}"
+    )
+    return write_normalized_manifest(
+        normalized=merged,
+        normalized_path=normalized_path,
+        raw_path=raw_path,
+        source_url=source_url,
+        symbol=symbol,
+        utc_date=utc_date,
+    )
+
+
 async def fetch_aggregate_trades(
     *,
     symbol: str,
@@ -220,6 +302,23 @@ def normalize_live_aggregate_trades(
     symbol: str,
     utc_date: date,
 ) -> DatasetPartitionManifest:
+    normalized = aggregate_trade_rows_to_frame(rows=rows, symbol=symbol, utc_date=utc_date)
+    return write_normalized_manifest(
+        normalized=normalized,
+        normalized_path=normalized_path,
+        raw_path=raw_path,
+        source_url=source_url,
+        symbol=symbol,
+        utc_date=utc_date,
+    )
+
+
+def aggregate_trade_rows_to_frame(
+    *,
+    rows: list[dict[str, Any]],
+    symbol: str,
+    utc_date: date,
+) -> pd.DataFrame:
     frame = pd.DataFrame(rows)
     required = {"a", "p", "q", "f", "l", "T", "m"}
     missing = required - set(frame.columns)
@@ -250,6 +349,18 @@ def normalize_live_aggregate_trades(
         raise ValueError("normalized aggregate trades contain non-finite numeric values")
     if (normalized[value_columns] <= 0).any().any():
         raise ValueError("normalized aggregate trades must have positive price, quantity and quote quantity")
+    return normalized
+
+
+def write_normalized_manifest(
+    *,
+    normalized: pd.DataFrame,
+    normalized_path: Path,
+    raw_path: Path,
+    source_url: str,
+    symbol: str,
+    utc_date: date,
+) -> DatasetPartitionManifest:
     sequence_ids = normalized["sequence_id"].to_numpy(dtype=np.int64)
     duplicate_sequence_count = int(pd.Series(sequence_ids).duplicated().sum())
     if duplicate_sequence_count:

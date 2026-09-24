@@ -110,15 +110,19 @@ def run_fast176_fast175_diagnostic_regime_observation(
     model.fit(model_training_rows[feature_columns], model_training_rows["actual_bps"])
 
     prospective_rows, source_summary = build_prospective_rows(trade_roots, feature_columns)
-    scored_rows = score_and_filter_rows(model, prospective_rows, feature_columns)
+    all_scored_rows = score_rows(model, prospective_rows, feature_columns)
+    scored_rows = filter_eligible_rows(all_scored_rows)
     observation_records = [observation_record(row) for _, row in scored_rows.iterrows()]
 
     observation_rows_path = output_root / "observation-decision-rows.parquet"
     observations_path = output_root / "observations.jsonl"
+    prospective_diagnostics_path = output_root / "prospective-diagnostics.json"
     summary_path = output_root / "summary.json"
     scored_rows.to_parquet(observation_rows_path, compression="zstd", index=False)
     write_jsonl(observations_path, observation_records)
 
+    prospective_diagnostics = summarize_prospective_diagnostics(all_scored_rows)
+    write_json(prospective_diagnostics_path, prospective_diagnostics)
     observation_summary = summarize_observations(scored_rows, alpha=alpha)
     gates = evaluate_gates(scored_rows, observation_summary)
     status, status_reasons = fast176_status(
@@ -143,6 +147,7 @@ def run_fast176_fast175_diagnostic_regime_observation(
         "training_row_count": int(len(model_training_rows)),
         "prospective_row_count": int(len(prospective_rows)),
         "eligible_observation_count": int(len(scored_rows)),
+        "prospective_diagnostics": prospective_diagnostics,
         "observation_summary": observation_summary,
         "gates": gates,
     }
@@ -172,6 +177,10 @@ def run_fast176_fast175_diagnostic_regime_observation(
                 "sha256": sha256_file(observation_rows_path),
             },
             "observations": {"path": str(observations_path), "sha256": sha256_file(observations_path)},
+            "prospective_diagnostics": {
+                "path": str(prospective_diagnostics_path),
+                "sha256": sha256_file(prospective_diagnostics_path),
+            },
             "summary": {"path": str(summary_path), "sha256": sha256_file(summary_path)},
         },
     }
@@ -268,7 +277,7 @@ def discover_available_dates(trade_roots: dict[str, Path]) -> list[str]:
     return sorted(set.intersection(*date_sets))
 
 
-def score_and_filter_rows(model: Any, rows: pd.DataFrame, feature_columns: list[str]) -> pd.DataFrame:
+def score_rows(model: Any, rows: pd.DataFrame, feature_columns: list[str]) -> pd.DataFrame:
     if rows.empty:
         return rows.assign(
             prediction=pd.Series(dtype=float),
@@ -276,19 +285,73 @@ def score_and_filter_rows(model: Any, rows: pd.DataFrame, feature_columns: list[
             side=pd.Series(dtype=float),
             side_label=pd.Series(dtype=str),
             net_bps=pd.Series(dtype=float),
+            edge_gate_passed=pd.Series(dtype=bool),
+            regime_gate_passed=pd.Series(dtype=bool),
+            eligible=pd.Series(dtype=bool),
         )
     scored = rows.copy()
     scored["prediction"] = model.predict(scored[feature_columns])
     scored["edge"] = np.abs(scored["prediction"])
     scored["side"] = np.sign(scored["prediction"])
-    scored = scored.loc[
-        (scored["side"].ne(0))
-        & (scored["edge"] >= EDGE_THRESHOLD_BPS)
-        & (scored[REGIME_GATE_FEATURE] >= REGIME_GATE_THRESHOLD)
-    ].copy()
-    scored["side_label"] = np.where(scored["side"] > 0, "LONG", "SHORT")
-    scored["net_bps"] = scored["actual_bps"] * scored["side"] - EXPLICIT_COST_BPS
+    scored["side_label"] = np.select(
+        [scored["side"] > 0, scored["side"] < 0],
+        ["LONG", "SHORT"],
+        default="FLAT",
+    )
+    scored["net_bps"] = np.where(
+        scored["side"].ne(0),
+        scored["actual_bps"] * scored["side"] - EXPLICIT_COST_BPS,
+        0.0,
+    )
+    scored["edge_gate_passed"] = scored["side"].ne(0) & (scored["edge"] >= EDGE_THRESHOLD_BPS)
+    scored["regime_gate_passed"] = scored[REGIME_GATE_FEATURE] >= REGIME_GATE_THRESHOLD
+    scored["eligible"] = scored["edge_gate_passed"] & scored["regime_gate_passed"]
     return scored.reset_index(drop=True)
+
+
+def filter_eligible_rows(scored: pd.DataFrame) -> pd.DataFrame:
+    if scored.empty:
+        return scored.copy()
+    return scored.loc[scored["eligible"]].copy().reset_index(drop=True)
+
+
+def score_and_filter_rows(model: Any, rows: pd.DataFrame, feature_columns: list[str]) -> pd.DataFrame:
+    return filter_eligible_rows(score_rows(model, rows, feature_columns))
+
+
+def summarize_prospective_diagnostics(scored: pd.DataFrame) -> dict[str, Any]:
+    if scored.empty:
+        return {
+            "row_count": 0,
+            "edge_gate_pass_count": 0,
+            "regime_gate_pass_count": 0,
+            "eligible_count": 0,
+            "max_edge_bps": 0.0,
+            "max_regime_gate_value": 0.0,
+            "latest_decision_time": None,
+            "latest_prediction_bps": None,
+            "latest_edge_bps": None,
+            "latest_regime_gate_value": None,
+            "latest_edge_gate_passed": False,
+            "latest_regime_gate_passed": False,
+            "latest_eligible": False,
+        }
+    latest = scored.sort_values("decision_time").iloc[-1]
+    return {
+        "row_count": int(len(scored)),
+        "edge_gate_pass_count": int(scored["edge_gate_passed"].sum()),
+        "regime_gate_pass_count": int(scored["regime_gate_passed"].sum()),
+        "eligible_count": int(scored["eligible"].sum()),
+        "max_edge_bps": float(scored["edge"].max()),
+        "max_regime_gate_value": float(scored[REGIME_GATE_FEATURE].max()),
+        "latest_decision_time": latest["decision_time"].isoformat(),
+        "latest_prediction_bps": float(latest["prediction"]),
+        "latest_edge_bps": float(latest["edge"]),
+        "latest_regime_gate_value": float(latest[REGIME_GATE_FEATURE]),
+        "latest_edge_gate_passed": bool(latest["edge_gate_passed"]),
+        "latest_regime_gate_passed": bool(latest["regime_gate_passed"]),
+        "latest_eligible": bool(latest["eligible"]),
+    }
 
 
 def summarize_observations(observations: pd.DataFrame, *, alpha: float) -> dict[str, Any]:

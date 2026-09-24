@@ -8,6 +8,8 @@ from scripts.research.run_fast176_fast175_diagnostic_regime_observation import (
     REGIME_GATE_THRESHOLD,
     fast176_status,
     score_and_filter_rows,
+    score_rows,
+    summarize_prospective_diagnostics,
 )
 
 
@@ -38,6 +40,28 @@ def test_score_and_filter_rows_applies_edge_and_regime_gate() -> None:
 
     assert filtered["side_label"].tolist() == ["LONG", "SHORT"]
     assert filtered["net_bps"].tolist() == [8.0, 8.0]
+
+
+def test_score_rows_keeps_rejected_rows_for_diagnostics() -> None:
+    rows = pd.DataFrame(
+        {
+            "decision_time": pd.to_datetime(["2026-09-24T11:55:00Z", "2026-09-24T12:00:00Z"]),
+            "actual_bps": [5.0, -5.0],
+            REGIME_GATE_FEATURE: [REGIME_GATE_THRESHOLD + 1, REGIME_GATE_THRESHOLD - 1],
+            "feature": [1.0, 2.0],
+        }
+    )
+    model = _DummyModel([EDGE_THRESHOLD_BPS + 1, EDGE_THRESHOLD_BPS + 2])
+
+    scored = score_rows(model, rows, ["feature"])
+    diagnostics = summarize_prospective_diagnostics(scored)
+
+    assert scored["eligible"].tolist() == [True, False]
+    assert diagnostics["row_count"] == 2
+    assert diagnostics["edge_gate_pass_count"] == 2
+    assert diagnostics["regime_gate_pass_count"] == 1
+    assert diagnostics["eligible_count"] == 1
+    assert diagnostics["latest_eligible"] is False
 
 
 def test_fast176_status_waits_when_no_post_preregistration_rows() -> None:

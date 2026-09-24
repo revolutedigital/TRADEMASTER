@@ -21,10 +21,10 @@ partição parcial diagnóstica coletada via Binance USD-M `fapi`.
 
 `2026-09-24`
 
-Como a âncora é `2026-09-24T08:53:07-03:00`, o runner avaliou as dezessete
-primeiras decisões fechadas até `2026-09-24T13:15:00Z` e corretamente gerou:
+Como a âncora é `2026-09-24T08:53:07-03:00`, o runner avaliou as dezoito
+primeiras decisões fechadas até `2026-09-24T13:20:00Z` e corretamente gerou:
 
-- prospective rows: `17`;
+- prospective rows: `18`;
 - observações elegíveis: `0`;
 - ordens enviadas: `0`.
 
@@ -69,7 +69,7 @@ coletada via endpoint público Binance USD-M `fapi/v1/aggTrades`.
 Janela:
 
 - início: `2026-09-24T11:20:00+00:00`;
-- fim: `2026-09-24T13:30:59.999000+00:00`;
+- fim: `2026-09-24T13:35:59.999000+00:00`;
 - qualidade: `DIAGNOSTIC_LIVE_PARTIAL_VALID`;
 - gaps de sequência: `0`;
 - duplicatas: `0`.
@@ -78,9 +78,9 @@ Partições normalizadas:
 
 | Símbolo | Rows | Normalized SHA256 |
 |---|---:|---|
-| BTCUSDT | `106,518` | `7d41b65d0a6c547bd73d07c85057d4d7714450439b705d180abc82ae4836189d` |
-| ETHUSDT | `92,904` | `10ae9b86e8d2df3696ee132c251f1b3d1b041c76328427865105466988a850ce` |
-| SOLUSDT | `24,246` | `489cb54b4925fb1bd690abc2d9a6f71def504d4a1e317c3ccb8946512e76177d` |
+| BTCUSDT | `131,501` | `d5bc0921770c3b5877a4a0fc5aaf837e1aec3f73f8624a863dc88678ac022bb1` |
+| ETHUSDT | `113,260` | `181f16654d702b4da85ee4596b6cf9373f747502f9200acbbcb3f23c62d88873` |
+| SOLUSDT | `27,187` | `ee467f0eaeb9e3f71a5b4183d676f558931183a9e8c130f0f01c01cef1e7f7c8` |
 
 ## Resultado do run
 
@@ -89,7 +89,7 @@ Partições normalizadas:
 | Training rows | `1,710` |
 | Features | `47` |
 | Última data comum local | `2026-09-24` |
-| Prospective rows pós-âncora | `17` |
+| Prospective rows pós-âncora | `18` |
 | Observações elegíveis | `0` |
 | Ordens enviadas | `0` |
 
@@ -97,15 +97,15 @@ Diagnóstico da decisão pós-âncora:
 
 | Métrica | Valor |
 |---|---:|
-| Decision time | `2026-09-24T13:15:00+00:00` |
-| Prediction | `2.046781558323295` bps |
+| Decision time | `2026-09-24T13:20:00+00:00` |
+| Prediction | `7.876874755717764` bps |
 | Edge threshold | `17.039926929459345` bps |
 | Edge gate passou? | `false` |
-| ETHUSDT_qv_30m | `135650920.51112` |
+| ETHUSDT_qv_30m | `232377412.03993` |
 | Regime threshold | `586337978.3184608` |
 | Regime gate passou? | `false` |
 | Elegível? | `false` |
-| Actual 15m | `22.966953941845336` bps |
+| Actual 15m | `0.8631300849626378` bps |
 
 Resumo de observações:
 
@@ -134,7 +134,7 @@ O estado correto agora é:
 - a décima decisão foi um miss conservador: `actual 15m = 15.449161655787247` bps, mas edge e regime ainda ficaram abaixo dos gates congelados;
 - a décima primeira decisão foi outro miss conservador forte: `actual 15m = 28.805353783494247` bps, mas edge e regime ainda ficaram abaixo dos gates congelados;
 - a décima segunda decisão reforçou o diagnóstico: `prediction = 8.930841707010687` bps e `actual 15m = 44.084062702385296` bps, mas ainda ficou abaixo do edge congelado de Fast176 e do regime rígido;
-- as decisões seguintes continuaram positivas, mas sem edge suficiente para o Fast176 rígido; a mais recente foi `prediction = 2.046781558323295` bps e `actual 15m = 22.966953941845336` bps;
+- a decisão mais recente teria sido negativa após custo (`actual 15m = 0.8631300849626378` bps, `net = -1.1368699150373622` bps), mas ainda ficou fora do Fast176 rígido;
 - o próximo avanço depende de mais decisões pós-âncora.
 
 Não há estratégia operável ainda.
@@ -181,13 +181,13 @@ Hashes:
 - pré-registro:
   `d464220a86b4fd120a6f91e6ffec69163dcafadf3214c2135105b4a6b9758b92`;
 - report:
-  `4cc5734041f6c27e4a00c6f3910616b61c6814e64a621708e1ad85ee522f9d9f`;
+  `f44f35a89cf719ee67efd9302719292d2828ffcc36f411c0cb2e9bd6e0841b92`;
 - summary:
-  `19e9ffced95d7577a362401c95127661fae54281bda36c8583b034f26858d04f`;
+  `3dc08faf90864d6c5d4460d039704f2f213f98f667b5daccad55ec43fc501481`;
 - prospective diagnostics:
-  `eda874f6d9387f6b18975205241dbb5ff9d98fb4f4442e6f8a26211e18f08702`;
+  `1a224f11a435425b9d0f8cf1f81c26cdef8ea5ac6bf6d9e599a7e746eee86cae`;
 - prospective diagnostic rows:
-  `372eb5d6105f398e31cae9079688293272156e91a2acaeb6ba3ef01ef9166f80`;
+  `d0b7ae6334793e8fee6c8cc63128d923a7787f17962acc43f101f2af1dce0ce9`;
 - observations:
   `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`;
 - observation decision rows:

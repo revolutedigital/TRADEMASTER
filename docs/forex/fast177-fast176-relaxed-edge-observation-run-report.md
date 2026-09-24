@@ -9,24 +9,25 @@ somente em dados futuros, se o gate anterior estava perdendo movimento demais.
 
 Status:
 
-`FAST177_DATA_FRESH_NO_ELIGIBLE_DECISIONS_YET`
+`FAST177_OBSERVATION_INSUFFICIENT_PROSPECTIVE_EVIDENCE`
 
 ## Resposta curta
 
 O experimento está pré-registrado, tem registry próprio e o runner validou o
 hash do pré-registro. Com a partição local atual até
-`2026-09-24T13:30:59.999000+00:00`, existem 2 decisões pós-âncora com outcome
+`2026-09-24T13:35:59.999000+00:00`, existem 3 decisões pós-âncora com outcome
 completo de `900s`.
 
-As duas decisões passaram no regime relaxado, mas nenhuma passou no edge
-relaxado. A mais recente:
+A terceira decisão passou no regime e no edge relaxados, gerando a primeira
+entrada elegível do Fast177:
 
-- decision time: `2026-09-24T13:15:00+00:00`;
-- prediction: `2.0467815583232944` bps;
+- decision time: `2026-09-24T13:20:00+00:00`;
+- prediction: `7.876874755717758` bps;
 - edge threshold: `7.5` bps;
-- `ETHUSDT_qv_30m`: `135650920.51112`;
-- actual 15m: `22.966953941845336` bps;
-- elegível: `false`.
+- `ETHUSDT_qv_30m`: `232377412.03993`;
+- actual 15m: `0.8631300849626378` bps;
+- net após custo: `-1.1368699150373622` bps;
+- elegível: `true`.
 
 ## Política congelada
 
@@ -62,7 +63,7 @@ Custo:
 Janela:
 
 - início: `2026-09-24T11:20:00+00:00`;
-- fim: `2026-09-24T13:30:59.999000+00:00`;
+- fim: `2026-09-24T13:35:59.999000+00:00`;
 - qualidade: `DIAGNOSTIC_LIVE_PARTIAL_VALID`;
 - gaps de sequência: `0`;
 - duplicatas: `0`.
@@ -71,9 +72,9 @@ Partições normalizadas:
 
 | Símbolo | Rows | Normalized SHA256 |
 |---|---:|---|
-| BTCUSDT | `106,518` | `7d41b65d0a6c547bd73d07c85057d4d7714450439b705d180abc82ae4836189d` |
-| ETHUSDT | `92,904` | `10ae9b86e8d2df3696ee132c251f1b3d1b041c76328427865105466988a850ce` |
-| SOLUSDT | `24,246` | `489cb54b4925fb1bd690abc2d9a6f71def504d4a1e317c3ccb8946512e76177d` |
+| BTCUSDT | `131,501` | `d5bc0921770c3b5877a4a0fc5aaf837e1aec3f73f8624a863dc88678ac022bb1` |
+| ETHUSDT | `113,260` | `181f16654d702b4da85ee4596b6cf9373f747502f9200acbbcb3f23c62d88873` |
+| SOLUSDT | `27,187` | `ee467f0eaeb9e3f71a5b4183d676f558931183a9e8c130f0f01c01cef1e7f7c8` |
 
 ## Resultado do run
 
@@ -82,33 +83,34 @@ Partições normalizadas:
 | Training rows | `1,710` |
 | Features | `47` |
 | Última data comum local | `2026-09-24` |
-| Prospective rows pós-âncora | `2` |
-| Observações elegíveis | `0` |
+| Prospective rows pós-âncora | `3` |
+| Observações elegíveis | `1` |
 | Ordens enviadas | `0` |
 
 Diagnóstico da decisão pós-âncora:
 
 | Métrica | Valor |
 |---|---:|
-| Decision time | `2026-09-24T13:15:00+00:00` |
-| Prediction | `2.0467815583232944` bps |
+| Decision time | `2026-09-24T13:20:00+00:00` |
+| Prediction | `7.876874755717758` bps |
 | Edge threshold | `7.5` bps |
-| Edge gate passou? | `false` |
-| ETHUSDT_qv_30m | `135650920.51112` |
+| Edge gate passou? | `true` |
+| ETHUSDT_qv_30m | `232377412.03993` |
 | Regime threshold | `100000000.0` |
 | Regime gate passou? | `true` |
-| Elegível? | `false` |
-| Actual 15m | `22.966953941845336` bps |
+| Elegível? | `true` |
+| Actual 15m | `0.8631300849626378` bps |
+| Net pós-custo | `-1.1368699150373622` bps |
 
 Resumo de observações:
 
 | Métrica | Valor |
 |---|---:|
-| decision_count | `0` |
-| day_count | `0` |
-| net_total_bps | `0.0` |
-| net_mean_bps | `0.0` |
-| net_lcb_bps | `0.0` |
+| decision_count | `1` |
+| day_count | `1` |
+| net_total_bps | `-1.1368699150373622` |
+| net_mean_bps | `-1.1368699150373622` |
+| net_lcb_bps | `-1.1368699150373622` |
 | positive_day_share | `0.0` |
 
 ## Interpretação
@@ -118,11 +120,11 @@ real: o gate rígido evitou entradas ruins, mas também perdeu movimentos grande
 As linhas pré-âncora que teriam passado no gate relaxado somavam
 `+58.26957986522819` bps líquidos, mas não contam como validação Fast177.
 
-Os dois primeiros testes honestos pós-âncora também perderam movimentos
-positivos: `27.013382361806837` bps e `22.966953941845336` bps. O regime
-relaxado funcionou nas duas linhas, mas o edge de `7.5` bps barrou ambas.
-Isso não reprova Fast177, mas indica que o problema pode estar no cutoff de
-edge, não apenas no regime.
+Os dois primeiros testes honestos pós-âncora perderam movimentos positivos
+porque o edge ficou abaixo de `7.5` bps. A terceira decisão finalmente entrou,
+mas o movimento foi pequeno demais para pagar custo (`net = -1.1368699150373622`
+bps). Isso não encerra Fast177, mas mostra que o `prediction` ainda não está
+bem calibrado como ranking de payoff líquido.
 
 Não há estratégia operável ainda.
 
@@ -168,14 +170,14 @@ Hashes:
 - pré-registro:
   `72f78d9b9eda9d3f743a8027fa81460476d4bd8d2f8313a7e2f1f19aa9bd7c47`;
 - report:
-  `49e94b459a9b410cad3279c55498006bc396e24982c35ecec8d281833537e160`;
+  `626cc14e20a6a90b2e29a5b83c7e2ae885c9beed325dd084ed691e68c76ac887`;
 - summary:
-  `5e7e09fc0ac9080d2fd2f849696971288dc54154902e9a4806232160bd0a4a04`;
+  `5c82eb4de9d1bccafa32ab77c5a13d46bd85ed86627289faffe9196d68cd17d6`;
 - prospective diagnostics:
-  `e92096fcf10bb972803b7cbe8e9b909ea931099c690c3e84d83bed01d3be4f73`;
+  `68d8156b745c765d1bf27ed3a4669f98f3cb7cd5f8f9bc0fec15b015d49e3174`;
 - prospective diagnostic rows:
-  `d3b430e41de05c7aadf16c61f66663f9e1a6c57e4edbe61404c0fe32fd9f3fca`;
+  `2e77951fe4263b3820b754101eb56628be311e3838dfec5a85ff531a6b57f469`;
 - observations:
-  `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`;
+  `2cf5c6b497c4ff9be49b1a49736f753f70a20cf321b81fad13c3f4f29d144e05`;
 - observation decision rows:
-  `21eaa26cdc3998b17fb045e9f3b11a21ed6a69bcdb090ca6b0f86f7667bb9c3e`.
+  `ee276e8e4899cb99dcd31e0b51ebba2e2624faf93536bbf706c53b8ba41a6ea8`.

@@ -117,9 +117,9 @@ Encerrar se qualquer gate de falha precoce disparar:
 ## Arquivos e hashes
 
 - report:
-  `backend/data/microstructure_v1/reports/fast105-fixed-veto-prospective-observation/report.json`;
+  `backend/data/microstructure_v1/reports/fast105a-prospective-observation/report.json`;
 - report sha256:
-  `87c173a9c412568488828b1ab3fb300aae95493594d4dcc5447d454f5af108f6`;
+  `7971da8887cd2d899632fa1ae203160af7b5c967636f0e2ac3e9518257dc9cdd`;
 - scored decisions sha256:
   `35beaef6b2971c41255fba4b992b40225e355e754b9c11afb990e50e573d6b48`;
 - selected after fixed veto sha256:

@@ -21,10 +21,10 @@ partição parcial diagnóstica coletada via Binance USD-M `fapi`.
 
 `2026-09-24`
 
-Como a âncora é `2026-09-24T08:53:07-03:00`, o runner avaliou as sete
-primeiras decisões fechadas até `2026-09-24T12:25:00Z` e corretamente gerou:
+Como a âncora é `2026-09-24T08:53:07-03:00`, o runner avaliou as oito
+primeiras decisões fechadas até `2026-09-24T12:30:00Z` e corretamente gerou:
 
-- prospective rows: `7`;
+- prospective rows: `8`;
 - observações elegíveis: `0`;
 - ordens enviadas: `0`.
 
@@ -69,7 +69,7 @@ coletada via endpoint público Binance USD-M `fapi/v1/aggTrades`.
 Janela:
 
 - início: `2026-09-24T11:20:00+00:00`;
-- fim: `2026-09-24T12:40:59.999000+00:00`;
+- fim: `2026-09-24T12:45:59.999000+00:00`;
 - qualidade: `DIAGNOSTIC_LIVE_PARTIAL_VALID`;
 - gaps de sequência: `0`;
 - duplicatas: `0`.
@@ -78,9 +78,9 @@ Partições normalizadas:
 
 | Símbolo | Rows | Normalized SHA256 |
 |---|---:|---|
-| BTCUSDT | `57,535` | `a46146f3483a55759b8379b57acec58c04fb054c40e1b93932ac21da15bb8c20` |
-| ETHUSDT | `50,400` | `1b9f74a8367cbf6444aad7e99e7fc8972df5d6adcace5f79be3b546300627953` |
-| SOLUSDT | `13,724` | `f250b573051bf1a1e5db9738aa4b10bb5da99a5ce55b6c1c4ff78e20506a1f45` |
+| BTCUSDT | `60,526` | `abddc67bc88761cb5d46c524084a7104ce67323cef8e2c626d75b8d17f774e5c` |
+| ETHUSDT | `53,587` | `190463339b8738c01eb4dc08895fedb0d2b89edd27e93fc10117d445cf657452` |
+| SOLUSDT | `14,306` | `4cde5b46c30fd50c97c2d1f775cda8799aabb5911ad5c4900dbc72aff3f39cfa` |
 
 ## Resultado do run
 
@@ -89,7 +89,7 @@ Partições normalizadas:
 | Training rows | `1,710` |
 | Features | `47` |
 | Última data comum local | `2026-09-24` |
-| Prospective rows pós-âncora | `7` |
+| Prospective rows pós-âncora | `8` |
 | Observações elegíveis | `0` |
 | Ordens enviadas | `0` |
 
@@ -97,15 +97,15 @@ Diagnóstico da decisão pós-âncora:
 
 | Métrica | Valor |
 |---|---:|
-| Decision time | `2026-09-24T12:25:00+00:00` |
-| Prediction | `2.523605614339673` bps |
+| Decision time | `2026-09-24T12:30:00+00:00` |
+| Prediction | `0.9097568127706943` bps |
 | Edge threshold | `17.039926929459345` bps |
 | Edge gate passou? | `false` |
-| ETHUSDT_qv_30m | `115650462.20192` |
+| ETHUSDT_qv_30m | `102202507.05903` |
 | Regime threshold | `586337978.3184608` |
 | Regime gate passou? | `false` |
 | Elegível? | `false` |
-| Actual 15m | `-35.58020638783521` bps |
+| Actual 15m | `-19.305019305019265` bps |
 
 Resumo de observações:
 
@@ -129,6 +129,7 @@ O estado correto agora é:
 - as primeiras decisões prospectivas novas foram rejeitadas por edge e regime;
 - a sexta decisão teria sido um LONG ruim (`actual 15m = -34.17402698426608` bps), mas ficou fora dos filtros;
 - a sétima decisão também teria sido um LONG ruim (`actual 15m = -35.58020638783521` bps), mas ficou fora dos filtros;
+- a oitava decisão também teria sido um LONG ruim (`actual 15m = -19.305019305019265` bps), mas ficou fora dos filtros;
 - o próximo avanço depende de mais decisões pós-âncora.
 
 Não há estratégia operável ainda.
@@ -175,13 +176,13 @@ Hashes:
 - pré-registro:
   `d464220a86b4fd120a6f91e6ffec69163dcafadf3214c2135105b4a6b9758b92`;
 - report:
-  `9774502d156f25e2189aa3af8327f1ffe2e0947783201f03c9e69e0aaa48c47c`;
+  `f10275807f8d879c9e96abf25712b80372a3e7e1361ee9ffafa717dd3e85784f`;
 - summary:
-  `328756899762cc7ef40fd38ccbec6b3628b59d33bd652b6787a07882d4679c0a`;
+  `92555dff9827940a1abac7e1ca32ba4e91aad64c6f37e258bb19fee1a88c3587`;
 - prospective diagnostics:
-  `06567dc21a2f060956c737a44b0931965ed8ac5884dc732a7db73a0967147764`;
+  `6a21afbe7afed672b9550aca1973f71693f52a8d22eb1aea1ee01e08d62e20b1`;
 - prospective diagnostic rows:
-  `21940e4fc09c26c0684f3b4fec9b041fb9ceb61165a0da33292ebd7640e16d88`;
+  `ca49fe82db02b758821ce64e93476888d7594e06e820728f3d9a98595956f9e7`;
 - observations:
   `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`;
 - observation decision rows:

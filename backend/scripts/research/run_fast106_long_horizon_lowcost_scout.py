@@ -325,69 +325,124 @@ def build_rows_by_spec(
     roots = (*historical_roots, extension_root)
     rows_by_spec = {}
     for horizon_seconds in horizons_seconds:
-        for target_bps in target_bps_values:
-            for root in roots:
-                if progress:
-                    print(  # noqa: T201
-                        "building rows "
-                        f"horizon={horizon_seconds}s target={target_bps}bps block={root.name}",
-                        file=sys.stderr,
-                        flush=True,
-                    )
-                rows = build_block_rows(
-                    root=root,
-                    trade_root=trade_root,
-                    horizon_seconds=horizon_seconds,
-                    target_bps=target_bps,
-                    decision_stride_seconds=decision_stride_seconds,
-                    explicit_cost_bps=explicit_cost_bps,
-                    initial_stop_bps=initial_stop_bps,
-                    max_days_per_root=max_days_per_root,
+        for root in roots:
+            if progress:
+                print(  # noqa: T201
+                    f"building rows horizon={horizon_seconds}s block={root.name}",
+                    file=sys.stderr,
+                    flush=True,
                 )
+            rows_by_target = build_block_rows_by_target(
+                root=root,
+                trade_root=trade_root,
+                horizon_seconds=horizon_seconds,
+                target_bps_values=target_bps_values,
+                decision_stride_seconds=decision_stride_seconds,
+                explicit_cost_bps=explicit_cost_bps,
+                initial_stop_bps=initial_stop_bps,
+                max_days_per_root=max_days_per_root,
+            )
+            for target_bps, rows in rows_by_target.items():
                 rows_by_spec[(horizon_seconds, target_bps, root.name)] = rows
     return rows_by_spec
 
 
-def build_block_rows(
+def build_block_rows_by_target(
     *,
     root: Path,
     trade_root: Path,
     horizon_seconds: int,
-    target_bps: float,
+    target_bps_values: tuple[float, ...],
     decision_stride_seconds: int,
     explicit_cost_bps: float,
     initial_stop_bps: float,
     max_days_per_root: int | None,
-) -> pd.DataFrame:
-    parts = []
-    config = ResearchDatasetConfig(
-        decision_stride_seconds=decision_stride_seconds,
-        horizons_seconds=(horizon_seconds,),
-        expected_cost_bps=target_bps,
-        stress_cost_bps=target_bps,
-        initial_stop_bps=initial_stop_bps,
-        feature_windows_seconds=FEATURE_WINDOWS_SECONDS,
-    )
+) -> dict[float, pd.DataFrame]:
+    parts_by_target: dict[float, list[pd.DataFrame]] = {target: [] for target in target_bps_values}
+    configs_by_target = {
+        target: ResearchDatasetConfig(
+            decision_stride_seconds=decision_stride_seconds,
+            horizons_seconds=(horizon_seconds,),
+            expected_cost_bps=target,
+            stress_cost_bps=target,
+            initial_stop_bps=initial_stop_bps,
+            feature_windows_seconds=FEATURE_WINDOWS_SECONDS,
+        )
+        for target in target_bps_values
+    }
     date_paths = sorted(root.glob("date=*"))
     if max_days_per_root is not None:
         date_paths = date_paths[-max_days_per_root:]
     for date_path in date_paths:
         utc_date = date.fromisoformat(date_path.name.removeprefix("date="))
-        rows = build_date_rows(
+        loaded = load_date_trades_and_decisions(
             trade_root=trade_root,
             utc_date=utc_date,
-            config=config,
-            target_bps=target_bps,
-            explicit_cost_bps=explicit_cost_bps,
-            initial_stop_bps=initial_stop_bps,
+            horizon_seconds=horizon_seconds,
+            decision_stride_seconds=decision_stride_seconds,
         )
-        if not rows.empty:
-            parts.append(rows)
-    if not parts:
-        return pd.DataFrame()
-    block = pd.concat(parts, ignore_index=True)
-    block["block"] = root.name
-    return block
+        if loaded is None:
+            continue
+        trades, decisions = loaded
+        for target_bps, config in configs_by_target.items():
+            rows = build_rows_from_trades(
+                trades=trades,
+                decisions=decisions,
+                config=config,
+                target_bps=target_bps,
+                explicit_cost_bps=explicit_cost_bps,
+                initial_stop_bps=initial_stop_bps,
+            )
+            if not rows.empty:
+                parts_by_target[target_bps].append(rows)
+    rows_by_target = {}
+    for target_bps, parts in parts_by_target.items():
+        if not parts:
+            rows_by_target[target_bps] = pd.DataFrame()
+            continue
+        block = pd.concat(parts, ignore_index=True)
+        block["block"] = root.name
+        rows_by_target[target_bps] = block
+    return rows_by_target
+
+
+def load_date_trades_and_decisions(
+    *,
+    trade_root: Path,
+    utc_date: date,
+    horizon_seconds: int,
+    decision_stride_seconds: int,
+) -> tuple[pd.DataFrame, np.ndarray] | None:
+    day_start = datetime.combine(utc_date, datetime.min.time(), tzinfo=UTC)
+    day_end = day_start + timedelta(days=1)
+    history_start = day_start - timedelta(seconds=max(FEATURE_WINDOWS_SECONDS))
+    label_end = day_end + timedelta(seconds=horizon_seconds)
+    try:
+        trades = load_trade_interval(
+            trade_root,
+            history_start,
+            label_end,
+            expected_product="usdm_perpetual",
+        )
+    except (FileNotFoundError, ValueError):
+        return None
+    if trades.empty:
+        return None
+    stride_ms = decision_stride_seconds * 1000
+    decisions = np.arange(
+        int(day_start.timestamp() * 1000),
+        int(day_end.timestamp() * 1000),
+        stride_ms,
+        dtype=np.int64,
+    )
+    event_times = trades["event_time_ms"].to_numpy(dtype=np.int64)
+    complete = (
+        decisions - max(FEATURE_WINDOWS_SECONDS) * 1000 >= event_times[0]
+    ) & (decisions + horizon_seconds * 1000 <= event_times[-1])
+    decisions = decisions[complete]
+    if not len(decisions):
+        return None
+    return trades, decisions
 
 
 def build_date_rows(
@@ -399,33 +454,34 @@ def build_date_rows(
     explicit_cost_bps: float,
     initial_stop_bps: float,
 ) -> pd.DataFrame:
-    day_start = datetime.combine(utc_date, datetime.min.time(), tzinfo=UTC)
-    day_end = day_start + timedelta(days=1)
-    history_start = day_start - timedelta(seconds=max(config.feature_windows_seconds))
-    label_end = day_end + timedelta(seconds=max(config.horizons_seconds))
-    try:
-        trades = load_trade_interval(
-            trade_root,
-            history_start,
-            label_end,
-            expected_product="usdm_perpetual",
-        )
-    except (FileNotFoundError, ValueError):
-        return pd.DataFrame()
-    stride_ms = config.decision_stride_seconds * 1000
-    decisions = np.arange(
-        int(day_start.timestamp() * 1000),
-        int(day_end.timestamp() * 1000),
-        stride_ms,
-        dtype=np.int64,
+    loaded = load_date_trades_and_decisions(
+        trade_root=trade_root,
+        utc_date=utc_date,
+        horizon_seconds=max(config.horizons_seconds),
+        decision_stride_seconds=config.decision_stride_seconds,
     )
-    event_times = trades["event_time_ms"].to_numpy(dtype=np.int64)
-    complete = (
-        decisions - max(config.feature_windows_seconds) * 1000 >= event_times[0]
-    ) & (decisions + max(config.horizons_seconds) * 1000 <= event_times[-1])
-    decisions = decisions[complete]
-    if not len(decisions):
+    if loaded is None:
         return pd.DataFrame()
+    trades, decisions = loaded
+    return build_rows_from_trades(
+        trades=trades,
+        decisions=decisions,
+        config=config,
+        target_bps=target_bps,
+        explicit_cost_bps=explicit_cost_bps,
+        initial_stop_bps=initial_stop_bps,
+    )
+
+
+def build_rows_from_trades(
+    *,
+    trades: pd.DataFrame,
+    decisions: np.ndarray,
+    config: ResearchDatasetConfig,
+    target_bps: float,
+    explicit_cost_bps: float,
+    initial_stop_bps: float,
+) -> pd.DataFrame:
     rows = build_research_rows(trades, decisions, config)
     rows["net_bps"] = exact_target_net_bps(
         rows,

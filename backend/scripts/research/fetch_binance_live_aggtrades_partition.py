@@ -31,6 +31,8 @@ from app.schemas.microstructure import DatasetPartitionManifest, MarketEventType
 FUTURES_MARKET_URL = "https://fapi.binance.com"
 DEFAULT_ROOT = REPO_ROOT / "backend" / "data" / "microstructure_v1"
 DEFAULT_TIMEOUT_SECONDS = 30
+DEFAULT_PAGE_DELAY_SECONDS = 0.05
+MAX_RETRY_DELAY_SECONDS = 30.0
 PAGE_LIMIT = 1000
 
 
@@ -124,6 +126,7 @@ async def fetch_aggregate_trades(
     start_at: datetime,
     end_at: datetime,
     market_base_url: str = FUTURES_MARKET_URL,
+    page_delay_seconds: float = DEFAULT_PAGE_DELAY_SECONDS,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> list[dict[str, Any]]:
     start_milliseconds = milliseconds(start_at)
@@ -159,7 +162,7 @@ async def fetch_aggregate_trades(
             if len(payload) < PAGE_LIMIT or last_time > end_milliseconds:
                 break
             next_from_id = last_id + 1
-            await asyncio.sleep(0)
+            await asyncio.sleep(page_delay_seconds)
     return dedupe_rows(rows)
 
 
@@ -170,16 +173,35 @@ async def get_with_retry(
     params: dict[str, Any],
 ) -> httpx.Response:
     last_error: Exception | None = None
-    for attempt in range(3):
+    for attempt in range(6):
         try:
             response = await client.get(url, params=params)
             response.raise_for_status()
             return response
+        except httpx.HTTPStatusError as error:
+            last_error = error
+            if attempt < 5 and error.response.status_code in {418, 429}:
+                await asyncio.sleep(retry_delay_seconds(error.response, attempt))
+                continue
+            if attempt < 5 and 500 <= error.response.status_code < 600:
+                await asyncio.sleep(retry_delay_seconds(error.response, attempt))
+                continue
         except httpx.HTTPError as error:
             last_error = error
-            if attempt < 2:
-                await asyncio.sleep(2**attempt)
+            if attempt < 5:
+                await asyncio.sleep(retry_delay_seconds(None, attempt))
     raise ValueError(f"Unable to fetch Binance aggregate trades: {last_error}") from last_error
+
+
+def retry_delay_seconds(response: httpx.Response | None, attempt: int) -> float:
+    if response is not None:
+        retry_after = response.headers.get("Retry-After")
+        if retry_after is not None:
+            try:
+                return min(MAX_RETRY_DELAY_SECONDS, max(1.0, float(retry_after)))
+            except ValueError:
+                pass
+    return min(MAX_RETRY_DELAY_SECONDS, float(2 ** attempt))
 
 
 def dedupe_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -7,6 +7,7 @@ import httpx
 import pandas as pd
 import pytest
 
+from scripts.research import fetch_binance_live_aggtrades_partition as live_fetch
 from scripts.research.fetch_binance_live_aggtrades_partition import (
     fetch_aggregate_trades,
     fetch_and_normalize_live_aggtrades_partition,
@@ -45,6 +46,37 @@ async def test_fetch_aggregate_trades_paginates_with_from_id() -> None:
     assert calls[0]["startTime"] == "1767225600000"
     assert calls[0]["endTime"] == "1767225660000"
     assert calls[1]["fromId"] == "1001"
+
+
+@pytest.mark.asyncio
+async def test_fetch_aggregate_trades_retries_binance_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    sleeps: list[float] = []
+    attempts = 0
+    row = {"a": 1, "p": "100.0", "q": "1.0", "f": 1, "l": 1, "T": 1767225600000, "m": False}
+
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(429, headers={"Retry-After": "2"}, text="rate limited")
+        return httpx.Response(200, json=[row])
+
+    monkeypatch.setattr(live_fetch.asyncio, "sleep", fake_sleep)
+
+    rows = await fetch_aggregate_trades(
+        symbol="BTCUSDT",
+        start_at=datetime(2026, 1, 1, tzinfo=UTC),
+        end_at=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        market_base_url="https://example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert rows == [row]
+    assert attempts == 2
+    assert sleeps == [2.0]
 
 
 def test_normalize_live_aggregate_trades_writes_partial_manifest(tmp_path: Path) -> None:

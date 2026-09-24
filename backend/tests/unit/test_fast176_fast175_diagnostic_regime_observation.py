@@ -7,6 +7,7 @@ from scripts.research.run_fast176_fast175_diagnostic_regime_observation import (
     REGIME_GATE_FEATURE,
     REGIME_GATE_THRESHOLD,
     fast176_status,
+    prospective_diagnostic_record,
     score_and_filter_rows,
     score_rows,
     summarize_prospective_diagnostics,
@@ -62,6 +63,28 @@ def test_score_rows_keeps_rejected_rows_for_diagnostics() -> None:
     assert diagnostics["regime_gate_pass_count"] == 1
     assert diagnostics["eligible_count"] == 1
     assert diagnostics["latest_eligible"] is False
+
+
+def test_prospective_diagnostic_record_explains_gate_failures() -> None:
+    rows = pd.DataFrame(
+        {
+            "decision_time": pd.to_datetime(["2026-09-24T12:05:00Z"]),
+            "date": ["2026-09-24"],
+            "actual_bps": [3.0],
+            REGIME_GATE_FEATURE: [REGIME_GATE_THRESHOLD - 1],
+            "feature": [1.0],
+        }
+    )
+    scored = score_rows(_DummyModel([EDGE_THRESHOLD_BPS - 1]), rows, ["feature"])
+
+    record = prospective_diagnostic_record(scored.iloc[0])
+
+    assert record["decision_time"] == "2026-09-24T12:05:00+00:00"
+    assert record["edge_gate_passed"] is False
+    assert record["regime_gate_passed"] is False
+    assert record["eligible"] is False
+    assert record["edge_threshold"] == EDGE_THRESHOLD_BPS
+    assert record["regime_gate_threshold"] == REGIME_GATE_THRESHOLD
 
 
 def test_fast176_status_waits_when_no_post_preregistration_rows() -> None:

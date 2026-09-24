@@ -113,13 +113,18 @@ def run_fast176_fast175_diagnostic_regime_observation(
     all_scored_rows = score_rows(model, prospective_rows, feature_columns)
     scored_rows = filter_eligible_rows(all_scored_rows)
     observation_records = [observation_record(row) for _, row in scored_rows.iterrows()]
+    prospective_diagnostic_records = [
+        prospective_diagnostic_record(row) for _, row in all_scored_rows.iterrows()
+    ]
 
     observation_rows_path = output_root / "observation-decision-rows.parquet"
     observations_path = output_root / "observations.jsonl"
+    prospective_diagnostic_rows_path = output_root / "prospective-diagnostic-rows.jsonl"
     prospective_diagnostics_path = output_root / "prospective-diagnostics.json"
     summary_path = output_root / "summary.json"
     scored_rows.to_parquet(observation_rows_path, compression="zstd", index=False)
     write_jsonl(observations_path, observation_records)
+    write_jsonl(prospective_diagnostic_rows_path, prospective_diagnostic_records)
 
     prospective_diagnostics = summarize_prospective_diagnostics(all_scored_rows)
     write_json(prospective_diagnostics_path, prospective_diagnostics)
@@ -177,6 +182,10 @@ def run_fast176_fast175_diagnostic_regime_observation(
                 "sha256": sha256_file(observation_rows_path),
             },
             "observations": {"path": str(observations_path), "sha256": sha256_file(observations_path)},
+            "prospective_diagnostic_rows": {
+                "path": str(prospective_diagnostic_rows_path),
+                "sha256": sha256_file(prospective_diagnostic_rows_path),
+            },
             "prospective_diagnostics": {
                 "path": str(prospective_diagnostics_path),
                 "sha256": sha256_file(prospective_diagnostics_path),
@@ -479,6 +488,26 @@ def observation_record(row: pd.Series) -> dict[str, Any]:
         "regime_gate_feature": REGIME_GATE_FEATURE,
         "regime_gate_value": float(row[REGIME_GATE_FEATURE]),
         "regime_gate_threshold": REGIME_GATE_THRESHOLD,
+    }
+
+
+def prospective_diagnostic_record(row: pd.Series) -> dict[str, Any]:
+    return {
+        "decision_time": row["decision_time"].isoformat(),
+        "date": row["date"],
+        "target_symbol": TARGET_SYMBOL,
+        "side": row["side_label"],
+        "prediction": float(row["prediction"]),
+        "edge": float(row["edge"]),
+        "edge_threshold": EDGE_THRESHOLD_BPS,
+        "edge_gate_passed": bool(row["edge_gate_passed"]),
+        "actual_bps": float(row["actual_bps"]),
+        "net_bps_if_eligible": float(row["net_bps"]),
+        "regime_gate_feature": REGIME_GATE_FEATURE,
+        "regime_gate_value": float(row[REGIME_GATE_FEATURE]),
+        "regime_gate_threshold": REGIME_GATE_THRESHOLD,
+        "regime_gate_passed": bool(row["regime_gate_passed"]),
+        "eligible": bool(row["eligible"]),
     }
 
 

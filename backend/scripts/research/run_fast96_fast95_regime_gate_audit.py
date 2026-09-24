@@ -115,6 +115,14 @@ def main() -> int:
     parser.add_argument("--trailing-distance-bps", type=float, default=8.0)
     parser.add_argument("--top-fraction", type=float, default=0.10)
     parser.add_argument("--gate-keep-fractions", default="0.50,0.70,0.85,1.00")
+    parser.add_argument(
+        "--gate-feature-keywords",
+        default="",
+        help=(
+            "Optional comma-separated substrings. When set, only gate features "
+            "whose column names contain at least one keyword are evaluated."
+        ),
+    )
     parser.add_argument("--decision-stride-seconds", type=int, default=5)
     parser.add_argument("--max-book-staleness-ms", type=int, default=1_000)
     parser.add_argument("--latency-ms", type=int, default=100)
@@ -146,6 +154,7 @@ def main() -> int:
         trailing_distance_bps=arguments.trailing_distance_bps,
         top_fraction=arguments.top_fraction,
         gate_keep_fractions=_parse_float_list(arguments.gate_keep_fractions),
+        gate_feature_keywords=_parse_string_list(arguments.gate_feature_keywords),
         decision_stride_seconds=arguments.decision_stride_seconds,
         max_book_staleness_ms=arguments.max_book_staleness_ms,
         latency_ms=arguments.latency_ms,
@@ -173,6 +182,7 @@ def run_fast96_fast95_regime_gate_audit(
     trailing_distance_bps: float = 8.0,
     top_fraction: float = 0.10,
     gate_keep_fractions: tuple[float, ...] = DEFAULT_GATE_KEEP_FRACTIONS,
+    gate_feature_keywords: tuple[str, ...] = (),
     decision_stride_seconds: int = 5,
     max_book_staleness_ms: int = 1_000,
     latency_ms: int = 100,
@@ -244,6 +254,7 @@ def run_fast96_fast95_regime_gate_audit(
             "trailing_distance_bps": trailing_distance_bps,
             "top_fraction": top_fraction,
             "gate_keep_fractions": list(gate_keep_fractions),
+            "gate_feature_keywords": list(gate_feature_keywords),
             "decision_stride_seconds": decision_stride_seconds,
             "max_book_staleness_ms": max_book_staleness_ms,
             "latency_ms": latency_ms,
@@ -321,6 +332,7 @@ def run_fast96_fast95_regime_gate_audit(
             model_name=model_name,
             top_fraction=top_fraction,
             gate_keep_fractions=gate_keep_fractions,
+            gate_feature_keywords=gate_feature_keywords,
             cost_levels_bps=cost_levels_bps,
             profit_cost_bps=profit_cost_bps,
             stress_cost_bps=stress_cost_bps,
@@ -434,6 +446,7 @@ def evaluate_holdout_label(
     model_name: str,
     top_fraction: float,
     gate_keep_fractions: tuple[float, ...],
+    gate_feature_keywords: tuple[str, ...],
     cost_levels_bps: tuple[float, ...],
     profit_cost_bps: float,
     stress_cost_bps: float,
@@ -466,6 +479,10 @@ def evaluate_holdout_label(
         top_fraction=top_fraction,
     )
     gate_feature_columns = gate_feature_columns_from(feature_columns)
+    gate_feature_columns = filter_gate_feature_columns(
+        gate_feature_columns,
+        keywords=gate_feature_keywords,
+    )
     candidates, evaluated_gate_count = fit_training_gate_candidates(
         selected_training_rows,
         expected_labels=training_labels,
@@ -620,10 +637,15 @@ def fit_training_gate_candidates(
     maximum_train_negative_labels: int,
 ) -> tuple[list[dict[str, Any]], int]:
     candidates = []
-    gate_specs = fit_gate_specs(rows, gate_feature_columns, gate_keep_fractions)
+    sorted_rows = rows.sort_values(
+        ["window_label", "decision_time_ms", "model_score"],
+        ascending=[True, True, False],
+        kind="stable",
+    )
+    gate_specs = fit_gate_specs(sorted_rows, gate_feature_columns, gate_keep_fractions)
     for gate in gate_specs:
-        gated = apply_gate_frame(rows, gate)
-        one_position = apply_one_position_by_label(gated)
+        gated = apply_gate_frame(sorted_rows, gate)
+        one_position = apply_one_position_by_label(gated, presorted=True)
         summary = summarize_labelled_one_position_rows(
             one_position,
             expected_labels=expected_labels,
@@ -717,9 +739,11 @@ def apply_gate_frame(rows: pd.DataFrame, gate: GateSpec) -> pd.DataFrame:
     return rows.loc[mask].copy()
 
 
-def apply_one_position_by_label(rows: pd.DataFrame) -> pd.DataFrame:
+def apply_one_position_by_label(rows: pd.DataFrame, *, presorted: bool = False) -> pd.DataFrame:
     if rows.empty:
         return rows.copy()
+    if presorted:
+        return apply_presorted_one_position_by_label(rows)
     frames = [
         _apply_one_position_constraint_by_score(window)
         for _label, window in rows.groupby("window_label", sort=True)
@@ -727,6 +751,39 @@ def apply_one_position_by_label(rows: pd.DataFrame) -> pd.DataFrame:
     if not frames:
         return rows.iloc[0:0].copy()
     return pd.concat(frames, ignore_index=True)
+
+
+def apply_presorted_one_position_by_label(rows: pd.DataFrame) -> pd.DataFrame:
+    if rows.empty:
+        return rows.copy()
+    kept_indices = []
+    current_label = None
+    position_exit_ms = -1
+    for index, row in zip(rows.index, rows.itertuples(index=False), strict=True):
+        window_label = row.window_label
+        if window_label != current_label:
+            current_label = window_label
+            position_exit_ms = -1
+        decision_time_ms = int(row.decision_time_ms)
+        if decision_time_ms <= position_exit_ms:
+            continue
+        kept_indices.append(index)
+        position_exit_ms = int(row.exit_time_ms)
+    return rows.loc[kept_indices].reset_index(drop=True)
+
+
+def apply_presorted_one_position_by_score(rows: pd.DataFrame) -> pd.DataFrame:
+    if rows.empty:
+        return rows.copy()
+    kept_indices = []
+    position_exit_ms = -1
+    for index, row in zip(rows.index, rows.itertuples(index=False), strict=True):
+        decision_time_ms = int(row.decision_time_ms)
+        if decision_time_ms <= position_exit_ms:
+            continue
+        kept_indices.append(index)
+        position_exit_ms = int(row.exit_time_ms)
+    return rows.loc[kept_indices].reset_index(drop=True)
 
 
 def summarize_labelled_one_position_rows(
@@ -994,6 +1051,25 @@ def gate_feature_columns_from(feature_columns: list[str]) -> list[str]:
         for column in feature_columns
         if not any(part in column for part in blocked_parts)
     ]
+
+
+def filter_gate_feature_columns(
+    columns: list[str],
+    *,
+    keywords: tuple[str, ...],
+) -> list[str]:
+    if not keywords:
+        return columns
+    normalized_keywords = tuple(keyword.lower() for keyword in keywords)
+    return [
+        column
+        for column in columns
+        if any(keyword in column.lower() for keyword in normalized_keywords)
+    ]
+
+
+def _parse_string_list(raw: str) -> tuple[str, ...]:
+    return tuple(part.strip() for part in raw.split(",") if part.strip())
 
 
 def make_model(model_name: str) -> Any:

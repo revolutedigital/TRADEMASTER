@@ -4,7 +4,10 @@ from scripts.research.run_fast96_fast95_regime_gate_audit import (
     GateSpec,
     apply_gate_frame,
     apply_one_position_by_label,
+    apply_presorted_one_position_by_label,
+    apply_presorted_one_position_by_score,
     fast96_status,
+    filter_gate_feature_columns,
     holdout_status,
     summarize_labelled_one_position_rows,
     train_candidate_score,
@@ -28,6 +31,16 @@ def test_apply_gate_frame_filters_lte_and_gte() -> None:
     ].tolist() == [2.0, 3.0]
 
 
+def test_filter_gate_feature_columns_keeps_default_when_no_keywords() -> None:
+    columns = ["spot_return_1s_bps", "spread_bps", "side_sign"]
+
+    assert filter_gate_feature_columns(columns, keywords=()) == columns
+    assert filter_gate_feature_columns(columns, keywords=("return", "spread")) == [
+        "spot_return_1s_bps",
+        "spread_bps",
+    ]
+
+
 def test_apply_one_position_by_label_keeps_non_overlapping_per_window() -> None:
     rows = pd.DataFrame(
         [
@@ -39,6 +52,49 @@ def test_apply_one_position_by_label_keeps_non_overlapping_per_window() -> None:
     )
 
     selected = apply_one_position_by_label(rows)
+
+    assert selected[["window_label", "decision_time_ms"]].to_dict("records") == [
+        {"window_label": "a", "decision_time_ms": 1000},
+        {"window_label": "a", "decision_time_ms": 2101},
+        {"window_label": "b", "decision_time_ms": 1000},
+    ]
+
+
+def test_presorted_one_position_matches_score_sorted_constraint() -> None:
+    rows = pd.DataFrame(
+        [
+            row("a", 1500, 2100, 0.99),
+            row("a", 1000, 2000, 0.90),
+            row("a", 2101, 2500, 0.70),
+        ]
+    )
+    sorted_rows = rows.sort_values(
+        ["decision_time_ms", "model_score"],
+        ascending=[True, False],
+        kind="stable",
+    )
+
+    selected = apply_presorted_one_position_by_score(sorted_rows)
+
+    assert selected["decision_time_ms"].tolist() == [1000, 2101]
+
+
+def test_presorted_one_position_by_label_matches_grouped_constraint() -> None:
+    rows = pd.DataFrame(
+        [
+            row("b", 1000, 2000, 0.10),
+            row("a", 1500, 2100, 0.99),
+            row("a", 1000, 2000, 0.90),
+            row("a", 2101, 2500, 0.70),
+        ]
+    )
+    sorted_rows = rows.sort_values(
+        ["window_label", "decision_time_ms", "model_score"],
+        ascending=[True, True, False],
+        kind="stable",
+    )
+
+    selected = apply_presorted_one_position_by_label(sorted_rows)
 
     assert selected[["window_label", "decision_time_ms"]].to_dict("records") == [
         {"window_label": "a", "decision_time_ms": 1000},

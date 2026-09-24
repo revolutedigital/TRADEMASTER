@@ -8,11 +8,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from app.services.backtest.event_replay import OrderSide
 from scripts.research.run_book_multi_window_model_scout import (
     WalRootRef,
+    _apply_one_position_constraint_by_score,
     run_book_multi_window_model_scout,
     simulate_executable_trailing_trade,
 )
@@ -74,6 +76,25 @@ def test_multi_window_model_scout_reports_candidates_without_approval(
     assert report["candidate_count"] > 0
     assert report["best_candidate"] is not None
     assert Path(report["report_path"]).exists()
+
+
+def test_apply_one_position_constraint_by_score_keeps_non_overlapping_rows() -> None:
+    trades = pd.DataFrame(
+        {
+            "decision_time_ms": [0, 10_000, 70_000],
+            "exit_time_ms": [60_000, 65_000, 120_000],
+            "model_score": [3.0, 5.0, 4.0],
+            "gross_executable_bps": [1.0, 2.0, 3.0],
+            "custom_column": ["first", "overlap", "later"],
+        },
+        index=[10, 20, 30],
+    )
+
+    selected = _apply_one_position_constraint_by_score(trades)
+
+    assert selected["decision_time_ms"].tolist() == [0, 70_000]
+    assert selected["custom_column"].tolist() == ["first", "later"]
+    assert list(selected.columns) == list(trades.columns)
 
 
 def _write_directional_wal(root: Path, *, seconds: int) -> Path:

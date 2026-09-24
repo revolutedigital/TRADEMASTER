@@ -773,15 +773,15 @@ def _apply_one_position_constraint_by_score(trades: pd.DataFrame) -> pd.DataFram
         ascending=[True, False],
         kind="stable",
     )
-    kept = []
+    kept_indices = []
     position_exit_ms = -1
-    for row in ordered.itertuples(index=False):
+    for index, row in zip(ordered.index, ordered.itertuples(index=False), strict=True):
         decision_time_ms = int(row.decision_time_ms)
         if decision_time_ms <= position_exit_ms:
             continue
-        kept.append(row._asdict())
+        kept_indices.append(index)
         position_exit_ms = int(row.exit_time_ms)
-    return pd.DataFrame(kept)
+    return ordered.loc[kept_indices].reset_index(drop=True)
 
 
 def _finalize_candidate(

@@ -9,18 +9,24 @@ somente em dados futuros, se o gate anterior estava perdendo movimento demais.
 
 Status:
 
-`FAST177_WAITING_FOR_POST_PREREGISTRATION_DATA`
+`FAST177_DATA_FRESH_NO_ELIGIBLE_DECISIONS_YET`
 
 ## Resposta curta
 
 O experimento está pré-registrado, tem registry próprio e o runner validou o
 hash do pré-registro. Com a partição local atual até
-`2026-09-24T13:05:59.999000+00:00`, ainda não existe decisão pós-âncora com
-outcome completo de `900s`.
+`2026-09-24T13:25:59.999000+00:00`, existe 1 decisão pós-âncora com outcome
+completo de `900s`.
 
-Isso é esperado: a primeira decisão estritamente posterior à âncora é
-`2026-09-24T13:10:00Z`, e ela só pode ser avaliada depois da janela futura
-fechar em torno de `2026-09-24T13:25:00Z`.
+Essa primeira decisão passou no regime relaxado, mas não passou no edge
+relaxado:
+
+- decision time: `2026-09-24T13:10:00+00:00`;
+- prediction: `5.613848673646596` bps;
+- edge threshold: `7.5` bps;
+- `ETHUSDT_qv_30m`: `127251329.3691`;
+- actual 15m: `27.013382361806837` bps;
+- elegível: `false`.
 
 ## Política congelada
 
@@ -56,7 +62,7 @@ Custo:
 Janela:
 
 - início: `2026-09-24T11:20:00+00:00`;
-- fim: `2026-09-24T13:05:59.999000+00:00`;
+- fim: `2026-09-24T13:25:59.999000+00:00`;
 - qualidade: `DIAGNOSTIC_LIVE_PARTIAL_VALID`;
 - gaps de sequência: `0`;
 - duplicatas: `0`.
@@ -65,9 +71,9 @@ Partições normalizadas:
 
 | Símbolo | Rows | Normalized SHA256 |
 |---|---:|---|
-| BTCUSDT | `77,917` | `aa2ebbf1ee8c82f43b04b0f496206d8cbaecb37fa5a1067392d7f33c6b8720b7` |
-| ETHUSDT | `67,328` | `cbc8aa5f26450ca45e37fe3668f2c0a83fd909915aa54c6ae6b58cded92befe0` |
-| SOLUSDT | `18,087` | `6de78a6c440b39a11da159b237a87a1313957a58e2b3b81bf37a20ede3d23e3e` |
+| BTCUSDT | `100,094` | `a997e203ec2350bb7543c5cb905973d2db0312d83f23b40a961aed53b474bec9` |
+| ETHUSDT | `88,326` | `7df477cb41a7e980fe0c9214f1a4cd75284547278740d8b22583b04aafad269e` |
+| SOLUSDT | `23,084` | `5b1d8a0c86a54cdc67ee999d093f05ae6aa569c30d837e6e48fb71a4969366e3` |
 
 ## Resultado do run
 
@@ -76,9 +82,23 @@ Partições normalizadas:
 | Training rows | `1,710` |
 | Features | `47` |
 | Última data comum local | `2026-09-24` |
-| Prospective rows pós-âncora | `0` |
+| Prospective rows pós-âncora | `1` |
 | Observações elegíveis | `0` |
 | Ordens enviadas | `0` |
+
+Diagnóstico da decisão pós-âncora:
+
+| Métrica | Valor |
+|---|---:|
+| Decision time | `2026-09-24T13:10:00+00:00` |
+| Prediction | `5.613848673646596` bps |
+| Edge threshold | `7.5` bps |
+| Edge gate passou? | `false` |
+| ETHUSDT_qv_30m | `127251329.3691` |
+| Regime threshold | `100000000.0` |
+| Regime gate passou? | `true` |
+| Elegível? | `false` |
+| Actual 15m | `27.013382361806837` bps |
 
 Resumo de observações:
 
@@ -95,13 +115,14 @@ Resumo de observações:
 
 Fast177 existe porque as últimas decisões do Fast176 apontaram um problema
 real: o gate rígido evitou entradas ruins, mas também perdeu movimentos grandes.
-A decisão de `2026-09-24T12:50:00Z`, por exemplo, teria passado nos thresholds
-relaxados (`prediction = 8.930841707010687`, `ETHUSDT_qv_30m = 127105151.37745`)
-e teve `actual 15m = 44.084062702385296` bps. Ela não conta para Fast177 porque
-aconteceu antes da âncora do Fast177.
+As linhas pré-âncora que teriam passado no gate relaxado somavam
+`+58.26957986522819` bps líquidos, mas não contam como validação Fast177.
 
-O teste honesto começa na próxima linha com outcome completo após
-`2026-09-24T13:25:00Z`.
+O primeiro teste honesto pós-âncora também perdeu um movimento positivo:
+`actual 15m = 27.013382361806837` bps. O regime relaxado funcionou, mas o edge
+de `7.5` bps ainda barrou a entrada (`prediction = 5.613848673646596` bps).
+Isso não reprova Fast177, mas indica que o problema pode estar no cutoff de
+edge, não apenas no regime.
 
 Não há estratégia operável ainda.
 
@@ -147,13 +168,13 @@ Hashes:
 - pré-registro:
   `72f78d9b9eda9d3f743a8027fa81460476d4bd8d2f8313a7e2f1f19aa9bd7c47`;
 - report:
-  `98231bf7f35bf71435f992cd68c05387591ee482f761ac2011d8ba7c0e2aaeb4`;
+  `ca6dfa9a9fc477b6c5a88b34b8947f3ab1909d9a426476fdbfacfa46df214e73`;
 - summary:
-  `fa52a02e2a845bcd072362f35f22cdd3b803180de2a9c8cc4b91a9376f51408b`;
+  `7024038f6eea24691e5725167e16eb984eddbab59d2673d4b8fb2e17bf7e4506`;
 - prospective diagnostics:
-  `7f6b6966fce13433d12f6de5c59629dc79a7b79b9d30d88c77abc0cdb5c96c82`;
+  `8e0d5b14b84920be5ef989a56e036cc38d4e687c9f8db932c929cb38592a7223`;
 - prospective diagnostic rows:
-  `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`;
+  `b38a31de5828832b42bc04b8a5f34f7593a5629d375e44599cbd1ce44e3620a7`;
 - observations:
   `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`;
 - observation decision rows:

@@ -15,7 +15,7 @@ Status:
 
 O experimento está pré-registrado, tem registry próprio e o runner validou o
 hash do pré-registro. Com a partição local atual até
-`2026-09-24T13:35:59.999000+00:00`, ainda não existe decisão pós-âncora com
+`2026-09-24T13:40:59.999000+00:00`, ainda não existe decisão pós-âncora com
 outcome completo de `900s`.
 
 Isso é esperado: a primeira decisão estritamente posterior à âncora é
@@ -92,9 +92,9 @@ Hashes:
 - pré-registro:
   `ba2ababfcb97d1a1fad8fdf07302cbb95be7abfb9b417ac2df09a56c1cf2dd42`;
 - report:
-  `f6eecb906a3d95ed13f84c0b483de665ed4d1ad577f95c1574bdc09ce1835674`;
+  `18d68d4bfa61fd7f4e0d8559a3bdb85537cff24767fa740812a6fc443b05f645`;
 - summary:
-  `387eaca0f9a2962f395fd885e7f1fe49371a25a5ff9024f4d3b0d7e9f6efeb9d`;
+  `70c54312ad834728958d1d8b56d9e10f78d7a0b48b553dcfa78555290baec95`;
 - prospective diagnostics:
   `7f6b6966fce13433d12f6de5c59629dc79a7b79b9d30d88c77abc0cdb5c96c82`;
 - prospective diagnostic rows:

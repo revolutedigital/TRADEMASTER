@@ -81,3 +81,8 @@ Estatística de cada configuração: média do resultado em ATR por operação e
 ## O que se espera (palpite registrado antes do dado)
 
 Seguir tendência (TURTLE, TSMOM, CHANDELIER) em D1 é a família com mais evidência publicada, mas em FX a vantagem foi fraca na década de 2010; RSI2 e MACD200 em barras curtas devem perder para o custo. Palpite: 15% a 25% de chance de alguma configuração passar descoberta e réplica, quase toda ela nas famílias de tendência em D1.
+
+## Emendas
+
+- **2026-09-24, antes de qualquer estratégia rodar, só de leitura do dado:** o relógio do M1 em ASCII do HistData **não** é EST fixo como a documentação da fonte diz. Conferido minuto a minuto contra o M1 já validado do projeto (EURUSD, 2016 e 2019): lido como EST fixo, só o inverno bate; lido como hora de Nova York com horário de verão, **100% dos minutos de todos os meses** ficam iguais ao dado validado (±0,05 pip; 372 mil minutos por ano). É o mesmo relógio dos ticks do projeto: troca de horário pelas datas dos EUA até 2018-11 e pelas datas europeias depois (`fx_histdata_ticks.clock_to_utc`). A leitura passa a ser essa; nada mais muda.
+

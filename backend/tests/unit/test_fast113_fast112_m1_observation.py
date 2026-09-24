@@ -14,6 +14,7 @@ from scripts.research.run_fast113_fast112_m1_observation import (
     build_report,
     empty_trade_rows,
     parse_optional_timestamp,
+    source_validation_summary,
     trade_rows_from_simulated_trades,
 )
 
@@ -85,6 +86,21 @@ def test_empty_trade_rows_exposes_columns_required_by_fast112_filter() -> None:
     }.issubset(rows.columns)
 
 
+def test_source_validation_summary_flags_unvalidated_month(tmp_path: Path) -> None:
+    (tmp_path / "USDJPY_validation.csv").write_text(
+        "pair,month,minutes,hours_compared,bid_match,ask_match,crossed_minutes,passes\n"
+        "USDJPY,2026-09,19680,0,0.0,0.0,0,False\n",
+        encoding="utf-8",
+    )
+
+    summary = source_validation_summary(tmp_path, "USDJPY")
+
+    assert summary["available"] is True
+    assert summary["all_reported_months_passed"] is False
+    assert summary["failed_reported_months"] == ["2026-09"]
+    assert summary["zero_oracle_hour_months"] == ["2026-09"]
+
+
 def test_build_report_preserves_research_only_safety_flags(tmp_path: Path) -> None:
     registry = tmp_path / "registry.jsonl"
     registry.write_text("{}\n", encoding="utf-8")
@@ -98,6 +114,7 @@ def test_build_report_preserves_research_only_safety_flags(tmp_path: Path) -> No
         preregistration={"preregistration_sha256": "sha"},
         raw_m1_dir=tmp_path,
         source_files=[{"path": "source.parquet", "sha256": "source-sha", "bytes": 10}],
+        source_validation={"available": False},
         raw_m1=raw_m1,
         materialized_rows=empty_trade_rows(),
         materialized_path=materialized,

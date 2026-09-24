@@ -134,6 +134,7 @@ def run_fast113_fast112_m1_observation(
     output_root.mkdir(parents=True, exist_ok=True)
 
     source_files = source_m1_files(raw_m1_dir, OBSERVATION_PAIR)
+    validation = source_validation_summary(raw_m1_dir, OBSERVATION_PAIR)
     raw_m1 = load_observation_m1(OBSERVATION_PAIR, raw_m1_dir, start=start, end=end)
     materialized_rows = materialize_fast112_trade_rows(raw_m1, progress=progress)
     materialized_path = output_root / "materialized_trade_rows.parquet"
@@ -154,6 +155,7 @@ def run_fast113_fast112_m1_observation(
         preregistration=preregistration,
         raw_m1_dir=raw_m1_dir,
         source_files=source_files,
+        source_validation=validation,
         raw_m1=raw_m1,
         materialized_rows=materialized_rows,
         materialized_path=materialized_path,
@@ -187,6 +189,70 @@ def source_m1_files(raw_m1_dir: Path, pair: str) -> list[dict[str, Any]]:
         }
         for path in files
     ]
+
+
+def source_validation_summary(raw_m1_dir: Path, pair: str) -> dict[str, Any]:
+    validation_path = raw_m1_dir / f"{pair}_validation.csv"
+    if not validation_path.exists():
+        return {
+            "available": False,
+            "path": str(validation_path),
+            "reported_month_count": 0,
+            "reported_months": [],
+            "failed_reported_months": [],
+            "zero_oracle_hour_months": [],
+            "all_reported_months_passed": False,
+            "note": "no_validation_csv_found_for_pair",
+        }
+
+    rows = pd.read_csv(validation_path)
+    if rows.empty:
+        return {
+            "available": True,
+            "path": str(validation_path),
+            "sha256": sha256_file(validation_path),
+            "reported_month_count": 0,
+            "reported_months": [],
+            "failed_reported_months": [],
+            "zero_oracle_hour_months": [],
+            "all_reported_months_passed": False,
+            "note": "validation_csv_empty",
+        }
+    required = {"month", "passes"}
+    missing = required - set(rows.columns)
+    if missing:
+        raise ValueError(f"validation csv missing columns: {sorted(missing)}")
+
+    rows = rows.copy()
+    rows["passes"] = rows["passes"].map(parse_validation_bool)
+    reported_months = sorted(str(value) for value in rows["month"].dropna().unique())
+    failed = rows.loc[~rows["passes"], "month"].astype(str).tolist()
+    zero_oracle = []
+    if "hours_compared" in rows.columns:
+        zero_oracle = rows.loc[rows["hours_compared"].fillna(0).astype(int).eq(0), "month"].astype(str).tolist()
+    return {
+        "available": True,
+        "path": str(validation_path),
+        "sha256": sha256_file(validation_path),
+        "reported_month_count": int(len(reported_months)),
+        "reported_months": reported_months,
+        "failed_reported_months": failed,
+        "zero_oracle_hour_months": zero_oracle,
+        "all_reported_months_passed": not failed,
+        "note": "validation_csv_scope_is_the_last_fx_histdata_ticks_run",
+    }
+
+
+def parse_validation_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes"}:
+            return True
+        if normalized in {"false", "0", "no"}:
+            return False
+    return bool(value)
 
 
 def load_observation_m1(
@@ -328,6 +394,7 @@ def build_report(
     preregistration: dict[str, str],
     raw_m1_dir: Path,
     source_files: list[dict[str, Any]],
+    source_validation: dict[str, Any],
     raw_m1: pd.DataFrame,
     materialized_rows: pd.DataFrame,
     materialized_path: Path,
@@ -367,6 +434,7 @@ def build_report(
         "registry_sha256": sha256_file(registry_path),
         "raw_m1_dir": str(raw_m1_dir),
         "raw_m1_files": source_files,
+        "raw_m1_validation": source_validation,
         "raw_m1_row_count": int(len(raw_m1)),
         "raw_m1_start": raw_m1.index[0].isoformat(),
         "raw_m1_end": raw_m1.index[-1].isoformat(),
@@ -390,6 +458,7 @@ def console_summary(report: dict[str, Any]) -> dict[str, Any]:
             "raw_m1_start": report["raw_m1_start"],
             "raw_m1_end": report["raw_m1_end"],
             "raw_m1_row_count": report["raw_m1_row_count"],
+            "raw_m1_validation": report["raw_m1_validation"],
             "materialized_trade_row_count": report["materialized_trade_row_count"],
         }
     )

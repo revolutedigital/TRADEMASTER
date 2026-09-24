@@ -34,23 +34,34 @@ Fast113 mantém:
 Fonte M1 local:
 
 - início: `2019-01-01T22:00:00+00:00`;
-- fim: `2026-09-01T03:59:00+00:00`;
-- linhas M1: `2,799,820`.
+- fim: `2026-09-18T20:59:00+00:00`;
+- linhas M1: `2,819,500`.
+
+Validação do último download HistData:
+
+- arquivo: `backend/data/raw/fx_m1_hd/USDJPY_validation.csv`;
+- hash: `16a1f265ff961afa4df0a6959dd644aacd611e0e3f7e1dcdc125ca2c4d4f2dd1`;
+- mês reportado: `2026-09`;
+- `passes=false`;
+- `hours_compared=0`;
+- motivo prático: ainda não há oracle H1 local cobrindo o mês baixado, então
+  setembro/2026 entra como dado observacional não-validado, não como evidência
+  para aprovar estratégia.
 
 Materialização:
 
-- trades reconstruídos da regra congelada: `524`;
+- trades reconstruídos da regra congelada: `534`;
 - observações elegíveis pós-pré-registro: `0`;
 - status: `FAST112_OBSERVATION_NO_ELIGIBLE_TRADES_YET`;
-- motivo principal: o M1 local termina em `2026-09-01`, antes do pré-registro em
+- motivo principal: o M1 local termina em `2026-09-18`, antes do pré-registro em
   `2026-09-24T02:59:14Z`.
 
 Hashes:
 
 - report:
-  `2640fc044d52d7aaf568a2461f21bd32b94de40c0e62779a84e799fca4f62e40`;
+  `fc6e5a5cb52e78915c9a2a9c82c5f3c45ba334b2f768a381d929d8cedf79f897`;
 - materialized trade rows:
-  `ffbaf95058129b5d4fbc3055d7696c705425c18fe0339de3c8e3b785af71cf42`;
+  `33deb104d38cc9097e92f60e559fd2758f653e7cbb1f0cf17cdc382b31f9a6b8`;
 - observations:
   `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
 

@@ -449,10 +449,15 @@ def fast147_status(*, summary: dict[str, Any], gates: dict[str, Any]) -> tuple[s
 def raw_m1_bounds(pair_quality: dict[str, dict[str, Any]]) -> dict[str, Any]:
     starts = [quality["first_bar"] for quality in pair_quality.values() if quality["first_bar"]]
     ends = [quality["last_bar"] for quality in pair_quality.values() if quality["last_bar"]]
+    start_by_pair = {pair: quality["first_bar"] for pair, quality in pair_quality.items()}
+    end_by_pair = {pair: quality["last_bar"] for pair, quality in pair_quality.items()}
     return {
         "raw_m1_row_count": int(sum(quality["usable_bars"] for quality in pair_quality.values())),
         "raw_m1_start": min(starts) if starts else None,
         "raw_m1_end": max(ends) if ends else None,
+        "raw_m1_start_by_pair": start_by_pair,
+        "raw_m1_end_by_pair": end_by_pair,
+        "raw_m1_min_pair_end": min(ends) if ends else None,
         "dropped_crossed_quote_bars": int(
             sum(quality["dropped_crossed_quote_bars"] for quality in pair_quality.values())
         ),
@@ -549,6 +554,8 @@ def console_summary(report: dict[str, Any]) -> dict[str, Any]:
         "status_reasons": report["status_reasons"],
         "raw_m1_start": report["raw_m1_start"],
         "raw_m1_end": report["raw_m1_end"],
+        "raw_m1_min_pair_end": report["raw_m1_min_pair_end"],
+        "raw_m1_end_by_pair": report["raw_m1_end_by_pair"],
         "raw_m1_row_count": report["raw_m1_row_count"],
         "signal_count": report["signal_count"],
         "signal_counts_by_pair": report["signal_counts_by_pair"],

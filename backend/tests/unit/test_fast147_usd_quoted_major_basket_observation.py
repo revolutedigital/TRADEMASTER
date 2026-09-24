@@ -12,6 +12,7 @@ from scripts.research.run_fast147_usd_quoted_major_basket_observation import (
     evaluate_fast147_gates,
     fast147_status,
     load_prospective_market,
+    raw_m1_bounds,
     select_eligible_observations,
     summarize_observations,
     summarize_pairs,
@@ -99,6 +100,29 @@ def test_load_prospective_market_does_not_apply_historical_audit_cut(tmp_path) -
 
     for pair in TARGET_PAIRS:
         assert market[pair].quality["last_bar"] == "2026-09-24T06:00:00+00:00"
+
+
+def test_raw_m1_bounds_exposes_minimum_pair_end() -> None:
+    bounds = raw_m1_bounds(
+        {
+            "AUDUSD": {
+                "usable_bars": 10,
+                "first_bar": "2026-09-01T00:00:00+00:00",
+                "last_bar": "2026-09-18T20:59:00+00:00",
+                "dropped_crossed_quote_bars": 0,
+            },
+            "NZDUSD": {
+                "usable_bars": 20,
+                "first_bar": "2026-09-01T00:00:00+00:00",
+                "last_bar": "2026-09-24T06:00:00+00:00",
+                "dropped_crossed_quote_bars": 0,
+            },
+        }
+    )
+
+    assert bounds["raw_m1_end"] == "2026-09-24T06:00:00+00:00"
+    assert bounds["raw_m1_min_pair_end"] == "2026-09-18T20:59:00+00:00"
+    assert bounds["raw_m1_end_by_pair"]["AUDUSD"] == "2026-09-18T20:59:00+00:00"
 
 
 def test_fast147_gates_allow_shadow_only_after_full_prospective_requirements() -> None:

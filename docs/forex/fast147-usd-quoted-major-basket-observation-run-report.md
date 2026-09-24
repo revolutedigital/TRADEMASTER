@@ -11,7 +11,8 @@ Status:
 A cesta foi pré-registrada e o runner de observação já funciona, mas ainda não
 há nenhum trade prospectivo elegível.
 
-O dado M1 local usado pelo runner corrigido termina em:
+O dado M1 local usado pelo runner corrigido, depois do refresh local de setembro
+para os quatro pares da cesta, termina em:
 
 `2026-09-18T20:59:00+00:00`
 
@@ -48,7 +49,8 @@ Regra:
 |---|---:|
 | Raw M1 start | `2019-01-01T22:00:00+00:00` |
 | Raw M1 end | `2026-09-18T20:59:00+00:00` |
-| Raw M1 rows | `11206603` |
+| Raw M1 min pair end | `2026-09-18T20:59:00+00:00` |
+| Raw M1 rows | `11265417` |
 | Sinais reconstruídos | `344` |
 | Trades materializados | `281` |
 | Observações pós-pré-registro | `0` |
@@ -71,6 +73,15 @@ Trades materializados por par:
 | `EURUSD` | `73` |
 | `GBPUSD` | `72` |
 | `NZDUSD` | `65` |
+
+Fim do M1 por par:
+
+| Par | Último minuto |
+|---|---|
+| `AUDUSD` | `2026-09-18T20:59:00+00:00` |
+| `EURUSD` | `2026-09-18T20:59:00+00:00` |
+| `GBPUSD` | `2026-09-18T20:59:00+00:00` |
+| `NZDUSD` | `2026-09-18T20:59:00+00:00` |
 
 ## Gates
 
@@ -127,11 +138,11 @@ Demo, Testnet nem LIVE.
 Hashes:
 
 - report:
-  `2efb19322e7301ba24915dfafdb2f9384d571a74c659c7ab3c86d1ac2cd2222a`;
+  `a5f2a488da89ece0bd9f9a46c4fad67d7a82be9b18d79e0e08292a28214067ec`;
 - sinais:
   `1d3d8bb7fa92a7c4f462d1014b2662dc475a594845079527ee1b936aa6e0991c`;
 - trades materializados:
-  `b22e95fb9d3baf9f8d4b6612ac3637249d6c831cd908eb0c4d83d1b39acb37da`;
+  `2f9146cc6435e393c83d6235dd7ac0dfc6b2fe386b0ce9984d7838c6e9c394b0`;
 - observações:
   `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
 
@@ -139,6 +150,17 @@ Nota de correção: o runner inicial usava o loader histórico que cortava a bas
 em `2026-09-01`. O runner atual carrega M1 de observação sem esse corte, no
 mesmo padrão dos observadores Fast134/Fast143. Com isso, setembro parcial passa
 a ser considerado corretamente.
+
+Hashes dos parquets locais de setembro usados no refresh:
+
+- `AUDUSD_M1_202609_202609.parquet`:
+  `9f3f4aa352fae44f39bd637ef56ad4cf6ff29b0546886bea94112521bc6d3b36`;
+- `EURUSD_M1_202609_202609.parquet`:
+  `83e10b41c3b2d69281d732b0f468a8bbcb53750f7acf158e1f02a6f15448564b`;
+- `GBPUSD_M1_202609_202609.parquet`:
+  `c98fa9becf27f5cc29287bb7b51b68f8377fadc4c12880496669a4161bce9266`;
+- `NZDUSD_M1_202609_202609.parquet`:
+  `e9fdae6fe9b209fe01243de303bd25a02bcf9c67980348f3ae19fb425754ee72`.
 
 ## Próxima ação
 

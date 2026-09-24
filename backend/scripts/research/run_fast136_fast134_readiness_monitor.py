@@ -41,7 +41,6 @@ from scripts.research.run_fast130_nzdusd_donchian_fade_risk_audit import (  # no
     PAIR,
     daily_atr_pips,
     frozen_entry_signals,
-    load_pair_data,
 )
 from scripts.research.run_fast134_nzdusd_donchian_fade_fixed1r_observation import (  # noqa: E402
     FROZEN_ENTRY_POLICY,
@@ -52,6 +51,7 @@ from scripts.research.run_fast134_nzdusd_donchian_fade_fixed1r_observation impor
     PREREGISTRATION_TIMESTAMP,
     SAFETY_FLAGS,
     SOURCE_FAST133_REPORT_SHA256,
+    load_prospective_pair_data,
     materialize_frozen_policy_trades,
     select_eligible_observations,
 )
@@ -85,7 +85,7 @@ def run_fast136_fast134_readiness_monitor(
 
     source_files = source_m1_files(m1_dir, PAIR)
     source_validation = source_validation_summary(m1_dir, PAIR)
-    pair_data = load_pair_data(m1_dir)
+    pair_data = load_prospective_pair_data(m1_dir)
 
     signals = frozen_entry_signals(pair_data)
     post_preregistration_signals = select_post_preregistration_signals(signals)

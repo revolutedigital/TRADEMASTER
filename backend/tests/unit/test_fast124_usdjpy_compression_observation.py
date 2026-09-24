@@ -159,6 +159,21 @@ def test_source_validation_summary_flags_unvalidated_month(tmp_path: Path) -> No
     assert summary["zero_oracle_hour_months"] == ["2026-09"]
 
 
+def test_source_validation_summary_treats_missing_passes_as_unverified(tmp_path: Path) -> None:
+    (tmp_path / "USDJPY_validation.csv").write_text(
+        "pair,month,minutes\n"
+        "USDJPY,2026-09,19680\n",
+        encoding="utf-8",
+    )
+
+    summary = source_validation_summary(tmp_path, "USDJPY")
+
+    assert summary["available"] is True
+    assert summary["reported_months"] == ["2026-09"]
+    assert summary["all_reported_months_passed"] is False
+    assert summary["note"] == "validation_csv_without_passes_column_treated_as_unverified"
+
+
 def test_build_report_preserves_research_only_safety_flags(tmp_path: Path) -> None:
     registry = tmp_path / "registry.jsonl"
     registry.write_text("{}\n", encoding="utf-8")

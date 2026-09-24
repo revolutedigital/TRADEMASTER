@@ -20,35 +20,40 @@ há como observar trade prospectivo novo nessa regra com os dados atuais.
 
 - pré-registro Fast134: `2026-09-24T04:04:40-03:00`;
 - início do M1 local: `2019-01-01T22:02:00+00:00`;
-- fim do M1 local: `2026-08-31T23:59:00+00:00`;
+- fim do M1 local: `2026-09-18T20:59:00+00:00`;
 - há M1 pós-pré-registro: `false`;
 - sinais históricos reconstruídos: `79`;
 - sinais pós-pré-registro: `0`;
 - trades históricos materializados pela regra congelada: `65`;
 - observações completas elegíveis pós-pré-registro: `0`.
 
+Nota de dado: o mês `2026-09` de NZDUSD foi materializado localmente, mas o
+arquivo disponível vai só até `2026-09-18T20:59:00+00:00`, ainda antes do
+pré-registro. Como o oracle H1 local termina em agosto, setembro entra como
+unverified/fail-closed no resumo de validação.
+
 ## Snapshot Donchian do último D1 local
 
 Último candle D1 disponível:
 
-`2026-08-31T23:59:00+00:00`
+`2026-09-18T23:59:00+00:00`
 
 | Campo | Valor |
 |---|---:|
-| close | `0.592145` |
+| close | `0.572300` |
 | canal superior 100D | `0.599435` |
 | canal inferior 100D | `0.562645` |
-| distância até rompimento superior | `72.9000` pips |
-| distância até rompimento inferior | `295.0000` pips |
-| gatilho mais próximo | rompimento superior → fade short |
+| distância até rompimento superior | `271.3500` pips |
+| distância até rompimento inferior | `96.5500` pips |
+| gatilho mais próximo | rompimento inferior → fade long |
 | sinal ativo agora | `false` |
-| ATR diário | `40.1857` pips |
-| risco se houvesse sinal | `80.3714` pips |
+| ATR diário | `45.9893` pips |
+| risco se houvesse sinal | `91.9786` pips |
 
 Interpretação: no último dado local, NZDUSD estava mais perto de romper para
-cima. Se um fechamento D1 rompesse o canal superior, a regra congelada buscaria
-um fade vendido no primeiro M1 seguinte. Mas esse candle é de agosto, antes do
-pré-registro; não conta como evidência prospectiva.
+baixo. Se um fechamento D1 rompesse o canal inferior, a regra congelada buscaria
+um fade comprado no primeiro M1 seguinte. Mas esse candle é de `2026-09-18`,
+antes do pré-registro; não conta como evidência prospectiva.
 
 ## Segurança
 
@@ -79,7 +84,7 @@ Demo, Testnet nem LIVE.
 Hashes:
 
 - report:
-  `8d6690ace3a02042793d4ee326689c03e4e89c4bac8a3742cfac36c86f50fffd`;
+  `fda64b819bf26f6144f0de2c5748b1aeac4be6992d5785ff61f94e47065aa432`;
 - sinais pós-pré-registro:
   `37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570`.
 

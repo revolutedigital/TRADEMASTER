@@ -21,6 +21,8 @@ BACKEND_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = BACKEND_ROOT.parent
 sys.path.insert(0, str(BACKEND_ROOT))
 
+from app.fx.instruments import ConversionRates  # noqa: E402
+from app.fx.sim.costs import FUSION_ZERO, STRESS  # noqa: E402
 from scripts.research.run_fast120_fx_currency_strength_scout import (  # noqa: E402
     Management,
     plain_json,
@@ -28,10 +30,16 @@ from scripts.research.run_fast120_fx_currency_strength_scout import (  # noqa: E
 )
 from scripts.research.run_fast121_fx_compression_breakout_scout import (  # noqa: E402
     DEFAULT_M1_DIR,
+    MAJOR_RATE_PAIRS,
+    PairData,
+    commission_pips,
+    mid_ohlc,
     sha256_file,
+    widen_quotes,
 )
 from scripts.research.run_fast124_usdjpy_compression_observation import (  # noqa: E402
     absolute_path,
+    load_observation_bars,
     load_jsonl,
     source_m1_files,
     source_validation_summary,
@@ -43,7 +51,6 @@ from scripts.research.run_fast130_nzdusd_donchian_fade_risk_audit import (  # no
     RiskPolicy,
     evaluate_risk_policy,
     frozen_entry_signals,
-    load_pair_data,
 )
 from scripts.research.run_fast131_nzdusd_donchian_fade_observation import (  # noqa: E402
     DEFAULT_ALPHA,
@@ -115,7 +122,7 @@ def run_fast134_nzdusd_donchian_fade_fixed1r_observation(
 
     source_files = source_m1_files(m1_dir, PAIR)
     source_validation = source_validation_summary(m1_dir, PAIR)
-    pair_data = load_pair_data(m1_dir)
+    pair_data = load_prospective_pair_data(m1_dir)
     signals = frozen_entry_signals(pair_data)
     signals_path = output_root / "entry_signals.parquet"
     signals.to_parquet(signals_path, compression="zstd", index=False)
@@ -199,6 +206,39 @@ def validate_preregistration(*, preregistration_path: Path, registry_path: Path)
         raise ValueError(f"Fast134 registry mismatch: {mismatches}")
 
     return {"preregistration_sha256": preregistration_sha256}
+
+
+def load_prospective_pair_data(m1_dir: Path) -> PairData:
+    """Load raw M1 bars without the historical audit end cut used by Fast130.
+
+    Fast130's `load_pair_data()` deliberately truncates the historical audit at
+    2026-09-01. Fast134 is a prospective observer, so it must ingest later M1
+    files as they arrive while keeping the frozen signal/risk rule unchanged.
+    """
+    frames = {rate_pair: load_observation_bars(rate_pair, m1_dir) for rate_pair in MAJOR_RATE_PAIRS}
+    rates = ConversionRates(
+        {
+            rate_pair: float(mid_ohlc(frame)["close"].median())
+            for rate_pair, frame in frames.items()
+        }
+    )
+    frame = frames[PAIR]
+    median_price = float(mid_ohlc(frame)["close"].median())
+    return PairData(
+        bars=frame,
+        stress_bars=widen_quotes(frame, STRESS.spread_multiplier),
+        median_price=median_price,
+        base_commission_pips=commission_pips(PAIR, median_price, rates, FUSION_ZERO),
+        stress_commission_pips=commission_pips(PAIR, median_price, rates, STRESS),
+        quality={
+            "pair": PAIR,
+            "raw_bars": int(frame.attrs.get("raw_bars", len(frame))),
+            "usable_bars": int(len(frame)),
+            "dropped_crossed_quote_bars": int(frame.attrs.get("dropped_crossed_quote_bars", 0)),
+            "first_bar": frame.index.min().isoformat() if len(frame) else None,
+            "last_bar": frame.index.max().isoformat() if len(frame) else None,
+        },
+    )
 
 
 def materialize_frozen_policy_trades(*, pair_data: Any, signals: pd.DataFrame) -> pd.DataFrame:

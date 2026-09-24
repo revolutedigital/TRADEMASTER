@@ -26,12 +26,18 @@ Status:
 - trades históricos materializados pela regra congelada: `65`;
 - trades elegíveis pós-pré-registro: `0`;
 - início do M1 local usado: `2019-01-01T22:02:00+00:00`;
-- fim do M1 local usado: `2026-08-31T23:59:00+00:00`;
+- fim do M1 local usado: `2026-09-18T20:59:00+00:00`;
 - timestamp de pré-registro: `2026-09-24T04:04:40-03:00`.
 
-Não há trades elegíveis porque o dado M1 local termina antes do pré-registro.
-Isso não reprova nem aprova a hipótese; só confirma que ainda não existe
-evidência prospectiva nova para essa candidata.
+Não há trades elegíveis porque, mesmo após importar o mês `2026-09` de
+NZDUSD, o dado M1 local ainda termina antes do pré-registro. Isso não reprova
+nem aprova a hipótese; só confirma que ainda não existe evidência prospectiva
+nova para essa candidata.
+
+Observação de dado: `NZDUSD_M1_202609_202609.parquet` tem `19.610` minutos de
+`2026-09-01T04:00:00+00:00` a `2026-09-18T20:59:00+00:00`. O H1 oracle local
+termina em agosto, então a validação mensal de setembro fica marcada como
+unverified/fail-closed, não como aprovação de qualidade.
 
 ## Gates
 
@@ -62,11 +68,11 @@ evidência prospectiva nova para essa candidata.
 Hashes:
 
 - report:
-  `f00eb574250d8098b64b8d7707a6e8135c33f88d40296b683aab2c894c9618f8`;
+  `8795cce08d4e7e456708a490fd9efab2faf4922deef0432080dae8960e1552b3`;
 - sinais:
   `565aefb881e831b0551e9e7040e9c2e13e0ad7b3ca243b3cfcbe0c6efa6b248a`;
 - trades materializados:
-  `84eeb1903e4faaf77458842260e8301ca71c80b55943a5b64a5c87ee410654f4`;
+  `b1dab2d1aba799b4545cba4719e4c407eb9fb1a01a7d08fa771c46035d3214f0`;
 - observações:
   `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
 
@@ -77,5 +83,5 @@ O estado correto continua sendo:
 - temos uma candidata estatística pré-registrada;
 - ainda não temos uma estratégia aprovada;
 - ainda não há Testnet, Demo nem LIVE;
-- o próximo avanço depende de importar/capturar M1 de NZDUSD posterior a
+- o próximo avanço depende de importar/capturar M1 de NZDUSD realmente posterior a
   `2026-09-24T04:04:40-03:00` e rerodar o Fast134.

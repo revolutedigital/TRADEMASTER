@@ -296,14 +296,33 @@ def source_validation_summary(raw_m1_dir: Path, pair: str) -> dict[str, Any]:
             "all_reported_months_passed": False,
             "note": "validation_csv_empty",
         }
-    required = {"month", "passes"}
+    required = {"month"}
     missing = required - set(rows.columns)
     if missing:
         raise ValueError(f"validation csv missing columns: {sorted(missing)}")
 
     rows = rows.copy()
-    rows["passes"] = rows["passes"].map(parse_validation_bool)
     reported_months = sorted(str(value) for value in rows["month"].dropna().unique())
+    if "passes" not in rows.columns:
+        zero_oracle: list[str] = []
+        if "hours_compared" in rows.columns:
+            zero_oracle = rows.loc[
+                rows["hours_compared"].fillna(0).astype(int).eq(0),
+                "month",
+            ].astype(str).tolist()
+        return {
+            "available": True,
+            "path": str(validation_path),
+            "sha256": sha256_file(validation_path),
+            "reported_month_count": int(len(reported_months)),
+            "reported_months": reported_months,
+            "failed_reported_months": [],
+            "zero_oracle_hour_months": zero_oracle,
+            "all_reported_months_passed": False,
+            "note": "validation_csv_without_passes_column_treated_as_unverified",
+        }
+
+    rows["passes"] = rows["passes"].map(parse_validation_bool)
     failed = rows.loc[~rows["passes"], "month"].astype(str).tolist()
     zero_oracle: list[str] = []
     if "hours_compared" in rows.columns:

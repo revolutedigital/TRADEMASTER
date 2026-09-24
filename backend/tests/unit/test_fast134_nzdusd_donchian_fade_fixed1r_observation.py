@@ -9,6 +9,7 @@ from scripts.research.run_fast134_nzdusd_donchian_fade_fixed1r_observation impor
     FROZEN_ENTRY_POLICY,
     FROZEN_POLICY_ID,
     FROZEN_RISK_POLICY,
+    MAJOR_RATE_PAIRS,
     PAIR,
     PREREGISTRATION_TIMESTAMP,
     SAFETY_FLAGS,
@@ -16,6 +17,7 @@ from scripts.research.run_fast134_nzdusd_donchian_fade_fixed1r_observation impor
     empty_trade_rows,
     evaluate_gates,
     fast134_status,
+    load_prospective_pair_data,
     select_eligible_observations,
     summarize_observations,
     validate_parameters,
@@ -78,6 +80,33 @@ def test_validate_preregistration_uses_real_fast134_registry() -> None:
 def test_validate_parameters_rejects_invalid_alpha() -> None:
     with pytest.raises(ValueError, match="alpha must be between 0 and 1"):
         validate_parameters(alpha=0.0)
+
+
+def test_load_prospective_pair_data_does_not_apply_historical_audit_cut(tmp_path: Path) -> None:
+    index = pd.DatetimeIndex(
+        ["2026-08-31T23:59:00Z", "2026-09-24T12:00:00Z"],
+        name="timestamp",
+    )
+    frame = pd.DataFrame(
+        {
+            "bid_open": [1.0000, 1.0010],
+            "bid_high": [1.0010, 1.0020],
+            "bid_low": [0.9990, 1.0000],
+            "bid_close": [1.0005, 1.0015],
+            "ask_open": [1.0002, 1.0012],
+            "ask_high": [1.0012, 1.0022],
+            "ask_low": [0.9992, 1.0002],
+            "ask_close": [1.0007, 1.0017],
+        },
+        index=index,
+    )
+    for rate_pair in MAJOR_RATE_PAIRS:
+        frame.to_parquet(tmp_path / f"{rate_pair}_M1_202608_202609.parquet")
+
+    pair_data = load_prospective_pair_data(tmp_path)
+
+    assert pair_data.quality["last_bar"] == "2026-09-24T12:00:00+00:00"
+    assert pair_data.quality["usable_bars"] == 2
 
 
 def test_select_eligible_observations_requires_post_preregistration_exact_frozen_rule() -> None:

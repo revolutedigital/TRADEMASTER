@@ -11,6 +11,17 @@ Status:
 
 `FAST177_OBSERVATION_INSUFFICIENT_PROSPECTIVE_EVIDENCE`
 
+Último snapshot registrado:
+
+- janela parcial até `2026-09-24T13:45:59.999000+00:00`;
+- `5` decisões pós-âncora;
+- `1` entrada elegível;
+- última decisão: `2026-09-24T13:30:00+00:00`;
+- último edge: `0.7731681883305804` bps;
+- último actual 15m: `2.141174791234768` bps;
+- report SHA256:
+  `8aa43cffeca63fccd760bbfb8c43889fc68fbe5e174b753953280bd92d975d8e`.
+
 ## Resposta curta
 
 O experimento está pré-registrado, tem registry próprio e o runner validou o

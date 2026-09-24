@@ -11,6 +11,14 @@ Status:
 
 `FAST178_WAITING_FOR_POST_PREREGISTRATION_DATA`
 
+Último snapshot registrado:
+
+- janela parcial até `2026-09-24T13:45:59.999000+00:00`;
+- `0` decisões pós-âncora com outcome completo;
+- `0` entradas elegíveis;
+- report SHA256:
+  `4b641a1d87f82e3fa1e216fbe89d7949443d7fd753bf8e42c304cc50eddf4778`.
+
 ## Resposta curta
 
 O experimento está pré-registrado, tem registry próprio e o runner validou o

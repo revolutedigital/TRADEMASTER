@@ -12,6 +12,17 @@ Status:
 
 `FAST176_DATA_FRESH_NO_ELIGIBLE_DECISIONS_YET`
 
+Último snapshot registrado:
+
+- janela parcial até `2026-09-24T13:45:59.999000+00:00`;
+- `20` decisões pós-âncora;
+- `0` entradas elegíveis;
+- última decisão: `2026-09-24T13:30:00+00:00`;
+- último edge: `0.7731681883305873` bps;
+- último actual 15m: `2.141174791234768` bps;
+- report SHA256:
+  `405ca1da0df7df39fbc86018ca27fa5da70f22e78de419b124eca8d36dabd555`.
+
 ## Resposta curta
 
 O observador está pronto e já avaliou a primeira janela pós-âncora, usando

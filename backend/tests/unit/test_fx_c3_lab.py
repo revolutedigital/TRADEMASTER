@@ -137,3 +137,14 @@ def test_a_histdata_file_is_read_as_utc_from_its_new_york_clock(tmp_path) -> Non
     assert frame["t"].tolist() == [pd.Timestamp(s, tz="UTC").timestamp()
                                    for s in ("2019-07-01 16:00", "2019-03-20 17:00", "2016-03-20 16:00")]
     assert frame[["o", "h", "l", "c"]].iloc[0].tolist() == [1.1, 1.2, 1.0, 1.15]
+
+
+def test_the_manifest_keeps_only_the_pre_registered_months(tmp_path) -> None:
+    months = pd.date_range("2011-12-01", "2026-09-30", freq="MS")
+    t = np.concatenate([np.arange(m.timestamp(), m.timestamp() + 60 * 20_000, 60) for m in months])
+    np.save(tmp_path / "EURUSD.npy", np.column_stack([t, np.ones((t.size, 4))]))
+
+    table = c3.build_manifest(("EURUSD",), tmp_path)
+
+    included = table.loc[table["included"], "month"]
+    assert included.min() == "2012-01" and included.max() == "2026-08" and table["symbol_included"].all()

@@ -62,6 +62,7 @@ MIN_MONTH_SHARE, MIN_MONTHS = 0.60, 36
 BOOTSTRAP_SEED, PLACEBO_SEED, PLACEBO_REPLICATES = 20260924, 20260925, 200
 MIN_TRADES, MIN_PAIR_SHARE_A, MIN_PAIR_SHARE_B = 200, 0.60, 0.55
 TIMEFRAMES = ("H1", "H4", "D1")
+SAMPLE = ("2012-01", "2026-08")
 
 
 def cost_of(symbol: str) -> float:
@@ -115,8 +116,9 @@ def build_manifest(symbols=GROUP_A + GROUP_B, arrays: Path = ARRAYS) -> pd.DataF
         bad = pd.Series(m1[:, 1:5].min(axis=1) <= 0, index=months).groupby(level=0).any()
         median = counts.median()
         for month, count in counts.items():
+            inside = SAMPLE[0] <= month <= SAMPLE[1]
             rows.append({"symbol": symbol, "month": month, "minutes": int(count),
-                         "included": bool(count >= MIN_MONTH_SHARE * median and not bad[month])})
+                         "included": bool(inside and count >= MIN_MONTH_SHARE * median and not bad[month])})
     table = pd.DataFrame(rows)
     good = table[table["included"]].groupby("symbol").size()
     table["symbol_included"] = table["symbol"].map(lambda s: bool(good.get(s, 0) >= MIN_MONTHS))

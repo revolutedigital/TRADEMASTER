@@ -18,7 +18,7 @@ O observador está pronto, mas ainda não há dado local posterior à âncora.
 
 Última data comum disponível para BTCUSDT, ETHUSDT e SOLUSDT:
 
-`2026-09-22`
+`2026-09-23`
 
 Como a âncora é `2026-09-24T08:53:07-03:00`, o runner corretamente gerou:
 
@@ -64,7 +64,7 @@ Custo:
 |---|---:|
 | Training rows | `1,710` |
 | Features | `47` |
-| Última data comum local | `2026-09-22` |
+| Última data comum local | `2026-09-23` |
 | Prospective rows pós-âncora | `0` |
 | Observações elegíveis | `0` |
 | Ordens enviadas | `0` |
@@ -128,9 +128,9 @@ Hashes:
 - pré-registro:
   `d464220a86b4fd120a6f91e6ffec69163dcafadf3214c2135105b4a6b9758b92`;
 - report:
-  `6a2e0cbab28fb1d4f94ba5d370cdef07b75e8c16c0c1fb039a5e9f21ab0272af`;
+  `3006d6a8a979ba3f5371ddce25aaac2a7f3cd4f7e8140e26cb8469f064dc95b9`;
 - summary:
-  `a50f4f3647713b79b52cd4d19706e862b02479b5c9273216bcf613e2340c8070`;
+  `75883543fe49367e98a9cea9d5e457c3211825d38df30a580120ce50ab52d705`;
 - observations:
   `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`;
 - observation decision rows:

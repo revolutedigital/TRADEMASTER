@@ -60,6 +60,24 @@ Temos uma estratégia candidata operacional histórica e pré-registrada. Ainda
 não temos confirmação prospectiva, porque o dataset local não alcança a data do
 pré-registro.
 
+## Refresh probe da fonte
+
+Depois do run, foi feito um refresh isolado em `/tmp`, sem alterar a base
+oficial do projeto, baixando novamente setembro/2026 via
+`backend/scripts/research/fx_histdata_ticks.py`.
+
+Resultado do pacote recém-baixado:
+
+| Par | Minutos | Primeiro M1 | Último M1 |
+|---|---:|---|---|
+| AUDUSD | `19546` | `2026-09-01T04:00:00+00:00` | `2026-09-18T20:59:00+00:00` |
+| EURUSD | `19622` | `2026-09-01T04:00:00+00:00` | `2026-09-18T20:59:00+00:00` |
+| GBPUSD | `19646` | `2026-09-01T04:00:00+00:00` | `2026-09-18T20:59:00+00:00` |
+| NZDUSD | `19610` | `2026-09-01T04:00:00+00:00` | `2026-09-18T20:59:00+00:00` |
+
+Conclusão: no momento deste run, o pacote público da fonte ainda não tinha M1
+posterior à âncora Fast151. O bloqueio é dado externo, não falha do runner.
+
 ## Segurança
 
 Fast151 observation é pesquisa offline:

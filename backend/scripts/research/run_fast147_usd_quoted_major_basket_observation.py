@@ -24,14 +24,21 @@ REPO_ROOT = BACKEND_ROOT.parent
 sys.path.insert(0, str(BACKEND_ROOT))
 
 from scripts.research.run_fast120_fx_currency_strength_scout import plain_json, write_json  # noqa: E402
+from app.fx.instruments import ConversionRates  # noqa: E402
+from app.fx.sim.costs import FUSION_ZERO, STRESS  # noqa: E402
 from scripts.research.run_fast121_fx_compression_breakout_scout import (  # noqa: E402
     DEFAULT_M1_DIR,
-    load_market,
+    MAJOR_RATE_PAIRS,
+    PairData,
+    commission_pips,
+    mid_ohlc,
     sha256_file,
+    widen_quotes,
 )
 from scripts.research.run_fast124_usdjpy_compression_observation import (  # noqa: E402
     absolute_path,
     load_jsonl,
+    load_observation_bars,
     source_m1_files,
     source_validation_summary,
     write_jsonl,
@@ -121,7 +128,7 @@ def run_fast147_usd_quoted_major_basket_observation(
 
     source_files = {pair: source_m1_files(m1_dir, pair) for pair in TARGET_PAIRS}
     source_validation = {pair: source_validation_summary(m1_dir, pair) for pair in TARGET_PAIRS}
-    market = load_market(m1_dir)
+    market = load_prospective_market(m1_dir)
     pair_quality = {pair: market[pair].quality for pair in TARGET_PAIRS}
     entry_policy = frozen_entry_policy()
     risk_policy = frozen_risk_policy()
@@ -185,6 +192,39 @@ def frozen_entry_policy() -> Any:
 
 def frozen_risk_policy() -> Any:
     return next(policy for policy in risk_policy_grid() if policy.identifier == RISK_POLICY_ID)
+
+
+def load_prospective_market(m1_dir: Path) -> dict[str, PairData]:
+    """Load M1 bars without Fast121/Fast133's historical audit-end truncation.
+
+    Historical scouts deliberately cut the current sample before 2026-09-01.
+    Fast147 is a prospective observer, so it must ingest later M1 files when
+    they arrive while keeping the frozen signal/risk rule unchanged.
+    """
+    frames = {pair: load_observation_bars(pair, m1_dir) for pair in MAJOR_RATE_PAIRS}
+    rates = ConversionRates(
+        {pair: float(mid_ohlc(frame)["close"].median()) for pair, frame in frames.items()}
+    )
+    market: dict[str, PairData] = {}
+    for pair in TARGET_PAIRS:
+        frame = frames[pair]
+        median_price = float(mid_ohlc(frame)["close"].median())
+        market[pair] = PairData(
+            bars=frame,
+            stress_bars=widen_quotes(frame, STRESS.spread_multiplier),
+            median_price=median_price,
+            base_commission_pips=commission_pips(pair, median_price, rates, FUSION_ZERO),
+            stress_commission_pips=commission_pips(pair, median_price, rates, STRESS),
+            quality={
+                "pair": pair,
+                "raw_bars": int(frame.attrs.get("raw_bars", len(frame))),
+                "usable_bars": int(len(frame)),
+                "dropped_crossed_quote_bars": int(frame.attrs.get("dropped_crossed_quote_bars", 0)),
+                "first_bar": frame.index.min().isoformat() if len(frame) else None,
+                "last_bar": frame.index.max().isoformat() if len(frame) else None,
+            },
+        )
+    return market
 
 
 def validate_preregistration(*, preregistration_path: Path, registry_path: Path) -> dict[str, str]:

@@ -11,9 +11,9 @@ Status:
 A cesta foi pré-registrada e o runner de observação já funciona, mas ainda não
 há nenhum trade prospectivo elegível.
 
-O dado M1 local usado pelo runner termina em:
+O dado M1 local usado pelo runner corrigido termina em:
 
-`2026-08-31T23:59:00+00:00`
+`2026-09-18T20:59:00+00:00`
 
 Como o pré-registro é:
 
@@ -47,8 +47,8 @@ Regra:
 | Métrica | Resultado |
 |---|---:|
 | Raw M1 start | `2019-01-01T22:00:00+00:00` |
-| Raw M1 end | `2026-08-31T23:59:00+00:00` |
-| Raw M1 rows | `11186033` |
+| Raw M1 end | `2026-09-18T20:59:00+00:00` |
+| Raw M1 rows | `11206603` |
 | Sinais reconstruídos | `344` |
 | Trades materializados | `281` |
 | Observações pós-pré-registro | `0` |
@@ -127,13 +127,18 @@ Demo, Testnet nem LIVE.
 Hashes:
 
 - report:
-  `5a4fbbc3deab431586292331a84d3f29c033d26a1b828223dfd20ea04285d85f`;
+  `2efb19322e7301ba24915dfafdb2f9384d571a74c659c7ab3c86d1ac2cd2222a`;
 - sinais:
   `1d3d8bb7fa92a7c4f462d1014b2662dc475a594845079527ee1b936aa6e0991c`;
 - trades materializados:
-  `8aba95f0ecde2d9a9aed27cfd0ea54c1070c8f4e8a3d8bf1a2bdee7b469d1491`;
+  `b22e95fb9d3baf9f8d4b6612ac3637249d6c831cd908eb0c4d83d1b39acb37da`;
 - observações:
   `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
+
+Nota de correção: o runner inicial usava o loader histórico que cortava a base
+em `2026-09-01`. O runner atual carrega M1 de observação sem esse corte, no
+mesmo padrão dos observadores Fast134/Fast143. Com isso, setembro parcial passa
+a ser considerado corretamente.
 
 ## Próxima ação
 

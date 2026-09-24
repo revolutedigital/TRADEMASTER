@@ -4,12 +4,14 @@ import pandas as pd
 
 from scripts.research.run_fast147_usd_quoted_major_basket_observation import (
     ENTRY_POLICY_ID,
+    MAJOR_RATE_PAIRS,
     PREREGISTRATION_TIMESTAMP,
     RISK_POLICY_ID,
     SIDE_FILTER,
     TARGET_PAIRS,
     evaluate_fast147_gates,
     fast147_status,
+    load_prospective_market,
     select_eligible_observations,
     summarize_observations,
     summarize_pairs,
@@ -67,6 +69,36 @@ def test_select_eligible_observations_filters_timestamp_pair_and_side() -> None:
     assert selected.iloc[0]["pair"] == "AUDUSD"
     assert selected.iloc[0]["side"] == SIDE_FILTER
     assert selected.iloc[0]["fast147_policy_id"].startswith("basket:usd_quoted_majors")
+
+
+def test_load_prospective_market_does_not_apply_historical_audit_cut(tmp_path) -> None:
+    index = pd.DatetimeIndex(
+        [
+            "2026-08-31T23:59:00Z",
+            "2026-09-24T06:00:00Z",
+        ],
+        name="timestamp",
+    )
+    for pair in MAJOR_RATE_PAIRS:
+        frame = pd.DataFrame(
+            {
+                "bid_open": [1.0, 1.1],
+                "bid_high": [1.01, 1.11],
+                "bid_low": [0.99, 1.09],
+                "bid_close": [1.0, 1.1],
+                "ask_open": [1.0002, 1.1002],
+                "ask_high": [1.0102, 1.1102],
+                "ask_low": [0.9902, 1.0902],
+                "ask_close": [1.0002, 1.1002],
+            },
+            index=index,
+        )
+        frame.to_parquet(tmp_path / f"{pair}_M1_202608_202609.parquet")
+
+    market = load_prospective_market(tmp_path)
+
+    for pair in TARGET_PAIRS:
+        assert market[pair].quality["last_bar"] == "2026-09-24T06:00:00+00:00"
 
 
 def test_fast147_gates_allow_shadow_only_after_full_prospective_requirements() -> None:

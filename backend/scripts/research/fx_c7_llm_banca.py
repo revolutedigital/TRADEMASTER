@@ -89,8 +89,11 @@ def ask(rows: list[dict]) -> dict[int, bool]:
     prompt = INSTRUCTIONS.format(descriptions="\n".join(f"- {k}: {v}" for k, v in DESCRIPTIONS.items()),
                                  rows="\n".join(json.dumps(r, ensure_ascii=False) for r in rows))
     for _ in range(TRIES):
-        result = subprocess.run(["claude", "-p", prompt, "--model", "opus"], capture_output=True, text=True,  # noqa: S603, S607
-                                timeout=600, check=False)
+        try:
+            result = subprocess.run(["claude", "-p", prompt, "--model", "opus"], capture_output=True, text=True,  # noqa: S603, S607
+                                    timeout=900, check=False)
+        except subprocess.TimeoutExpired:
+            continue  # a slow answer counts as a failed try
         decisions = parse(result.stdout, ids)
         if decisions is not None:
             return {i: decisions[i] for i in ids}

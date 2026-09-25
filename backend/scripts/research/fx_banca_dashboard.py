@@ -46,8 +46,11 @@ class Broker:
             demo.remove_container("DASH")
             self._session = PtySession(demo.cli_argv("DASH"), password=demo.password())
             self._session.start()
-        account = json_of(self._session.send(f"account {demo.ACCOUNT}", timeout=60))
         positions = json_of(self._session.send("positions", timeout=60)).get("positions", [])
+        for symbol in {p["symbolName"] for p in positions}:  # a price request makes the session value the position
+            self._session.send(f"price {symbol}", timeout=60)
+        positions = json_of(self._session.send("positions", timeout=60)).get("positions", [])
+        account = json_of(self._session.send(f"account {demo.ACCOUNT}", timeout=60))
         return {"balance": account.get("balance"), "equity": account.get("equity"), "fetched_at": time.time(),
                 "positions": [{k: p.get(k) for k in ("id", "symbolName", "tradeSide", "volume", "entryPrice",
                                                       "currentPrice", "netProfit", "stopLoss", "openTime")}

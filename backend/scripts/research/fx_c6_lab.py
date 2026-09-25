@@ -53,13 +53,20 @@ def context(m1: np.ndarray, keys: dict[str, np.ndarray], entries: np.ndarray, si
     """Context features at each entry minute, from D1 and H1 bars closed before it."""
     last_d, d1 = c3.aggregate(m1, keys["D1"])
     last_h, h1 = c3.aggregate(m1, keys["H1"])
+    return features_from_bars(d1, h1, last_closed(last_d, entries), last_closed(last_h, entries), m1[entries, 0], sides)
+
+
+def features_from_bars(d1: np.ndarray, h1: np.ndarray, jd: np.ndarray, jh: np.ndarray, entry_times: np.ndarray,
+                       sides: np.ndarray) -> pd.DataFrame:
+    """The banca's context: D1 and H1 bars (open, high, low, close), the index of the last closed bar of each at every
+    entry, the entry times (seconds, UTC) and the sides. The backtest and the live runner both call this."""
     od, hd, ld, cd = d1[:, 0], d1[:, 1], d1[:, 2], d1[:, 3]
     oh, hh, lh, ch = h1[:, 0], h1[:, 1], h1[:, 2], h1[:, 3]
     atr14, atr100 = c3.atr(od, hd, ld, cd, 14), c3.atr(od, hd, ld, cd, 100)
     atr14h, atr100h = c3.atr(oh, hh, lh, ch, 14), c3.atr(oh, hh, lh, ch, 100)
     sma50, sma200, rsi14 = c3.sma(cd, 50), c3.sma(cd, 200), c3.rsi(cd, 14)
     slope = (sma50 - pd.Series(sma50).shift(5).to_numpy()) / atr14
-    jd, jh = last_closed(last_d, entries), last_closed(last_h, entries)
+    jd, jh = np.asarray(jd), np.asarray(jh)
     ok_d, ok_h = jd >= 0, jh >= 4
 
     def at(values, index, ok):
@@ -70,9 +77,9 @@ def context(m1: np.ndarray, keys: dict[str, np.ndarray], entries: np.ndarray, si
     trend50 = at((cd - sma50) / atr14, jd, ok_d)
     trend200 = at((cd - sma200) / atr14, jd, ok_d)
     slope50 = at(slope, jd, ok_d)
-    ret4h = np.full(entries.shape, np.nan)
+    ret4h = np.full(jh.shape, np.nan)
     ret4h[ok_h] = (ch[jh[ok_h]] - ch[jh[ok_h] - 4]) / atr14h[jh[ok_h]]
-    local = pd.to_datetime(m1[entries, 0], unit="s", utc=True).tz_convert("America/New_York")
+    local = pd.to_datetime(np.asarray(entry_times), unit="s", utc=True).tz_convert("America/New_York")
     return pd.DataFrame({
         "vol_d1": at(atr14 / atr100, jd, ok_d), "vol_h1": at(atr14h / atr100h, jh, ok_h),
         "trend50": trend50, "trend200": trend200, "slope50": slope50,

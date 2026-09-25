@@ -43,3 +43,7 @@ Se aprovada: demo com o modelo congelado. Se não: paro e levo os números ao Ig
 ## Palpite antes do dado
 
 A banca costuma melhorar a média quando existe um pedaço lucrativo reconhecível; C3 e C4 sugerem pouco material bruto. Palpite: 15% a 25% de chance de passar.
+
+## Leitura fixada no código antes do resultado
+
+- O treino usa só operações **fechadas** antes de 2025-09-01 (mais conservador que "entrada até 2025-08": nenhum resultado usado no treino acontece dentro do ano de teste).

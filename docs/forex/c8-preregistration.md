@@ -21,3 +21,7 @@ O mesmo `XGBRegressor` de C6 (mesmos parâmetros). **Realiza no primeiro ponto d
 ## Critério
 
 Aprovada se, no teste: a média por operação com a banca de saída é > 0 no custo base e no estresse; a melhora média por operação em relação à saída original é > 0 com valor-p unilateral ≤ 0,05 (t por cluster de dia de entrada); ao menos 100 operações.
+
+## Emenda antes de qualquer resultado (pedido do Igor): entrada e saída juntas
+
+Além da banca de saída sozinha, o mesmo teste avalia **as duas bancas juntas**: nas operações de teste, só as que a banca de entrada do C6 (mesmo código, mesmo modelo, treinado com operações fechadas antes de 2025-09-01 nas 14 estratégias e 41 mercados) aceita, e nelas a banca de saída decide quando realizar. Critério da combinação: média > 0 no custo base e no estresse, valor-p unilateral do t por cluster de dia ≤ 0,05 e ao menos 100 operações.

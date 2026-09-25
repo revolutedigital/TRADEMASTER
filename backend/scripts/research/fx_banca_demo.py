@@ -46,6 +46,9 @@ DISASTER_STOP_ATR = 5.0
 CHECK_SECOND = 30  # process the bars that closed on the hour, at HH:00:30
 SYNC_SECONDS = 60
 RISK_PER_ATR = 0.005  # every position is sized so that one daily ATR move is worth 0.5% of the equity
+TAKE_MINIMUM_ABOVE_BUDGET = True  # Igor, 2026-09-25: all 41 markets, even where the minimum volume is worth more
+DAILY_TARGET_USD, DAILY_STOP_USD = 20.0, 10.0  # Igor, 2026-09-25: close everything and pause until the next FX day
+GUARD_SECONDS = 20
 QUOTE = {"US500": "USD", "NAS100": "USD", "USDX": "USD", "GER40": "EUR", "FRA40": "EUR", "UK100": "GBP",
          "JPN225": "JPY", "AUS200": "AUD", "HK50": "HKD", "XAUUSD": "USD", "XAGUSD": "USD", "XTIUSD": "USD",
          "XBRUSD": "USD"}
@@ -164,6 +167,9 @@ class Banca:
         per_unit = atr * self.usd_per[QUOTE.get(fusion, fusion[3:])]
         spec = self.spec(fusion)
         volume = position_volume(RISK_PER_ATR * self.equity, per_unit, float(spec["minVolume"]), float(spec["volumeStep"]))
+        if volume is None and TAKE_MINIMUM_ABOVE_BUDGET:
+            minimum = float(spec["minVolume"])
+            volume = int(minimum) if minimum.is_integer() else minimum
         return volume, per_unit
 
     async def process(self, now: float) -> None:
@@ -283,6 +289,29 @@ class Banca:
             if position["id"] not in open_ids:
                 await self._record_exit(key, position, "server")
 
+    def paused(self) -> bool:
+        return self.state.get("guard", {}).get("status", "operando") != "operando"
+
+    async def guard(self, now: float) -> None:
+        """The day's target and stop on the whole account: reached, everything closes until the next FX day."""
+        day = int(c3.lab.fx_day_array(np.array([now]))[0])
+        equity = (await self.venue.account()).equity
+        guard = self.state.setdefault("guard", {})
+        if guard.get("day") != day:
+            guard.update(day=day, start_equity=equity, status="operando")
+            self.state["processed"] = {}  # a new day re-evaluates every strategy's last bar
+            self.log("new_day", day=day, start_equity=equity)
+            self.save()
+            return
+        guard["equity"] = equity
+        result = equity - guard["start_equity"]
+        if guard["status"] == "operando" and (result >= DAILY_TARGET_USD or result <= -DAILY_STOP_USD):
+            guard["status"] = "meta do dia" if result > 0 else "limite do dia"
+            await self.flatten(guard["status"])
+            guard["closed_result"] = (await self.venue.account()).equity - guard["start_equity"]
+            self.log("day_closed", status=guard["status"], result=result, closed_result=guard["closed_result"])
+        self.save()
+
     async def flatten(self, reason: str) -> None:
         for key, position in list(self.state["positions"].items()):
             await self.venue.close(position["id"])
@@ -298,15 +327,23 @@ async def loop() -> int:
         banca = Banca(session)
         await banca.sync()
         banca.log("start", model_sha=banca.model_sha)
-        last_hour, last_sync = None, 0.0
+        last_hour, last_sync, last_guard = None, 0.0, 0.0
         while True:
             now = time.time()
             if STOP_FILE.exists():
                 await banca.flatten("stop file")
                 banca.log("stop")
                 return 0
+            if now - last_guard >= GUARD_SECONDS:
+                try:
+                    await banca.guard(now)
+                except (VenueUnavailable, OrderRejected) as error:
+                    banca.log("error", message=str(error)[:300])
+                last_guard = now
             hour = int(now // 3600)
-            if hour != last_hour and now % 3600 >= CHECK_SECOND:
+            if not banca.state["processed"]:
+                last_hour = None  # a new day (or a fresh start) evaluates at once
+            if hour != last_hour and (now % 3600 >= CHECK_SECOND or last_hour is None) and not banca.paused():
                 try:
                     await banca.process(now)
                 except (VenueUnavailable, OrderRejected) as error:

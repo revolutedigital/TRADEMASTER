@@ -106,6 +106,7 @@ def data(broker: Broker) -> dict:
         f"em andamento ({progress[-1]})" if progress else "em andamento"
     return {
         "now": time.time(), "broker": {k: v for k, v in broker.snapshot.items() if k != "positions"},
+        "dia": state.get("guard", {}) | {"meta": banca.DAILY_TARGET_USD, "limite": banca.DAILY_STOP_USD},
         "totais": {"sinais": len(signals), "aceitos": sum(int(e["take"]) for e in signals), "fechadas": len(exits),
                    "abertas": len(open_rows), "usd_fechado": sum(e.get("profit") or 0.0 for e in exits),
                    "usd_aberto": sum(r["usd"] or 0.0 for r in open_rows)},

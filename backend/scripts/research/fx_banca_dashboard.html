@@ -139,7 +139,10 @@ async function refresh() {
   $("status").innerHTML = `Conta demo 10139135 · preços e patrimônio lidos há ${age == null ? "—" : age + " s"} (a cada 20 s)` +
     ` · a banca avalia sinais novos de hora em hora: próxima rodada às ${next}` +
     (b.error ? ` · <span class="error">${esc(b.error)}</span>` : "");
+  const dia = d.dia || {}, hoje = dia.start_equity != null && b.equity != null ? b.equity - dia.start_equity : null;
   $("tiles").innerHTML =
+    tile("Resultado de hoje", usd(dia.status && dia.status !== "operando" ? dia.closed_result : hoje),
+         `${dia.status || "—"} · meta +US$ ${dia.meta} · limite −US$ ${dia.limite}`, hoje) +
     tile("Patrimônio (demo)", usd(b.equity), `saldo ${usd(b.balance)}`) +
     tile("Resultado em aberto", usd(t.usd_aberto), `${t.abertas} posições`, t.usd_aberto) +
     tile("Resultado fechado", usd(t.usd_fechado), `${t.fechadas} operações`, t.usd_fechado) +

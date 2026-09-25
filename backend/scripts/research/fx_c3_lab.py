@@ -111,7 +111,7 @@ def month_labels(seconds: np.ndarray) -> np.ndarray:
     return unique.astype(str)[inverse]
 
 
-def build_manifest(symbols=GROUP_A + GROUP_B, arrays: Path = ARRAYS) -> pd.DataFrame:
+def build_manifest(symbols=GROUP_A + GROUP_B, arrays: Path = ARRAYS, sample: tuple[str, str] = SAMPLE) -> pd.DataFrame:
     rows = []
     for symbol in symbols:
         path = arrays / f"{symbol}.npy"
@@ -123,7 +123,7 @@ def build_manifest(symbols=GROUP_A + GROUP_B, arrays: Path = ARRAYS) -> pd.DataF
         bad = pd.Series(m1[:, 1:5].min(axis=1) <= 0, index=months).groupby(level=0).any()
         median = counts.median()
         for month, count in counts.items():
-            inside = SAMPLE[0] <= month <= SAMPLE[1]
+            inside = sample[0] <= month <= sample[1]
             rows.append({"symbol": symbol, "month": month, "minutes": int(count),
                          "included": bool(inside and count >= MIN_MONTH_SHARE * median and not bad[month])})
     table = pd.DataFrame(rows)

@@ -96,7 +96,9 @@ def data(broker: Broker) -> dict:
                           "atual": live.get("currentPrice"), "stop": position["stop"], "usd": live.get("netProfit"),
                           "desde": position["entry_time"]})
     equity = [json.loads(line) for line in EQUITY_FILE.read_text().splitlines()] if EQUITY_FILE.exists() else []
-    c7 = "relatório pronto" if C7_REPORT.exists() else (C7_LOG.read_text().strip().splitlines() or ["iniciando"])[-1]
+    progress = [line for line in C7_LOG.read_text().splitlines() if line.endswith("sinais")] if C7_LOG.exists() else []
+    c7 = "relatório pronto: docs/forex/c7-report.md" if C7_REPORT.exists() else \
+        f"em andamento ({progress[-1]})" if progress else "em andamento"
     return {
         "now": time.time(), "broker": {k: v for k, v in broker.snapshot.items() if k != "positions"},
         "totais": {"sinais": len(signals), "aceitos": sum(int(e["take"]) for e in signals), "fechadas": len(exits),

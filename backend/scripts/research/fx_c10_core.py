@@ -205,9 +205,11 @@ STOP_ATR, TP1_R, TP1_FRACTION, RUNNER_R, TRAIL_R, MAX_MINUTES = range(6)
 
 
 @njit(cache=True)
-def manage(m1, day_end, entries, sides, stop_refs, atrs, cost, grid, g):
+def manage(m1, day_end, entries, sides, stop_refs, atrs, cost, grid, g, after_signal_bar=True):
     """Every trade of management row `g`: one position at a time, flat at the end of the FX day.
-    Returns rows (grid index, entry minute, exit minute, R net, R net with double cost, % of price net)."""
+    Returns rows (grid index, entry minute, exit minute, R net, R net with double cost, % of price net).
+    `after_signal_bar` = the entry follows a signal bar ending at the minute before it; entries on a clock time
+    (round C11) pass False and may be the first minute of their FX day."""
     out = np.empty((entries.shape[0], 6))
     times = m1[:, 0].copy()
     count = 0
@@ -217,7 +219,8 @@ def manage(m1, day_end, entries, sides, stop_refs, atrs, cost, grid, g):
         if e <= busy_until or e >= m1.shape[0]:
             continue
         # the entry minute must follow the signal bar's last minute (e - 1) on the same FX day, without a data hole
-        if e > 0 and (day_end[e] != day_end[e - 1] or m1[e, 0] - m1[e - 1, 0] > MAX_ENTRY_DELAY_SECONDS):
+        if after_signal_bar and e > 0 and (day_end[e] != day_end[e - 1]
+                                           or m1[e, 0] - m1[e - 1, 0] > MAX_ENTRY_DELAY_SECONDS):
             continue
         end = day_end[e]
         if m1[end, 0] - m1[e, 0] < (MIN_MINUTES_LEFT - 1) * 60:

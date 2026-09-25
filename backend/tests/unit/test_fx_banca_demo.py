@@ -69,3 +69,33 @@ def test_the_trailing_stop_only_tightens_and_stays_behind_the_price() -> None:
 
 def test_gold_silver_and_oil_are_out_of_the_banca() -> None:
     assert banca.EXCLUDED == {"XAUUSD", "XAGUSD", "WTIUSD", "BCOUSD"} and banca.EXCLUDED <= set(banca.FUSION)
+
+
+def test_the_streak_a_new_trade_sees() -> None:
+    assert banca.streak_after([1.0, -1.0, -2.0]) == -2 and banca.streak_after([]) == 0 and banca.streak_after([3.0]) == 1
+
+
+def _daily(n: int = 260):
+    rng = np.random.default_rng(1)
+    close = 1.10 + np.cumsum(rng.normal(0, 0.004, n))
+    opens = np.concatenate(([close[0]], close[:-1]))
+    t = 1_700_000_000 + 86400 * np.arange(n, dtype=float)
+    d1 = np.column_stack([t, opens, np.maximum(opens, close) + 0.002, np.minimum(opens, close) - 0.002, close])
+    usdx = banca.usdx_from_bars(np.column_stack([t, np.full((n, 3), 100.0) + np.arange(n)[:, None] * 0.01,
+                                                 np.full(n, 100.0) + np.arange(n) * 0.01]))
+    from scripts.research import fx_c9_lab as c9
+
+    return d1, c9.daily_context(d1[:, 1:], d1[:, 0] + 86400, usdx)
+
+
+def test_the_exit_row_exists_only_in_profit_and_measures_from_the_entry() -> None:
+    d1, daily = _daily()
+    last_close = d1[-1, 4]
+    entry_time = d1[-5, 0] + 3600  # entered during the fifth bar from the end
+    long = {"side": 1, "entry": last_close - 0.01, "unit": 0.005, "entry_time": entry_time, "stop": last_close - 0.03,
+            "target": None, "streak": 2.0}
+    row = banca.exit_features(long, "TURTLE20", "EURUSD", d1, daily)
+    assert row is not None and row["days"] == 5 and row["best"] >= row["profit"] > 0
+    assert row["to_stop_atr"] == pytest.approx(0.03 / 0.005) and np.isnan(row["to_target_atr"])
+    losing = long | {"entry": last_close + 0.01}
+    assert banca.exit_features(losing, "TURTLE20", "EURUSD", d1, daily) is None

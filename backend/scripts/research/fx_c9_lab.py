@@ -21,19 +21,19 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from scripts.research import fx_banca_demo as banca
 from scripts.research import fx_c3_lab as c3
 from scripts.research import fx_c6_lab as c6
 
 CONFIGS = list(c3.STRATEGIES)
 EXIT_CONFIGS = ("TURTLE20", "TURTLE55", "SQUEEZE_D1", "NR7_D1", "RSI2_D1", "CHANDELIER_D1", "CHANDELIER_H4")
-SYMBOLS = tuple(s for s in c3.GROUP_A + c3.GROUP_B if s not in banca.EXCLUDED)
+EXCLUDED = frozenset({"XAUUSD", "XAGUSD", "WTIUSD", "BCOUSD"})  # minimum volume too big for the US$ 1,000 demo
+SYMBOLS = tuple(s for s in c3.GROUP_A + c3.GROUP_B if s not in EXCLUDED)
 CLASSES = ("major", "cross", "metal", "index", "energy", "dollar_index")
 GRID = [{"max_depth": d, "n_estimators": n, "min_child_weight": w} for d in (3, 5) for n in (200, 500) for w in (50, 300)]
 BASE_PARAMS = {"learning_rate": 0.03, "subsample": 0.8, "colsample_bytree": 0.8, "random_state": 20260925, "n_jobs": 8}
 VALIDATION_YEARS = tuple(range(2019, 2026))
 FINAL_END = pd.Timestamp("2026-09-01", tz="UTC").timestamp()
-MODEL_DIR = banca.DATA
+MODEL_DIR = Path("data/banca_demo")
 DAILY = ["adx14", "trend_age_side", "bb_pct", "usdx_trend_side", "usdx_ret5_side", "corr_usdx60"]
 ENTRY_FEATURES = c6.FEATURES + ["session"] + DAILY + ["streak", "stop_dist_atr", "target_dist_atr"]
 EXIT_FEATURES = ["config_id", "side", "class_id", "profit", "best", "giveback", "days", "vol_d1", "trend50_side",

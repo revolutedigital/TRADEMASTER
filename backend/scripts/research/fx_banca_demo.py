@@ -29,10 +29,12 @@ from app.fx.runner.ctrader_cli import CliVenue, PtySession, json_of
 from app.fx.runner.venue import OrderRejected, VenueUnavailable
 from scripts.research import fx_c3_lab as c3
 from scripts.research import fx_c6_lab as c6
+from scripts.research import fx_c9_lab as c9
 from scripts.research import fx_demo_runner as demo
 
 DATA = Path("data/banca_demo")
 MODEL_FILE, SEED_FILE = DATA / "model.json", DATA / "seed.parquet"
+ENTRY_MODEL_FILE, EXIT_MODEL_FILE = DATA / "c9_entry_model.json", DATA / "c9_exit_model.json"  # frozen by fx_c9_lab
 STATE_FILE, JOURNAL = DATA / "state.json", DATA / "journal.jsonl"
 STOP_FILE = demo.STOP_FILE
 RESTART_FILE = STOP_FILE.with_name("RESTART_BANCA")  # exit without closing anything, to load new code
@@ -41,8 +43,7 @@ FUSION = {s: s for s in c3.GROUP_A + c3.GROUP_B if len(s) == 6 and s not in c6.C
     "XAUUSD": "XAUUSD", "XAGUSD": "XAGUSD", "SPXUSD": "US500", "NSXUSD": "NAS100", "GRXEUR": "GER40",
     "UKXGBP": "UK100", "JPXJPY": "JPN225", "FRXEUR": "FRA40", "AUXAUD": "AUS200", "HKXHKD": "HK50",
     "WTIUSD": "XTIUSD", "BCOUSD": "XBRUSD", "UDXUSD": "USDX"}
-EXCLUDED = frozenset({"XAUUSD", "XAGUSD", "WTIUSD", "BCOUSD"})  # Igor, 2026-09-25: their minimum volume is too big for
-# a US$ 1,000 account (US$ 40 to 130 per daily ATR against a US$ 10 daily stop)
+EXCLUDED = c9.EXCLUDED  # Igor, 2026-09-25: gold, silver, WTI, Brent: minimum volume too big for a US$ 1,000 account
 PERIOD = {"H1": 3600, "H4": 14400, "D1": 86400}
 CLI_PERIOD = {"H1": "h1", "H4": "h4", "D1": "d1"}
 BARS = 400
@@ -138,6 +139,47 @@ def usd_per_currency(mids: dict[str, float]) -> dict[str, float]:
             "JPY": 1 / mids["USDJPY"], "CAD": 1 / mids["USDCAD"], "CHF": 1 / mids["USDCHF"], "HKD": 1 / mids["USDHKD"]}
 
 
+def streak_after(results: list[float]) -> float:
+    """The signed run of wins or losses at the end of `results` (what the next trade sees)."""
+    return float(c9.streaks(np.append(np.asarray(results, dtype=float), 0.0))[-1])
+
+
+def usdx_from_bars(d1: np.ndarray) -> pd.DataFrame:
+    """The dollar-index context table of fx_c9_lab, from live daily bars (open time, open, high, low, close)."""
+    o, h, l, c = d1[:, 1], d1[:, 2], d1[:, 3], d1[:, 4]
+    atr14 = c3.atr(o, h, l, c, 14)
+    return pd.DataFrame({"close_time": d1[:, 0] + PERIOD["D1"], "close": c, "trend": (c - c3.sma(c, 50)) / atr14,
+                         "ret5": (c - pd.Series(c).shift(5).to_numpy()) / atr14})
+
+
+def exit_features(position: dict, config: str, symbol: str, d1: np.ndarray, daily: c9.Daily) -> dict | None:
+    """The exit banca's row for an open position at the last daily close, or None if it is not in profit."""
+    side, entry, unit, cost = position["side"], position["entry"], position["unit"], c3.cost_of(symbol)
+    since = d1[d1[:, 0] + PERIOD["D1"] > position["entry_time"]]
+    if not len(since):
+        return None
+    o, h, l, c = d1[:, 1], d1[:, 2], d1[:, 3], d1[:, 4]
+    j = len(d1) - 1
+    profit = (side * (c[j] - entry) - cost) / unit
+    if profit <= 0:
+        return None
+    favourable = (since[:, 2].max() - entry) if side == 1 else (entry - since[:, 3].min())
+    best = (favourable - cost) / unit
+    atr14, atr100 = c3.atr(o, h, l, c, 14), c3.atr(o, h, l, c, 100)
+    sma50, sma200, rsi14 = c3.sma(c, 50), c3.sma(c, 200), c3.rsi(c, 14)
+    slope = (sma50[j] - sma50[j - 5]) / atr14[j]
+    target = position.get("target")
+    row = {"config_id": c9.CONFIGS.index(config), "side": float(side),
+           "class_id": c9.CLASSES.index(c6.instrument_class(symbol)), "profit": profit, "best": best,
+           "giveback": best - profit, "days": float(len(since)), "vol_d1": atr14[j] / atr100[j],
+           "trend50_side": side * (c[j] - sma50[j]) / atr14[j], "trend200_side": side * (c[j] - sma200[j]) / atr14[j],
+           "slope50_side": side * slope, "rsi_side": side * (rsi14[j] - 50), "streak": position.get("streak", 0.0),
+           "to_stop_atr": side * (c[j] - position["stop"]) / unit,
+           "to_target_atr": side * (target - c[j]) / unit if target is not None else np.nan}
+    context = c9.daily_features(daily, np.array([j]), np.array([float(side)]), c9.usd_exposure(symbol))
+    return row | {k: float(v[0]) for k, v in context.items()}
+
+
 def recent_features(history: pd.DataFrame, config: str, symbol: str, now: float) -> tuple[float, float]:
     same = history[(history["config"] == config) & (history["symbol"] == symbol)]
     every = history[history["config"] == config]
@@ -154,9 +196,10 @@ class Banca:
         from xgboost import XGBRegressor
 
         self.session, self.venue = session, CliVenue(session, demo.ACCOUNT)
-        self.model = XGBRegressor()
-        self.model.load_model(str(MODEL_FILE))
-        self.model_sha = hashlib.sha256(MODEL_FILE.read_bytes()).hexdigest()
+        self.model, self.exit_model = XGBRegressor(), XGBRegressor()
+        self.model.load_model(str(ENTRY_MODEL_FILE))
+        self.exit_model.load_model(str(EXIT_MODEL_FILE))
+        self.model_sha = hashlib.sha256(ENTRY_MODEL_FILE.read_bytes() + EXIT_MODEL_FILE.read_bytes()).hexdigest()
         self.state = json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else {"positions": {}, "processed": {}}
         self.specs: dict[str, dict] = {}
 
@@ -204,6 +247,7 @@ class Banca:
             mids[pair] = 0.5 * (quote.bid + quote.ask)
         self.usd_per = usd_per_currency(mids)
         self.equity = (await self.venue.account()).equity
+        self.usdx = usdx_from_bars(closed_bars(self.send(f"candles USDX d1 {BARS}")["bars"], PERIOD["D1"], now))
         for symbol, fusion in FUSION.items():
             if symbol in EXCLUDED:
                 continue
@@ -211,11 +255,16 @@ class Banca:
                     for tf in PERIOD}
             if min(len(b) for b in bars.values()) < 260:
                 continue
+            bars["daily"] = c9.daily_context(bars["D1"][:, 1:], bars["D1"][:, 0] + PERIOD["D1"], self.usdx)
             for config, (tf, build) in c3.STRATEGIES.items():
                 try:
                     await self._decide(config, tf, build, symbol, fusion, bars, history, now)
                 except OrderRejected as error:  # one refused order must not stop the other decisions of the hour
                     self.log("error", config=config, symbol=symbol, message=str(error)[:300])
+            try:
+                await self._exit_banca(symbol, bars)
+            except OrderRejected as error:
+                self.log("error", symbol=symbol, message=str(error)[:300])
         self.save()
 
     async def _decide(self, config, tf, build, symbol, fusion, bars, history, now) -> None:
@@ -256,14 +305,23 @@ class Banca:
 
     async def _consider(self, config, symbol, fusion, side, plan, j, bars, history, now) -> None:
         d1, h1 = bars["D1"], bars["H1"]
+        quote = await self.venue.quote(fusion)
+        price = quote.ask if side == 1 else quote.bid
+        stop, target = protective_levels(side, price, plan, j)
         features = c6.features_from_bars(d1[:, 1:], h1[:, 1:], np.array([len(d1) - 1]), np.array([len(h1) - 1]),
                                          np.array([now]), np.array([float(side)]))
         recent_same, recent_config = recent_features(history, config, symbol, now)
-        row = features.iloc[0].to_dict() | {
+        same = history[(history["config"] == config) & (history["symbol"] == symbol)].sort_values("entry_time")
+        streak = streak_after(same["net"].tolist())
+        context = c9.daily_features(bars["daily"], np.array([len(d1) - 1]), np.array([float(side)]), c9.usd_exposure(symbol))
+        row = features.iloc[0].to_dict() | {k: float(v[0]) for k, v in context.items()} | {
             "config_id": list(c3.STRATEGIES).index(config), "side": float(side),
-            "class_id": ["major", "cross", "metal", "index", "energy", "dollar_index"].index(c6.instrument_class(symbol)),
-            "cost_atr": c3.cost_of(symbol) / plan.unit[j], "recent_same": recent_same, "recent_config": recent_config}
-        prediction = float(self.model.predict(np.array([[row[f] for f in c6.FEATURES]], dtype=float))[0])
+            "class_id": c9.CLASSES.index(c6.instrument_class(symbol)),
+            "cost_atr": c3.cost_of(symbol) / plan.unit[j], "recent_same": recent_same, "recent_config": recent_config,
+            "session": float(c9.session(np.array([features["hour"].iloc[0]]))[0]), "streak": streak,
+            "stop_dist_atr": abs(price - stop) / plan.unit[j],
+            "target_dist_atr": abs(target - price) / plan.unit[j] if target is not None else np.nan}
+        prediction = float(self.model.predict(np.array([[row[f] for f in c9.ENTRY_FEATURES]], dtype=float))[0])
         take = prediction > 0
         self.log("signal", config=config, symbol=symbol, side=side, prediction=prediction, take=take,
                  model_sha=self.model_sha)
@@ -275,10 +333,7 @@ class Banca:
                      reason=f"o volume mínimo vale US$ {per_unit * float(self.spec(fusion)['minVolume']):.2f} por ATR, "
                             f"acima de {RISK_PER_ATR:.1%} do patrimônio")
             return
-        quote = await self.venue.quote(fusion)
-        price = quote.ask if side == 1 else quote.bid
         digits = int(self.spec(fusion)["digits"])
-        stop, target = protective_levels(side, price, plan, j)
         stop, target = round(stop, digits), None if target is None else round(target, digits)
         if (side == 1 and stop >= price) or (side == -1 and stop <= price):
             self.log("refused", config=config, symbol=symbol, reason="stop behind the price")
@@ -293,10 +348,31 @@ class Banca:
         self.state["positions"][key] = {"id": position.id, "fusion": fusion, "side": side, "entry": position.entry_price,
                                         "entry_time": now, "unit": float(plan.unit[j]), "stop": stop, "target": target,
                                         "held": 0, "best": position.entry_price,
-                                        "atr_d1": float(c3.atr(d1[:, 1], d1[:, 2], d1[:, 3], d1[:, 4], 20)[-1])}
+                                        "atr_d1": float(c3.atr(d1[:, 1], d1[:, 2], d1[:, 3], d1[:, 4], 20)[-1]),
+                                        "streak": streak}
         self.log("entry", key=key, position_id=position.id, entry=position.entry_price, stop=stop, target=target,
                  volume=volume, usd_per_atr=volume * per_unit)
         self.save()
+
+    async def _exit_banca(self, symbol: str, bars: dict) -> None:
+        """At each new daily close: for every winning position of this market, bank it now if the exit banca says so."""
+        d1 = bars["D1"]
+        marker = f"{symbol}|exit_banca"
+        if self.state["processed"].get(marker) == d1[-1, 0]:
+            return
+        self.state["processed"][marker] = d1[-1, 0]
+        for key, position in list(self.state["positions"].items()):
+            config, position_symbol = key.split("|")
+            if position_symbol != symbol or config not in c9.EXIT_CONFIGS:
+                continue
+            row = exit_features(position, config, symbol, d1, bars["daily"])
+            if row is None:
+                continue
+            prediction = float(self.exit_model.predict(np.array([[row[f] for f in c9.EXIT_FEATURES]], dtype=float))[0])
+            self.log("exit_signal", key=key, prediction=prediction, profit_atr=row["profit"], bank=prediction < 0)
+            if prediction < 0:
+                await self.venue.close(position["id"])
+                await self._record_exit(key, position, "banca de saída")
 
     async def _record_exit(self, key, position, reason) -> None:
         closed = await self.venue.exit_of(position["id"], position["fusion"])

@@ -45,6 +45,11 @@ BARS = 400
 DISASTER_STOP_ATR = 5.0
 CHECK_SECOND = 30  # process the bars that closed on the hour, at HH:00:30
 SYNC_SECONDS = 60
+RISK_PER_ATR = 0.005  # every position is sized so that one daily ATR move is worth 0.5% of the equity
+QUOTE = {"US500": "USD", "NAS100": "USD", "USDX": "USD", "GER40": "EUR", "FRA40": "EUR", "UK100": "GBP",
+         "JPN225": "JPY", "AUS200": "AUD", "HK50": "HKD", "XAUUSD": "USD", "XAGUSD": "USD", "XTIUSD": "USD",
+         "XBRUSD": "USD"}
+USD_PAIRS = ("EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDJPY", "USDCAD", "USDCHF", "USDHKD")
 
 
 # --- training -----------------------------------------------------------------------------------------------------
@@ -89,6 +94,21 @@ def protective_levels(side: int, price: float, plan: c3.Plan, j: int) -> tuple[f
         stop = price - side * DISASTER_STOP_ATR * float(plan.unit[j])
     target = None if np.isnan(plan.target_r) else price + side * plan.target_r * abs(price - stop)
     return stop, target
+
+
+def position_volume(budget_usd: float, usd_per_unit_per_atr: float, minimum: float, step: float) -> float | None:
+    """The largest volume (a multiple of the step) whose daily ATR move is worth at most the budget; None if even
+    the minimum volume is worth more (the position is not taken rather than taken bigger than the others)."""
+    steps = np.floor(budget_usd / usd_per_unit_per_atr / step + 1e-9)
+    volume = round(float(steps * step), 8)
+    if volume < minimum:
+        return None
+    return int(volume) if float(volume).is_integer() else volume
+
+
+def usd_per_currency(mids: dict[str, float]) -> dict[str, float]:
+    return {"USD": 1.0, "EUR": mids["EURUSD"], "GBP": mids["GBPUSD"], "AUD": mids["AUDUSD"], "NZD": mids["NZDUSD"],
+            "JPY": 1 / mids["USDJPY"], "CAD": 1 / mids["USDCAD"], "CHF": 1 / mids["USDCHF"], "HKD": 1 / mids["USDHKD"]}
 
 
 def recent_features(history: pd.DataFrame, config: str, symbol: str, now: float) -> tuple[float, float]:
@@ -138,12 +158,22 @@ class Banca:
             self.specs[fusion] = self.send(f"symbol {fusion}")
         return self.specs[fusion]
 
-    def volume(self, fusion: str) -> float:
-        volume = float(self.spec(fusion)["minVolume"])
-        return int(volume) if volume.is_integer() else volume  # the CLI wants 1000, not 1000.0
+    def sized_volume(self, fusion: str, d1: np.ndarray) -> tuple[float | None, float]:
+        """Volume for one daily ATR = RISK_PER_ATR of the equity, and the dollars one ATR is worth per unit."""
+        atr = float(c3.atr(d1[:, 1], d1[:, 2], d1[:, 3], d1[:, 4], 20)[-1])
+        per_unit = atr * self.usd_per[QUOTE.get(fusion, fusion[3:])]
+        spec = self.spec(fusion)
+        volume = position_volume(RISK_PER_ATR * self.equity, per_unit, float(spec["minVolume"]), float(spec["volumeStep"]))
+        return volume, per_unit
 
     async def process(self, now: float) -> None:
         history = self.history()
+        mids = {}
+        for pair in USD_PAIRS:
+            quote = await self.venue.quote(pair)
+            mids[pair] = 0.5 * (quote.bid + quote.ask)
+        self.usd_per = usd_per_currency(mids)
+        self.equity = (await self.venue.account()).equity
         for symbol, fusion in FUSION.items():
             bars = {tf: closed_bars(self.send(f"candles {fusion} {CLI_PERIOD[tf]} {BARS}")["bars"], PERIOD[tf], now)
                     for tf in PERIOD}
@@ -207,6 +237,12 @@ class Banca:
                  model_sha=self.model_sha)
         if not take:
             return
+        volume, per_unit = self.sized_volume(fusion, d1)
+        if volume is None:
+            self.log("refused", config=config, symbol=symbol,
+                     reason=f"o volume mínimo vale US$ {per_unit * float(self.spec(fusion)['minVolume']):.2f} por ATR, "
+                            f"acima de {RISK_PER_ATR:.1%} do patrimônio")
+            return
         quote = await self.venue.quote(fusion)
         price = quote.ask if side == 1 else quote.bid
         digits = int(self.spec(fusion)["digits"])
@@ -216,7 +252,7 @@ class Banca:
             self.log("refused", config=config, symbol=symbol, reason="stop behind the price")
             return
         key = f"{config}|{symbol}"
-        position = await self.venue.market_order(symbol=fusion, side=side, units=self.volume(fusion), stop_price=stop,
+        position = await self.venue.market_order(symbol=fusion, side=side, units=volume, stop_price=stop,
                                                  target_price=target, client_order_id=f"{key}|{int(now)}")
         if position.stop_price is None:
             await self.venue.close(position.id)
@@ -225,7 +261,8 @@ class Banca:
         self.state["positions"][key] = {"id": position.id, "fusion": fusion, "side": side, "entry": position.entry_price,
                                         "entry_time": now, "unit": float(plan.unit[j]), "stop": stop, "target": target,
                                         "held": 0, "best": position.entry_price}
-        self.log("entry", key=key, position_id=position.id, entry=position.entry_price, stop=stop, target=target)
+        self.log("entry", key=key, position_id=position.id, entry=position.entry_price, stop=stop, target=target,
+                 volume=volume, usd_per_atr=volume * per_unit)
         self.save()
 
     async def _record_exit(self, key, position, reason) -> None:

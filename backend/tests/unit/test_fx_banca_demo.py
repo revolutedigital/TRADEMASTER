@@ -43,3 +43,11 @@ def test_recent_results_use_only_trades_closed_before_now() -> None:
 def test_every_instrument_maps_to_a_fusion_symbol() -> None:
     assert set(banca.FUSION) == set(c3.GROUP_A + c3.GROUP_B)
     assert banca.FUSION["SPXUSD"] == "US500" and banca.FUSION["EURUSD"] == "EURUSD" and banca.FUSION["UDXUSD"] == "USDX"
+
+
+def test_positions_are_sized_to_the_same_dollars_per_atr_and_skipped_when_the_minimum_is_too_big() -> None:
+    # budget US$ 5 per ATR; an index worth US$ 0.74 per ATR per 0.01 lot takes 0.06 lot (US$ 4.44 per ATR)
+    assert banca.position_volume(5.0, 74.0, 0.01, 0.01) == pytest.approx(0.06)
+    # a pair worth US$ 4.84 per ATR per 1000 units fits once; US$ 9.09 does not fit at all
+    assert banca.position_volume(5.0, 0.00484, 1000, 1000) == 1000
+    assert banca.position_volume(5.0, 0.00909, 1000, 1000) is None

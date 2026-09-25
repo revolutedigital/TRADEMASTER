@@ -15,8 +15,9 @@ MIN_AGE_DAYS = 4
 
 
 def levels(d1: np.ndarray, lookback: int) -> tuple[np.ndarray, np.ndarray]:
-    """For every FX day j, the lowest low and highest high of days j-lookback .. j-1 (NaN when not usable)."""
-    n = len(d1)
+    """For every position j (the number of full days before a bar's day, 0 to len(d1)), the lowest low and highest
+    high of full days j-lookback .. j-1 (NaN when not usable)."""
+    n = len(d1) + 1
     low, high = np.full(n, np.nan), np.full(n, np.nan)
     for j in range(lookback, n):
         lows, highs = d1[j - lookback:j, 2], d1[j - lookback:j, 1]

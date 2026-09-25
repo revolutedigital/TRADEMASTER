@@ -39,6 +39,7 @@ HOLDOUT_ARRAYS = LAB / "holdout_m1"
 DISCOVERY_TABLE = LAB / "discovery.parquet"
 CANDIDATES_FILE = LAB / "candidates.json"
 HOLDOUT_SAMPLE = ("2003-01", "2011-12")
+HOLDOUT_MIN_MONTHS = 12  # amendment 1: the indices only have 2010-2011 in the source
 SYMBOLS = c9.SYMBOLS
 
 MIN_TRADES, MIN_MARKET_SHARE, MIN_MARKET_TRADES = 500, 0.55, 20
@@ -113,10 +114,18 @@ def _git(*args: str) -> str:
     return subprocess.run(["git", *args], capture_output=True, text=True, check=True).stdout.strip()  # noqa: S603, S607
 
 
-def _require_clean_and_registered() -> tuple[str, str]:
-    if _git("status", "--porcelain", "--", "scripts", "app", str(PREREGISTRATION)):
-        raise RuntimeError("commit the code and the pre-registration before running")
+def _require_clean_and_registered(*extra: Path) -> tuple[str, str]:
+    paths = [str(PREREGISTRATION), str(REGISTRY), *map(str, extra)]
+    if _git("status", "--porcelain", "--", "scripts", "app", *paths):
+        raise RuntimeError("commit the code, the pre-registration and the registry before running")
+    for path in extra:
+        _git("ls-files", "--error-unmatch", str(path))  # raises when the file is not tracked
     return _git("rev-parse", "HEAD"), hashlib.sha256(PREREGISTRATION.read_bytes()).hexdigest()
+
+
+def _events(kind: str) -> list[dict]:
+    lines = REGISTRY.read_text(encoding="utf-8").splitlines() if REGISTRY.exists() else []
+    return [event for event in map(json.loads, lines) if event.get("event") == kind]
 
 
 def _append(event: dict) -> None:
@@ -131,6 +140,8 @@ def _origin(manifest: pd.DataFrame) -> int:
 
 def discover(workers: int) -> int:
     commit, prereg = _require_clean_and_registered()
+    if _events("c10_discovery"):
+        raise RuntimeError("discovery already ran: its result is in the registry")
     manifest = pd.read_csv(c3.MANIFEST)
     included = set(manifest.loc[manifest["symbol_included"], "symbol"])
     symbols = [s for s in SYMBOLS if s in included]
@@ -233,7 +244,7 @@ def write_discovery_report(table, candidates, by_year, commit, trading_days, mar
 
 def prepare_holdout() -> int:
     c3.prepare(SYMBOLS, raw=HOLDOUT_RAW, out=HOLDOUT_ARRAYS)
-    manifest = c3.build_manifest(SYMBOLS, arrays=HOLDOUT_ARRAYS, sample=HOLDOUT_SAMPLE)
+    manifest = c3.build_manifest(SYMBOLS, arrays=HOLDOUT_ARRAYS, sample=HOLDOUT_SAMPLE, min_months=HOLDOUT_MIN_MONTHS)
     manifest.to_csv(HOLDOUT_MANIFEST, index=False)
     included = manifest[manifest["symbol_included"]].groupby("symbol")["included"].sum()
     sys.stdout.write(f"holdout markets: {len(included)}\n{included.to_string()}\n")
@@ -267,13 +278,15 @@ def evaluate(trades: pd.DataFrame, configs: list[int]) -> pd.DataFrame:
     for k in configs:
         frame = trades[trades["config"] == k]
         if not len(frame):
-            rows.append({"config": k, "trades": 0})
+            rows.append({"config": k, "trades": 0, "win_rate": np.nan, "mean_r": np.nan, "mean_r_stress": np.nan,
+                         "t": np.nan, "p_one_sided": 1.0, "markets": 0, "market_share": 0.0})
             continue
         day = np.searchsorted(all_days, frame["day"].to_numpy())
         sums, counts = stats.daily_tables(day, frame["net"].to_numpy(), np.zeros(len(frame)), len(all_days), 1)
         mean, _, t = stats.cluster_t(sums, counts)
         by_market = frame.groupby("symbol")["net"].agg(["mean", "size"])
         eligible = by_market[by_market["size"] >= MIN_MARKET_TRADES]
+        eligible = eligible if len(eligible) else by_market  # amendment 1: with no market at 20 trades, all that traded
         rows.append({"config": k, "trades": len(frame), "win_rate": float((frame["net"] > 0).mean()),
                      "mean_r": float(mean[0]), "mean_r_stress": float(frame["stress"].mean()), "t": float(t[0]),
                      "p_one_sided": float(norm.sf(t[0])), "markets": len(eligible),
@@ -292,8 +305,13 @@ def run_candidates(symbols, manifest_path, arrays, configs, workers, coin_seed=N
 
 
 def holdout(workers: int) -> int:
-    commit, prereg = _require_clean_and_registered()
-    configs = json.loads(CANDIDATES_FILE.read_text())
+    commit, prereg = _require_clean_and_registered(HOLDOUT_MANIFEST)
+    if _events("c10_holdout"):
+        raise RuntimeError("the untouched period is used once: the holdout already ran")
+    discoveries = _events("c10_discovery")
+    if not discoveries:
+        raise RuntimeError("run discovery first")
+    configs = [int(k) for k in discoveries[-1]["candidates"]]  # the registered list, not a file that could change
     if not configs:
         sys.stdout.write("no candidates from discovery: nothing to confirm\n")
         return 0

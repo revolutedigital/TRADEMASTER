@@ -13,6 +13,7 @@ PARAMS = [{"timeframe": "M5"}]
 
 def signals(ctx: core.Context, params: dict) -> tuple[np.ndarray, np.ndarray]:
     minute, day = core.local_minutes(ctx.open_time, "Europe/London")
+    minute = minute - minute % core.TIMEFRAME_MINUTES[ctx.timeframe]  # the bar's nominal start
     high, low = core.window_extremes(ctx, minute < 7 * 60, day)
     active = (minute >= 7 * 60) & (minute < 12 * 60)
     side = core.first_break(day, active, ctx.c, high, low)

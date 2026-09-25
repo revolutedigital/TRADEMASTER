@@ -194,3 +194,56 @@ def test_no_family_looks_at_minutes_after_a_bar_closes() -> None:
                 np.testing.assert_array_equal(stop_a[known], stop_b[known], err_msg=f"{symbol} {name} {params}")
                 signalled += bool((side_a[known] != 0).any())
         assert signalled >= 25  # the check is not vacuous: most sets trade on the random walk
+
+
+def test_a_signal_on_the_last_bar_of_an_fx_day_never_enters_on_the_next_day() -> None:
+    close = int(pd.Timestamp("2024-07-12 20:50", tz="UTC").timestamp())  # Friday 16:50 New York
+    m1 = minutes([(100, 100.2, 99.8, 100)] * 10, start=close)
+    m1[10 - 0:, 0] += 0
+    monday = minutes([(100, 100.2, 99.8, 100)] * 40, start=int(pd.Timestamp("2024-07-14 21:00", tz="UTC").timestamp()))
+    week = np.concatenate([m1, monday])  # the minute after Friday 16:59 is Sunday 17:00
+    assert len(manage(week, row(), entries=(10,))) == 0
+    hole = minutes([(100, 100.2, 99.8, 100)] * 40)
+    hole[20:, 0] += 600  # ten minutes without data: the signal is stale by the next minute
+    assert len(manage(hole, row(), entries=(20,))) == 0 and len(manage(hole, row(), entries=(21,))) == 1
+
+
+def test_a_stop_moved_inside_a_minute_is_filled_there_when_the_close_proves_the_crossing() -> None:
+    m1 = minutes([(100, 100, 100, 100), (100.5, 101.2, 99.5, 99.6)] + flat(99.6, 30))
+    trade = manage(m1, row(tp1=1.0, fraction=0.5, runner=3.0))[0]
+    assert trade[2] == 1
+    np.testing.assert_allclose(trade[3], 0.5)  # half at +1 R, the rest at break-even inside minute 1
+    rising = minutes([(100, 100, 100, 100), (100, 101.2, 99.5, 101.1), (101.1, 101.1, 100.5, 100.6)] + flat(100.6, 30))
+    np.testing.assert_allclose(manage(rising, row(tp1=1.0, fraction=0.5, runner=3.0))[0][3], 0.5 + 0.5 * 0.6)
+
+
+def test_a_structural_stop_already_crossed_at_the_fill_means_no_trade() -> None:
+    m1 = minutes([(100, 100.2, 99.8, 100)] + flat(100, 30))
+    assert len(manage(m1, row(stop_atr=0.0), stop_refs=(100.5,), atrs=(5.0,))) == 0
+
+
+def test_holiday_stubs_are_not_yesterday_and_old_context_is_dropped() -> None:
+    first = int(pd.Timestamp("2024-07-08 21:00", tz="UTC").timestamp())
+    rows = day_of_minutes(first, 1440, 10.0) + day_of_minutes(first + 86400, 1440, 20.0)
+    rows += day_of_minutes(first + 2 * 86400, 30, 25.0)  # a 30-minute stub day
+    rows += day_of_minutes(first + 3 * 86400, 1440, 30.0)
+    rows += day_of_minutes(first + 12 * 86400, 1440, 40.0)  # after nine days without data
+    ctx = core.build_context("EURUSD", np.array(rows, dtype=float), "H1")
+    np.testing.assert_allclose(ctx.prev_high[ctx.day_open == 30.0], 20.5)
+    assert np.isnan(ctx.prev_high[ctx.day_open == 40.0]).all()
+
+
+def test_monday_previous_session_in_tokyo_is_friday_not_saturday_morning() -> None:
+    start = int(pd.Timestamp("2024-07-11 21:00", tz="UTC").timestamp())  # Thursday 17:00 New York = Friday 06:00 JST
+    rows = []
+    for i in range(4 * 1440):
+        t = start + 60 * i
+        local = pd.Timestamp(t, unit="s", tz="UTC").tz_convert("Asia/Tokyo")
+        if local.weekday() == 5 and local.hour >= 6 or local.weekday() == 6 or local.weekday() == 0 and local.hour < 6:
+            continue  # the market is shut from Friday 17:00 to Sunday 17:00 New York
+        price = 100.0 if local.weekday() == 4 and local.hour < 15 else 110.0  # Friday's session closes at 100
+        rows.append((t, price, price, price, price))
+    ctx = core.build_context("JPXJPY", np.array(rows, dtype=float), "M5")
+    monday = (core.weekday(ctx) == 0) & (ctx.exchange_minute >= 9 * 60)
+    assert monday.any()
+    np.testing.assert_allclose(core.previous_session_close(ctx)[monday], 100.0)

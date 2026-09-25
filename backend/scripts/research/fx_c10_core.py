@@ -23,6 +23,9 @@ from scripts.research import fx_c3_lab as c3
 TIMEFRAME_MINUTES = {"M5": 5, "M15": 15, "M30": 30, "H1": 60}
 MIN_MINUTES_LEFT = 15  # no entry in the last 15 minutes of an FX day
 MIN_STOP_ATR = 0.1  # a structural stop closer than 0.1 daily ATR is widened to it
+MAX_ENTRY_DELAY_SECONDS = 300  # the next minute must come within 5 minutes of the signal bar's last minute
+FULL_DAY_SHARE = 0.5  # an FX day with fewer minutes than half the market's median day (a holiday stub) is not a day
+STALE_DAYS = 5  # daily context older than this (the first days after a dropped month) is not used
 EXCHANGE = {  # main exchange clock of each index: its cash session (open, close in local minutes) defines "the session"
     "SPXUSD": ("America/New_York", 9 * 60 + 30, 16 * 60), "NSXUSD": ("America/New_York", 9 * 60 + 30, 16 * 60),
     "UDXUSD": ("America/New_York", 8 * 60 + 20, 16 * 60), "GRXEUR": ("Europe/Berlin", 9 * 60, 17 * 60 + 30),
@@ -31,6 +34,7 @@ EXCHANGE = {  # main exchange clock of each index: its cash session (open, close
     "AUXAUD": ("Australia/Sydney", 10 * 60, 16 * 60),
 }
 FX_EXCHANGE = ("Europe/London", 8 * 60, 16 * 60 + 30)  # for currency pairs the session is London's
+CLOSE_CHANGES = {"JPXJPY": ("2024-11-05", 15 * 60 + 30)}  # the Tokyo Stock Exchange moved its close to 15:30
 
 
 def minute_keys(seconds: np.ndarray, minutes: int) -> np.ndarray:
@@ -62,10 +66,10 @@ class Context:
     last_minute: np.ndarray  # index in the minute array of the bar's last minute
     fx_day: np.ndarray  # FX day id (17:00 New York to 17:00 New York)
     ny_minute: np.ndarray  # New York minute of the day of the bar's open
-    exchange_minute: np.ndarray  # minute of the day of the bar's open on the market's main exchange clock
+    exchange_minute: np.ndarray  # minute of the day of the bar's nominal start on the market's main exchange clock
     exchange_day: np.ndarray
-    exchange_open: int  # the market's session open and close (minutes after local midnight)
-    exchange_close: int
+    exchange_open: int  # the market's session open (minutes after local midnight)
+    exchange_close: np.ndarray  # and its close on each bar's date
     day_open: np.ndarray  # open of the current FX day (known from its first minute)
     prev_high: np.ndarray  # previous completed FX day's high, low, close, open and range
     prev_low: np.ndarray
@@ -73,8 +77,8 @@ class Context:
     prev_open: np.ndarray
     atr_d1: np.ndarray  # ATR(14) of completed FX days
     sma50_d1: np.ndarray  # 50-day average of completed FX days' closes
-    d1: np.ndarray  # every FX day's (open, high, low, close); a bar may only read rows before its bar_day
-    bar_day: np.ndarray  # row of d1 of the FX day each bar belongs to
+    d1: np.ndarray  # (open, high, low, close) of every full FX day; a bar may only read rows before its bar_day
+    bar_day: np.ndarray  # the number of full FX days before the bar's own FX day
     extra: dict = field(default_factory=dict)
 
 
@@ -84,34 +88,51 @@ def build_context(symbol: str, m1: np.ndarray, timeframe: str) -> Context:
     first = np.concatenate(([0], last[:-1] + 1))
     open_time = m1[first, 0]
     day_keys = minute_keys(m1[:, 0], 1440)
-    d_last, d1 = c3.aggregate(m1, day_keys)
+    d_last, all_days = c3.aggregate(m1, day_keys)
     d_first = np.concatenate(([0], d_last[:-1] + 1))
+    minutes_per_day = d_last - d_first + 1
+    full_rows = np.flatnonzero(minutes_per_day >= FULL_DAY_SHARE * np.median(minutes_per_day))
+    d1 = all_days[full_rows]
     atr14 = c3.atr(d1[:, 0], d1[:, 1], d1[:, 2], d1[:, 3], 14)
     sma50 = c3.sma(d1[:, 3], 50)
-    # the FX day each bar belongs to, and the last FX day already complete when the bar closes
-    bar_day = np.searchsorted(d_last, last, side="left")
+    day_of_bar = np.searchsorted(d_last, last, side="left")  # the FX day each bar belongs to
+    bar_day = np.searchsorted(full_rows, day_of_bar, side="left")  # full days strictly before it
     prev = bar_day - 1
     ok = prev >= 0
+    age = np.full(len(last), np.inf)
+    age[ok] = open_time[ok] - m1[d_last[full_rows[prev[ok]]], 0]
+    ok &= age <= STALE_DAYS * 86400
 
     def previous(values):
         out = np.full(len(last), np.nan)
         out[ok] = values[prev[ok]]
         return out
 
+    step = TIMEFRAME_MINUTES[timeframe]
     ny_minute, _ = local_minutes(open_time, "America/New_York")
-    zone, exchange_open, exchange_close = EXCHANGE.get(symbol, FX_EXCHANGE)
+    zone, exchange_open, close = EXCHANGE.get(symbol, FX_EXCHANGE)
     exchange_minute, exchange_day = local_minutes(open_time, zone)
+    exchange_close = np.full(len(last), close, dtype=np.int64)
+    if symbol in CLOSE_CHANGES:
+        since, new_close = CLOSE_CHANGES[symbol]
+        exchange_close[open_time >= pd.Timestamp(since, tz=zone).timestamp()] = new_close
+    # a bar may lack its first minute: its clock is the nominal start (local offsets are whole hours from New York)
     return Context(
         symbol=symbol, timeframe=timeframe, o=bars[:, 0], h=bars[:, 1], l=bars[:, 2], c=bars[:, 3], open_time=open_time,
-        last_minute=last, fx_day=day_keys[last], ny_minute=ny_minute, exchange_minute=exchange_minute,
-        exchange_day=exchange_day, exchange_open=exchange_open, exchange_close=exchange_close,
-        day_open=m1[d_first[bar_day], 1], prev_high=previous(d1[:, 1]), prev_low=previous(d1[:, 2]),
-        prev_close=previous(d1[:, 3]), prev_open=previous(d1[:, 0]), atr_d1=previous(atr14), sma50_d1=previous(sma50),
-        d1=d1, bar_day=bar_day,
+        last_minute=last, fx_day=day_keys[last], ny_minute=ny_minute - ny_minute % step,
+        exchange_minute=exchange_minute - exchange_minute % step, exchange_day=exchange_day,
+        exchange_open=exchange_open, exchange_close=exchange_close, day_open=m1[d_first[day_of_bar], 1],
+        prev_high=previous(d1[:, 1]), prev_low=previous(d1[:, 2]), prev_close=previous(d1[:, 3]),
+        prev_open=previous(d1[:, 0]), atr_d1=previous(atr14), sma50_d1=previous(sma50), d1=d1, bar_day=bar_day,
     )
 
 
-def in_session(ctx: Context, start: int, end: int) -> np.ndarray:
+def weekday(ctx: Context) -> np.ndarray:
+    """Monday = 0 on the exchange's local calendar (day 0 of the epoch was a Thursday)."""
+    return (ctx.exchange_day + 3) % 7
+
+
+def in_session(ctx: Context, start, end) -> np.ndarray:
     """Bars that open at or after `start` and before `end` (minutes of the exchange's local day)."""
     return (ctx.exchange_minute >= start) & (ctx.exchange_minute < end)
 
@@ -148,7 +169,7 @@ def stops_by_side(side: np.ndarray, long_stop: np.ndarray, short_stop: np.ndarra
     return np.where(side == 1, long_stop, np.where(side == -1, short_stop, np.nan))
 
 
-def session_price(ctx: Context, minute: int) -> np.ndarray:
+def session_price(ctx: Context, minute) -> np.ndarray:
     """Close of the last bar that opened before `minute` of the exchange's local day, on that day's bars from `minute`
     on (NaN before: the price is not known yet)."""
     before = ctx.exchange_minute < minute
@@ -159,10 +180,11 @@ def session_price(ctx: Context, minute: int) -> np.ndarray:
 
 def previous_session_close(ctx: Context) -> np.ndarray:
     """Close of the previous exchange day's session (its last bar that opened before the session close)."""
-    inside = ctx.exchange_minute < ctx.exchange_close
+    # only weekday bars inside the session count: the CFD trades on local Saturday mornings in Asia and on Sunday
+    # evenings in London, and Monday's previous session is Friday's
+    inside = in_session(ctx, ctx.exchange_open, ctx.exchange_close) & (weekday(ctx) < 5)
     frame = pd.DataFrame({"day": ctx.exchange_day, "c": np.where(inside, ctx.c, np.nan)})
-    last = frame.groupby("day", sort=True)["c"].last().dropna()  # days with no bar before the close (a Sunday
-    # evening in London) are not sessions: Monday's previous session is Friday's
+    last = frame.groupby("day", sort=True)["c"].last().dropna()
     return pd.Series(ctx.exchange_day).map(last.shift(1)).to_numpy(dtype=float)
 
 
@@ -194,6 +216,9 @@ def manage(m1, day_end, entries, sides, stop_refs, atrs, cost, grid, g):
         e = entries[k]
         if e <= busy_until or e >= m1.shape[0]:
             continue
+        # the entry minute must follow the signal bar's last minute (e - 1) on the same FX day, without a data hole
+        if e > 0 and (day_end[e] != day_end[e - 1] or m1[e, 0] - m1[e - 1, 0] > MAX_ENTRY_DELAY_SECONDS):
+            continue
         end = day_end[e]
         if m1[end, 0] - m1[e, 0] < (MIN_MINUTES_LEFT - 1) * 60:
             continue
@@ -204,7 +229,10 @@ def manage(m1, day_end, entries, sides, stop_refs, atrs, cost, grid, g):
         if grid[g, STOP_ATR] > 0:
             distance = grid[g, STOP_ATR] * atrs[k]
         elif not np.isnan(stop_refs[k]):
-            distance = max(side * (entry - stop_refs[k]), MIN_STOP_ATR * atrs[k])
+            room = side * (entry - stop_refs[k])
+            if room <= 0:  # the fill is already past the family's stop: no trade
+                continue
+            distance = max(room, MIN_STOP_ATR * atrs[k])
         else:
             continue
         if not distance > 0:
@@ -217,7 +245,7 @@ def manage(m1, day_end, entries, sides, stop_refs, atrs, cost, grid, g):
         first_done = np.isnan(tp1)
         exit_minute = end
         for i in range(e, end + 1):
-            o, h, l = m1[i, 1], m1[i, 2], m1[i, 3]
+            o, h, l, c = m1[i, 1], m1[i, 2], m1[i, 3], m1[i, 4]
             banked_now = False
             # the stop is checked first: when stop and target fit in the same minute, the stop wins
             if (side == 1 and l <= stop) or (side == -1 and h >= stop):
@@ -250,6 +278,18 @@ def manage(m1, day_end, entries, sides, stop_refs, atrs, cost, grid, g):
                 else:
                     best = min(best, l)
                     stop = min(stop, best + trail)
+            if banked_now or (trail > 0 and first_done):
+                # a stop moved inside this minute: the close past it proves a later crossing, and a minute that closes
+                # against the trade is taken to have made its favourable extreme first (open-high-low-close order)
+                if side == 1:
+                    crossed = c <= stop or (c < o and l <= stop)
+                else:
+                    crossed = c >= stop or (c > o and h >= stop)
+                if crossed:
+                    gross += remaining * side * (stop - entry)
+                    remaining = 0.0
+                    exit_minute = i
+                    break
         if remaining > 0:
             gross += remaining * side * (m1[exit_minute, 4] - entry)
         out[count, 0] = g

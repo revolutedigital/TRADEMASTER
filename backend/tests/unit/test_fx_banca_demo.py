@@ -51,3 +51,17 @@ def test_positions_are_sized_to_the_same_dollars_per_atr_and_skipped_when_the_mi
     # a pair worth US$ 4.84 per ATR per 1000 units fits once; US$ 9.09 does not fit at all
     assert banca.position_volume(5.0, 0.00484, 1000, 1000) == 1000
     assert banca.position_volume(5.0, 0.00909, 1000, 1000) is None
+
+
+def test_at_the_target_the_biggest_winners_are_banked_until_the_target_and_losers_never() -> None:
+    profits = [("a", 3.0), ("b", 14.0), ("c", -2.0), ("d", 5.0), ("e", 1.0)]
+
+    assert banca.winners_to_bank(profits, 20.0) == ["b", "d", "a"]  # 14 + 5 + 3 = 22 >= 20
+    assert banca.winners_to_bank([("x", -1.0)], 20.0) == []
+
+
+def test_the_trailing_stop_only_tightens_and_stays_behind_the_price() -> None:
+    assert banca.tightened_stop(1, best=1.20, atr=0.05, stop=1.10, price=1.19, trail_atr=1.0) == pytest.approx(1.15)
+    assert banca.tightened_stop(1, best=1.12, atr=0.05, stop=1.10, price=1.12, trail_atr=1.0) is None  # would loosen
+    assert banca.tightened_stop(-1, best=1.00, atr=0.05, stop=1.10, price=1.01, trail_atr=1.0) == pytest.approx(1.05)
+    assert banca.tightened_stop(-1, best=1.00, atr=0.05, stop=1.10, price=1.06, trail_atr=1.0) is None  # price above it

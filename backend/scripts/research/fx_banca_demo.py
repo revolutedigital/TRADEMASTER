@@ -4,6 +4,7 @@ frozen C6 model decides, every hour, which signals to take. Orders are the minim
     python -m scripts.research.fx_banca_demo train      # freeze the model on everything up to 2026-08 (once)
     python -m scripts.research.fx_banca_demo run        # run until ~/.config/trademaster/STOP exists
     python -m scripts.research.fx_banca_demo report     # what it has done so far
+    touch ~/.config/trademaster/RESTART_BANCA              # exit keeping the positions (restart to load new code)
 
 Deviation from the backtest, declared: strategies without a stop in the original (TSMOM, RSI2) get a disaster stop
 of 5 ATR on the server, because nothing runs on the account without a server-side stop.
@@ -34,6 +35,7 @@ DATA = Path("data/banca_demo")
 MODEL_FILE, SEED_FILE = DATA / "model.json", DATA / "seed.parquet"
 STATE_FILE, JOURNAL = DATA / "state.json", DATA / "journal.jsonl"
 STOP_FILE = demo.STOP_FILE
+RESTART_FILE = STOP_FILE.with_name("RESTART_BANCA")  # exit without closing anything, to load new code
 TRAIN_END = pd.Timestamp("2026-09-01", tz="UTC").timestamp()
 FUSION = {s: s for s in c3.GROUP_A + c3.GROUP_B if len(s) == 6 and s not in c6.CLASSES} | {
     "XAUUSD": "XAUUSD", "XAGUSD": "XAGUSD", "SPXUSD": "US500", "NSXUSD": "NAS100", "GRXEUR": "GER40",
@@ -49,6 +51,7 @@ RISK_PER_ATR = 0.005  # every position is sized so that one daily ATR move is wo
 TAKE_MINIMUM_ABOVE_BUDGET = True  # Igor, 2026-09-25: all 41 markets, even where the minimum volume is worth more
 DAILY_TARGET_USD, DAILY_STOP_USD = 20.0, 10.0  # Igor, 2026-09-25: close everything and pause until the next FX day
 GUARD_SECONDS = 20
+LOCK_TRAIL_ATR = 1.0  # Igor, 2026-09-25: at the target, bank the biggest winners and trail the rest 1 daily ATR behind
 QUOTE = {"US500": "USD", "NAS100": "USD", "USDX": "USD", "GER40": "EUR", "FRA40": "EUR", "UK100": "GBP",
          "JPN225": "JPY", "AUS200": "AUD", "HK50": "HKD", "XAUUSD": "USD", "XAGUSD": "USD", "XTIUSD": "USD",
          "XBRUSD": "USD"}
@@ -107,6 +110,25 @@ def position_volume(budget_usd: float, usd_per_unit_per_atr: float, minimum: flo
     if volume < minimum:
         return None
     return int(volume) if float(volume).is_integer() else volume
+
+
+def winners_to_bank(profits: list[tuple[str, float]], target: float) -> list[str]:
+    """Biggest winners first, until their profits add up to the target (losers are never banked)."""
+    chosen, banked = [], 0.0
+    for key, profit in sorted(profits, key=lambda item: -item[1]):
+        if banked >= target or profit <= 0:
+            break
+        chosen.append(key)
+        banked += profit
+    return chosen
+
+
+def tightened_stop(side: int, best: float, atr: float, stop: float, price: float, trail_atr: float) -> float | None:
+    """The new stop `trail_atr` ATR behind the best price, or None if it would not tighten or is not behind the price."""
+    candidate = best - side * trail_atr * atr
+    tighter = candidate > stop if side == 1 else candidate < stop
+    behind = candidate < price if side == 1 else candidate > price
+    return candidate if tighter and behind else None
 
 
 def usd_per_currency(mids: dict[str, float]) -> dict[str, float]:
@@ -266,7 +288,8 @@ class Banca:
             return
         self.state["positions"][key] = {"id": position.id, "fusion": fusion, "side": side, "entry": position.entry_price,
                                         "entry_time": now, "unit": float(plan.unit[j]), "stop": stop, "target": target,
-                                        "held": 0, "best": position.entry_price}
+                                        "held": 0, "best": position.entry_price,
+                                        "atr_d1": float(c3.atr(d1[:, 1], d1[:, 2], d1[:, 3], d1[:, 4], 20)[-1])}
         self.log("entry", key=key, position_id=position.id, entry=position.entry_price, stop=stop, target=target,
                  volume=volume, usd_per_atr=volume * per_unit)
         self.save()
@@ -305,12 +328,61 @@ class Banca:
             return
         guard["equity"] = equity
         result = equity - guard["start_equity"]
-        if guard["status"] == "operando" and (result >= DAILY_TARGET_USD or result <= -DAILY_STOP_USD):
-            guard["status"] = "meta do dia" if result > 0 else "limite do dia"
+        if guard["status"] == "operando" and result <= -DAILY_STOP_USD:
+            guard["status"] = "limite do dia"
             await self.flatten(guard["status"])
             guard["closed_result"] = (await self.venue.account()).equity - guard["start_equity"]
             self.log("day_closed", status=guard["status"], result=result, closed_result=guard["closed_result"])
+        elif guard["status"] == "operando" and result >= DAILY_TARGET_USD:
+            await self.bank_winners(guard, result)
+        elif guard["status"] == "meta: segurando o resto":
+            await self.trail_rest(guard)
         self.save()
+
+    async def live_positions(self) -> dict[str, dict]:
+        """Open positions as the broker values them now (a price request makes the session mark them)."""
+        raw = json_of(self.session.send("positions", timeout=60)).get("positions", [])
+        for symbol in {p["symbolName"] for p in raw}:
+            self.session.send(f"price {symbol}", timeout=60)
+        raw = json_of(self.session.send("positions", timeout=60)).get("positions", [])
+        return {str(p["id"]): p for p in raw}
+
+    async def bank_winners(self, guard: dict, result: float) -> None:
+        """Target reached: close the biggest winners until the target is banked; the rest trail 1 daily ATR behind."""
+        live = await self.live_positions()
+        mine = [(key, pos, live[pos["id"]]) for key, pos in self.state["positions"].items() if pos["id"] in live]
+        profits = {key: raw.get("netProfit") or 0.0 for key, _, raw in mine}
+        banked = 0.0
+        for key in winners_to_bank(list(profits.items()), DAILY_TARGET_USD):
+            position = self.state["positions"][key]
+            await self.venue.close(position["id"])
+            await self._record_exit(key, position, "meta: maior ganho realizado")
+            banked += profits[key]
+        guard["status"] = "meta: segurando o resto" if self.state["positions"] else "meta do dia"
+        guard["banked"] = banked
+        self.log("target", result=result, banked=banked, kept=len(self.state["positions"]))
+        await self.trail_rest(guard)
+
+    async def trail_rest(self, guard: dict) -> None:
+        """Each kept position's stop follows its best price since the target, 1 daily ATR behind; it only tightens."""
+        if not self.state["positions"]:
+            guard["status"] = "meta do dia"
+            return
+        live = await self.live_positions()
+        for key, position in list(self.state["positions"].items()):
+            raw = live.get(position["id"])
+            if raw is None or raw.get("currentPrice") is None:
+                continue
+            side, price = position["side"], float(raw["currentPrice"])
+            atr = position.get("atr_d1") or position["unit"]
+            position["trail_best"] = max(position.get("trail_best", price), price) if side == 1 else \
+                min(position.get("trail_best", price), price)
+            candidate = tightened_stop(side, position["trail_best"], atr, position["stop"], price, LOCK_TRAIL_ATR)
+            if candidate is not None:
+                candidate = round(candidate, int(self.spec(position["fusion"])["digits"]))
+                await self.venue.amend_protection(position["id"], stop_price=candidate, target_price=position["target"])
+                position["stop"] = candidate
+                self.log("lock_trail", key=key, stop=candidate)
 
     async def flatten(self, reason: str) -> None:
         for key, position in list(self.state["positions"].items()):
@@ -330,6 +402,10 @@ async def loop() -> int:
         last_hour, last_sync, last_guard = None, 0.0, 0.0
         while True:
             now = time.time()
+            if RESTART_FILE.exists():  # leave the positions and their server-side stops as they are
+                RESTART_FILE.unlink()
+                banca.log("restart")
+                return 0
             if STOP_FILE.exists():
                 await banca.flatten("stop file")
                 banca.log("stop")

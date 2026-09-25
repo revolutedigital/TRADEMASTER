@@ -65,3 +65,7 @@ def test_the_trailing_stop_only_tightens_and_stays_behind_the_price() -> None:
     assert banca.tightened_stop(1, best=1.12, atr=0.05, stop=1.10, price=1.12, trail_atr=1.0) is None  # would loosen
     assert banca.tightened_stop(-1, best=1.00, atr=0.05, stop=1.10, price=1.01, trail_atr=1.0) == pytest.approx(1.05)
     assert banca.tightened_stop(-1, best=1.00, atr=0.05, stop=1.10, price=1.06, trail_atr=1.0) is None  # price above it
+
+
+def test_gold_silver_and_oil_are_out_of_the_banca() -> None:
+    assert banca.EXCLUDED == {"XAUUSD", "XAGUSD", "WTIUSD", "BCOUSD"} and banca.EXCLUDED <= set(banca.FUSION)

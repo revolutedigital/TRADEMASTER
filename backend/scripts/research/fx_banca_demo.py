@@ -41,6 +41,8 @@ FUSION = {s: s for s in c3.GROUP_A + c3.GROUP_B if len(s) == 6 and s not in c6.C
     "XAUUSD": "XAUUSD", "XAGUSD": "XAGUSD", "SPXUSD": "US500", "NSXUSD": "NAS100", "GRXEUR": "GER40",
     "UKXGBP": "UK100", "JPXJPY": "JPN225", "FRXEUR": "FRA40", "AUXAUD": "AUS200", "HKXHKD": "HK50",
     "WTIUSD": "XTIUSD", "BCOUSD": "XBRUSD", "UDXUSD": "USDX"}
+EXCLUDED = frozenset({"XAUUSD", "XAGUSD", "WTIUSD", "BCOUSD"})  # Igor, 2026-09-25: their minimum volume is too big for
+# a US$ 1,000 account (US$ 40 to 130 per daily ATR against a US$ 10 daily stop)
 PERIOD = {"H1": 3600, "H4": 14400, "D1": 86400}
 CLI_PERIOD = {"H1": "h1", "H4": "h4", "D1": "d1"}
 BARS = 400
@@ -203,6 +205,8 @@ class Banca:
         self.usd_per = usd_per_currency(mids)
         self.equity = (await self.venue.account()).equity
         for symbol, fusion in FUSION.items():
+            if symbol in EXCLUDED:
+                continue
             bars = {tf: closed_bars(self.send(f"candles {fusion} {CLI_PERIOD[tf]} {BARS}")["bars"], PERIOD[tf], now)
                     for tf in PERIOD}
             if min(len(b) for b in bars.values()) < 260:

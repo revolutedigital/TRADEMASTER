@@ -111,7 +111,7 @@ class Banca:
         self.model.load_model(str(MODEL_FILE))
         self.model_sha = hashlib.sha256(MODEL_FILE.read_bytes()).hexdigest()
         self.state = json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else {"positions": {}, "processed": {}}
-        self.volumes = {}
+        self.specs: dict[str, dict] = {}
 
     def log(self, event: str, **fields) -> None:
         with JOURNAL.open("a", encoding="utf-8") as handle:
@@ -133,11 +133,14 @@ class Banca:
     def send(self, command: str) -> dict:
         return json_of(self.session.send(command, timeout=60))
 
+    def spec(self, fusion: str) -> dict:
+        if fusion not in self.specs:
+            self.specs[fusion] = self.send(f"symbol {fusion}")
+        return self.specs[fusion]
+
     def volume(self, fusion: str) -> float:
-        if fusion not in self.volumes:
-            volume = float(self.send(f"symbol {fusion}")["minVolume"])
-            self.volumes[fusion] = int(volume) if volume.is_integer() else volume  # the CLI wants 1000, not 1000.0
-        return self.volumes[fusion]
+        volume = float(self.spec(fusion)["minVolume"])
+        return int(volume) if volume.is_integer() else volume  # the CLI wants 1000, not 1000.0
 
     async def process(self, now: float) -> None:
         history = self.history()
@@ -147,7 +150,10 @@ class Banca:
             if min(len(b) for b in bars.values()) < 260:
                 continue
             for config, (tf, build) in c3.STRATEGIES.items():
-                await self._decide(config, tf, build, symbol, fusion, bars, history, now)
+                try:
+                    await self._decide(config, tf, build, symbol, fusion, bars, history, now)
+                except OrderRejected as error:  # one refused order must not stop the other decisions of the hour
+                    self.log("error", config=config, symbol=symbol, message=str(error)[:300])
         self.save()
 
     async def _decide(self, config, tf, build, symbol, fusion, bars, history, now) -> None:
@@ -173,6 +179,7 @@ class Banca:
             position["best"] = max(position["best"], high) if side == 1 else min(position["best"], low)
             candidate = position["best"] - side * plan.trail_k * plan.trail_atr[j]
             if (side == 1 and candidate > position["stop"]) or (side == -1 and candidate < position["stop"]):
+                candidate = round(candidate, int(self.spec(fusion)["digits"]))
                 await self.venue.amend_protection(position["id"], stop_price=candidate, target_price=position["target"])
                 position["stop"] = candidate
                 self.log("trail", key=key, stop=candidate)
@@ -202,7 +209,9 @@ class Banca:
             return
         quote = await self.venue.quote(fusion)
         price = quote.ask if side == 1 else quote.bid
+        digits = int(self.spec(fusion)["digits"])
         stop, target = protective_levels(side, price, plan, j)
+        stop, target = round(stop, digits), None if target is None else round(target, digits)
         if (side == 1 and stop >= price) or (side == -1 and stop <= price):
             self.log("refused", config=config, symbol=symbol, reason="stop behind the price")
             return

@@ -2,7 +2,7 @@
 
     python -m scripts.research.fx_banca_dashboard
 
-Reads the banca's journal and state, and every 2 minutes reads the demo account (balance, equity, open positions)
+Reads the banca's journal and state, and every 20 seconds reads the demo account (balance, equity, open positions)
 through its own read-only CLI session. It never sends an order.
 """
 
@@ -19,7 +19,7 @@ from scripts.research import fx_banca_demo as banca
 from scripts.research import fx_demo_runner as demo
 
 HOST, PORT = "127.0.0.1", 8765
-REFRESH_SECONDS = 120
+REFRESH_SECONDS = 20
 EQUITY_FILE = banca.DATA / "equity.jsonl"
 C7_LOG, C7_REPORT = Path("/tmp/claude-1000/c7.log"), banca.c3.DOCS / "c7-report.md"
 RESEARCH = [
@@ -40,6 +40,7 @@ class Broker:
     def __init__(self) -> None:
         self.snapshot: dict = {"error": "ainda lendo a conta"}
         self._session: PtySession | None = None
+        self._last_saved = 0.0
 
     def _read(self) -> dict:
         if self._session is None:
@@ -60,6 +61,10 @@ class Broker:
         while True:
             try:
                 self.snapshot = self._read()
+                if time.time() - self._last_saved < 120:  # the chart keeps one point every 2 minutes
+                    time.sleep(REFRESH_SECONDS)
+                    continue
+                self._last_saved = time.time()
                 with EQUITY_FILE.open("a") as handle:
                     handle.write(json.dumps({"at": self.snapshot["fetched_at"], "equity": self.snapshot["equity"],
                                              "balance": self.snapshot["balance"]}) + "\n")

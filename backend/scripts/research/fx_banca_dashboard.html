@@ -134,8 +134,11 @@ async function refresh() {
   try { d = await (await fetch("/data.json", {cache: "no-store"})).json(); }
   catch (e) { $("status").innerHTML = '<span class="error">sem resposta do painel local</span>'; return; }
   const b = d.broker, t = d.totais;
-  $("status").innerHTML = `Conta demo 10139135 · leitura da conta: ${b.fetched_at ? when(b.fetched_at) : "—"}` +
-    (b.error ? ` · <span class="error">${esc(b.error)}</span>` : "") + ` · atualiza sozinho a cada 30 s`;
+  const age = b.fetched_at ? Math.max(0, Math.round(d.now - b.fetched_at)) : null;
+  const next = new Date(Math.ceil(d.now / 3600) * 3600 * 1000).toLocaleTimeString("pt-BR", {hour: "2-digit", minute: "2-digit"});
+  $("status").innerHTML = `Conta demo 10139135 · preços e patrimônio lidos há ${age == null ? "—" : age + " s"} (a cada 20 s)` +
+    ` · a banca avalia sinais novos de hora em hora: próxima rodada às ${next}` +
+    (b.error ? ` · <span class="error">${esc(b.error)}</span>` : "");
   $("tiles").innerHTML =
     tile("Patrimônio (demo)", usd(b.equity), `saldo ${usd(b.balance)}`) +
     tile("Resultado em aberto", usd(t.usd_aberto), `${t.abertas} posições`, t.usd_aberto) +
@@ -163,7 +166,7 @@ async function refresh() {
     {key: "usd", label: "US$", num: true, signed: true, fmt: usd}]);
   $("research").innerHTML = table(d.pesquisa, [{key: "rodada", label: "Rodada"}, {key: "o_que", label: "O que"}, {key: "resultado", label: "Resultado"}]);
 }
-refresh(); setInterval(refresh, 30000);
+refresh(); setInterval(refresh, 10000);
 window.addEventListener("resize", () => refresh());
 </script>
 </body>

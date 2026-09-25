@@ -104,6 +104,13 @@ def prepare(symbols=GROUP_A + GROUP_B, raw: Path = RAW, out: Path = ARRAYS) -> N
         sys.stdout.write(f"{symbol}: {len(frame):,} minutes\n")
 
 
+def month_labels(seconds: np.ndarray) -> np.ndarray:
+    """'YYYY-MM' of every minute (UTC), computed on month numbers so it stays fast on millions of rows."""
+    months = np.asarray(seconds).astype(np.int64).astype("datetime64[s]").astype("datetime64[M]")
+    unique, inverse = np.unique(months, return_inverse=True)
+    return unique.astype(str)[inverse]
+
+
 def build_manifest(symbols=GROUP_A + GROUP_B, arrays: Path = ARRAYS) -> pd.DataFrame:
     rows = []
     for symbol in symbols:
@@ -111,7 +118,7 @@ def build_manifest(symbols=GROUP_A + GROUP_B, arrays: Path = ARRAYS) -> pd.DataF
         if not path.exists():
             continue
         m1 = np.load(path)
-        months = pd.to_datetime(m1[:, 0], unit="s").strftime("%Y-%m")
+        months = month_labels(m1[:, 0])
         counts = pd.Series(1, index=months).groupby(level=0).size()
         bad = pd.Series(m1[:, 1:5].min(axis=1) <= 0, index=months).groupby(level=0).any()
         median = counts.median()
@@ -128,8 +135,9 @@ def build_manifest(symbols=GROUP_A + GROUP_B, arrays: Path = ARRAYS) -> pd.DataF
 def load_included(symbol: str, manifest: pd.DataFrame, arrays: Path = ARRAYS) -> np.ndarray:
     rows = manifest[(manifest["symbol"] == symbol) & manifest["included"] & manifest["symbol_included"]]
     m1 = np.load(arrays / f"{symbol}.npy", mmap_mode="r")
-    months = pd.to_datetime(m1[:, 0], unit="s").strftime("%Y-%m")
-    return np.ascontiguousarray(m1[np.isin(months, rows["month"].to_numpy())])
+    wanted = np.array(rows["month"].to_numpy(), dtype="datetime64[M]")
+    months = m1[:, 0].astype(np.int64).astype("datetime64[s]").astype("datetime64[M]")
+    return np.ascontiguousarray(m1[np.isin(months, wanted)])
 
 
 # --- bars -------------------------------------------------------------------------------------------------------

@@ -35,7 +35,7 @@ RESEARCH = [
     {"rodada": "C8-C9", "o_que": "banca de saída e bancas otimizadas (diário)", "resultado": "melhora real na saída; total ~0; roda na demo"},
     {"rodada": "C10", "o_que": "12 regras de day trade x 144 gestões assimétricas x 37 mercados", "resultado": "0 de 4.464"},
     {"rodada": "C11-C12", "o_que": "fluxos e calendário (fixes, noite dos EUA, virada do mês)", "resultado": "0; padrões existem antes do custo"},
-    {"rodada": "C13", "o_que": "banca de day trade (xgboost) e juro/tendência em moedas", "resultado": "banca passou na descoberta e no placebo; juro 0 de 4"},
+    {"rodada": "C13", "o_que": "banca de day trade (xgboost) e juro/tendência em moedas", "resultado": "APROVADA (frente A): confirmada em 2003-2011, +0,050 R/trade, 9 de 9 anos; juro 0 de 4"},
     {"rodada": "C14", "o_que": "Gotobi: compra de dólar antes do fix de Tóquio", "resultado": "APROVADA: 24 anos, confirmada em 2003-2011; roda na demo"},
 ]
 

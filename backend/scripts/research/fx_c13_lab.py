@@ -29,10 +29,12 @@ from scripts.research import fx_c13_carry as carry
 
 REPORT = c3.DOCS / "c13-holdout.md"
 SIGNIFICANCE, MIN_TRADES, MIN_MARKET_SHARE, MIN_POSITIVE_YEARS = 0.05, 300, 0.55, 5
-# the code the discoveries ran: it may not change before the holdout (runners and checks added later may)
-FROZEN = ("scripts/research/fx_c13_banca.py", "scripts/research/fx_c13_carry.py", "scripts/research/fx_c10_core.py",
-          "scripts/research/fx_c10_families", "scripts/research/fx_c10_lab.py", "scripts/research/fx_c3_lab.py",
-          "scripts/research/fx_c6_lab.py", "scripts/research/fx_fast_stats.py", "app")
+# the code each discovery ran: it may not change before the holdout (runners and checks added later may)
+SHARED = ("scripts/research/fx_c10_core.py", "scripts/research/fx_c10_lab.py", "scripts/research/fx_c3_lab.py",
+          "scripts/research/fx_fast_stats.py", "app")
+FROZEN = {"c13_a_discovery": (*SHARED, "scripts/research/fx_c13_banca.py", "scripts/research/fx_c10_families",
+                              "scripts/research/fx_c6_lab.py"),
+          "c13_c_discovery": (*SHARED, "scripts/research/fx_c13_carry.py")}
 
 
 def _git(*args: str) -> subprocess.CompletedProcess:
@@ -47,11 +49,11 @@ def guards() -> tuple[str, str]:
         raise RuntimeError("the holdout manifest is not committed")
     if banca._events("c13_holdout"):
         raise RuntimeError("the untouched period is used once: the C13 holdout already ran")
-    for kind in ("c13_a_discovery", "c13_c_discovery"):
+    for kind, frozen in FROZEN.items():
         events = banca._events(kind)
         if not events:
             raise RuntimeError(f"{kind} has not run")
-        if _git("diff", "--quiet", events[-1]["code_commit"], "HEAD", "--", *FROZEN).returncode:
+        if _git("diff", "--quiet", events[-1]["code_commit"], "HEAD", "--", *frozen).returncode:
             raise RuntimeError(f"the code changed after {kind}: the holdout must run the discovered code")
     return commit, prereg
 

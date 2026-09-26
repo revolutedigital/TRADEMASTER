@@ -70,6 +70,9 @@ td.num, th.num { text-align: right; }
   </div>
 
   <div class="card"><h2>Gotobi (C14, aprovada) — compra USDJPY 03:00→09:54 JST e vende 09:56→11:59 nos dias 5, 10, 15, 20, 25 e 30</h2><div id="gotobi-next"></div><div id="gotobi"></div></div>
+  <div class="card"><h2>Banca de day trade (C13, aprovada) — 34 conjuntos, modelo decide qual operar, stop 1 ATR/alvo 3R/até o fim do dia</h2>
+    <p class="sub" id="c13-status"></p><div id="c13-open"></div></div>
+  <div class="card"><h2>Últimos sinais da banca de day trade</h2><div id="c13-signals"></div></div>
   <div class="card"><h2>Posições abertas pela banca</h2><div id="open"></div></div>
 
   <div class="grid2">
@@ -174,6 +177,18 @@ async function refresh() {
     {key: "status", label: "Status"}, {key: "entrada", label: "Entrada", num: true, fmt: v => v == null ? "—" : num(v, 3)},
     {key: "usd", label: "US$", num: true, signed: true, fmt: v => v == null ? "—" : usd(v)}, {key: "motivo", label: "Motivo"}])
     : "<p class=\"sub\">Nenhuma operação ainda.</p>";
+  const c13 = d.c13 || {dia: {}, limite_fracao: 0.03, totais: {}, abertas: [], ultimos_sinais: []};
+  $("c13-status").innerHTML = `${c13.dia.status || "operando"} · limite −${(c13.limite_fracao * 100).toFixed(0)}% do patrimônio do dia` +
+    ` · ${c13.totais.sinais || 0} sinais avaliados · ${c13.totais.aceitos || 0} aceitos · ${c13.totais.abertas || 0} posições abertas`;
+  $("c13-open").innerHTML = table(c13.abertas, [
+    {key: "conjunto_mercado", label: "Conjunto | Mercado"}, {key: "lado", label: "Lado"},
+    {key: "entrada", label: "Entrada", num: true, fmt: v => num(v, 5).replace(/0+$/, "").replace(/,$/, "")},
+    {key: "atual", label: "Atual", num: true, fmt: v => v == null ? "—" : num(v, 5).replace(/0+$/, "").replace(/,$/, "")},
+    {key: "usd", label: "Resultado", num: true, signed: true, fmt: v => v == null ? "—" : usd(v)}]);
+  $("c13-signals").innerHTML = table(c13.ultimos_sinais.slice(0, 15), [
+    {key: "quando", label: "Quando", fmt: when}, {key: "conjunto_mercado", label: "Conjunto | Mercado"},
+    {key: "lado", label: "Lado"}, {key: "previsao", label: "Previsão (R)", num: true, fmt: v => num(v, 3)},
+    {key: "decisao", label: "Banca"}]);
   $("research").innerHTML = table(d.pesquisa, [{key: "rodada", label: "Rodada"}, {key: "o_que", label: "O que"}, {key: "resultado", label: "Resultado"}]);
 }
 refresh(); setInterval(refresh, 10000);

@@ -16,6 +16,7 @@ from pathlib import Path
 
 from app.fx.runner.ctrader_cli import PtySession, json_of
 from scripts.research import fx_banca_demo as banca
+from scripts.research import fx_c13_demo as c13
 from scripts.research import fx_demo_runner as demo
 from scripts.research import fx_gotobi_demo as gotobi
 
@@ -112,6 +113,13 @@ def data(broker: Broker) -> dict:
         f"em andamento ({progress[-1]})" if progress else "em andamento"
     gotobi_state = json.loads(gotobi.STATE.read_text()) if gotobi.STATE.exists() else {"legs": {}}
     upcoming = gotobi.upcoming_days(time.time(), gotobi.c14.japanese_holidays())[:4]
+    c13_state = json.loads(c13.STATE_FILE.read_text()) if c13.STATE_FILE.exists() else {"positions": {}, "guard": {}}
+    c13_events = [json.loads(line) for line in c13.JOURNAL.read_text().splitlines()] if c13.JOURNAL.exists() else []
+    c13_signals = [e for e in c13_events if e["event"] == "signal"]
+    c13_exits = [e for e in c13_events if e["event"] == "exit"]
+    c13_open = [{"conjunto_mercado": key, "lado": "compra" if p["side"] == 1 else "venda", "entrada": p["entry"],
+                "atual": by_id.get(str(p["id"]), {}).get("currentPrice"),
+                "usd": by_id.get(str(p["id"]), {}).get("netProfit")} for key, p in c13_state["positions"].items()]
     return {
         "gotobi": {"proximos": [{"dia": str(day.date()), "compra": legs[0].open_at, "venda_final": legs[1].close_at}
                                 for day in upcoming for legs in [gotobi.legs_of(day)]],
@@ -131,6 +139,14 @@ def data(broker: Broker) -> dict:
                       "atr": e["net"], "usd": e.get("profit"), "motivo": e["reason"]} for e in exits][::-1],
         "equity": [{"t": e["at"], "v": e["equity"]} for e in equity if e.get("equity") is not None],
         "pesquisa": [r | ({"resultado": c7} if r["rodada"] == "C7" else {}) for r in RESEARCH],
+        "c13": {"dia": c13_state.get("guard", {}), "limite_fracao": c13.DAILY_STOP_FRACTION,
+                "totais": {"sinais": len(c13_signals), "aceitos": sum(int(e["take"]) for e in c13_signals),
+                           "abertas": len(c13_open)},
+                "abertas": c13_open,
+                "ultimos_sinais": [{"quando": e["at"], "conjunto_mercado": f"{e['set_id']}|{e['symbol']}",
+                                    "lado": "compra" if e["side"] == 1 else "venda", "previsao": e["prediction"],
+                                    "decisao": "entrou" if e["take"] else "pulou"}
+                                   for e in c13_signals[-40:]][::-1]},
     }
 
 

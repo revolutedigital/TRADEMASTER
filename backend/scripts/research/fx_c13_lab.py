@@ -29,6 +29,10 @@ from scripts.research import fx_c13_carry as carry
 
 REPORT = c3.DOCS / "c13-holdout.md"
 SIGNIFICANCE, MIN_TRADES, MIN_MARKET_SHARE, MIN_POSITIVE_YEARS = 0.05, 300, 0.55, 5
+# the code the discoveries ran: it may not change before the holdout (runners and checks added later may)
+FROZEN = ("scripts/research/fx_c13_banca.py", "scripts/research/fx_c13_carry.py", "scripts/research/fx_c10_core.py",
+          "scripts/research/fx_c10_families", "scripts/research/fx_c10_lab.py", "scripts/research/fx_c3_lab.py",
+          "scripts/research/fx_c6_lab.py", "scripts/research/fx_fast_stats.py", "app")
 
 
 def _git(*args: str) -> subprocess.CompletedProcess:
@@ -47,7 +51,7 @@ def guards() -> tuple[str, str]:
         events = banca._events(kind)
         if not events:
             raise RuntimeError(f"{kind} has not run")
-        if _git("diff", "--quiet", events[-1]["code_commit"], "HEAD", "--", "scripts", "app").returncode:
+        if _git("diff", "--quiet", events[-1]["code_commit"], "HEAD", "--", *FROZEN).returncode:
             raise RuntimeError(f"the code changed after {kind}: the holdout must run the discovered code")
     return commit, prereg
 
@@ -62,6 +66,11 @@ def holdout(workers: int) -> int:
     commit, prereg = guards()
     carried_c = list(banca._events("c13_c_discovery")[-1]["candidates"])
     carry_a = banca.passed()
+    if carry_a:  # amendment 2: front A only goes on if the pipeline found no edge on data without one
+        placebo = banca._events("c13_a_placebo")
+        if not placebo:
+            raise RuntimeError("run the front A placebo first (python -m scripts.research.fx_c13_placebo run)")
+        carry_a = bool(placebo[-1]["clean"])
     if not carry_a and not carried_c:
         sys.stdout.write("no candidate from either front: the untouched 2003-2011 data stays untouched\n")
         return 0

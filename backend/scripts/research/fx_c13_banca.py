@@ -358,7 +358,7 @@ def write_report(frame, results, chosen, passes, by_year, baseline, commit, mode
         f"operações que saíram antes dele)\n\n```\n{c10._fmt(results)}\n```\n\n"
         f"Informativo, todas as candidatas do mesmo período, sem banca: {json.dumps(baseline, default=float)}\n\n"
         f"## A escolhida, por ano\n\n"
-        + (f"```\n{by_year.to_string(float_format=lambda v: f'{v:.4g}')}\n```\n\n" if len(by_year) else "Nenhuma.\n\n") +
+        + (f"```\n{by_year.to_string(float_format=lambda v: f'{v:.4g}')}\n```\n\n" if len(by_year) else "Nenhuma.\n\n")
         + (f"Em dinheiro (0,5% de risco por operação, US$ 1.000): {json.dumps(money, default=float)}\n\n" if money
            else "") +
         f"Modelo final (operações que saíram até 2026-08-31), sha256: {model_hash}.\n")

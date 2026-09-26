@@ -179,3 +179,17 @@ def test_the_choice_is_the_best_mean_with_3000_accepted_and_all_criteria_pass() 
     results.loc[2, "p_one_sided"] = 0.0063  # above 0.05 / 8
     assert not banca.choose(results)[1]
     assert banca.choose(results.iloc[:1]) == (None, False)
+
+
+def test_the_report_writes_with_and_without_a_chosen_combination(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(banca, "REPORT", tmp_path / "report.md")
+    frame = pd.DataFrame({"set_id": [0, 1], "symbol": ["EURUSD", "SPXUSD"]})
+    results = pd.DataFrame([{"max_depth": 3, "min_child_weight": 200, "threshold": 0.0, "trades": 3000,
+                             "mean_net": 0.01, "mean_stress": -0.01, "p_one_sided": 0.2, "market_share": 0.5}])
+    chosen = results.iloc[0].to_dict()
+    by_year = pd.DataFrame({"trades": [10], "mean_net": [0.01]}, index=pd.Index([2016], name="year"))
+    banca.write_report(frame, results, chosen, False, by_year, {"trades": 2}, "abc", "sha", {"worst_drawdown_r": 3.0})
+    text = (tmp_path / "report.md").read_text(encoding="utf-8")
+    assert "Falhou em" in text and "Em dinheiro" in text and "sha256: sha" in text
+    banca.write_report(frame, results, None, False, pd.DataFrame(), {"trades": 2}, "abc", None, {})
+    assert "Nenhuma combinação" in (tmp_path / "report.md").read_text(encoding="utf-8")

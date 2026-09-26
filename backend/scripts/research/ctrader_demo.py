@@ -18,7 +18,7 @@ from scripts.research.fx_demo_runner import ACCOUNT, CTID, PASSWORD_FILE, cli_ar
 
 TOOL = "tool"  # container name suffix: never collides with a runner's
 ALLOWED_VERBS = frozenset(
-    "symbol symbols price prices positions position orders order deals orders-history account-stats exposure".split()
+    "symbol symbols price prices candles positions position orders order deals orders-history account-stats exposure".split()
 )
 SAFE_COMMAND = re.compile(r"^[A-Za-z0-9 ._=-]+$")
 ACCOUNT_LIKE = re.compile(r"[0-9]{6,}")

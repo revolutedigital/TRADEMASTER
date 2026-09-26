@@ -17,6 +17,7 @@ from pathlib import Path
 from app.fx.runner.ctrader_cli import PtySession, json_of
 from scripts.research import fx_banca_demo as banca
 from scripts.research import fx_demo_runner as demo
+from scripts.research import fx_gotobi_demo as gotobi
 
 HOST, PORT = "127.0.0.1", 8765
 REFRESH_SECONDS = 20
@@ -31,6 +32,11 @@ RESEARCH = [
     {"rodada": "C5", "o_que": "TSMOM e RSI2 em índices (Yahoo, 2000-2026)", "resultado": "passa no período antigo, não nos índices novos"},
     {"rodada": "C6", "o_que": "banca xgboost sobre as 14, último ano", "resultado": "perda de −0,10 para −0,03 ATR; não aprovada"},
     {"rodada": "C7", "o_que": "Claude como banca, sinais diários", "resultado": "em andamento"},
+    {"rodada": "C8-C9", "o_que": "banca de saída e bancas otimizadas (diário)", "resultado": "melhora real na saída; total ~0; roda na demo"},
+    {"rodada": "C10", "o_que": "12 regras de day trade x 144 gestões assimétricas x 37 mercados", "resultado": "0 de 4.464"},
+    {"rodada": "C11-C12", "o_que": "fluxos e calendário (fixes, noite dos EUA, virada do mês)", "resultado": "0; padrões existem antes do custo"},
+    {"rodada": "C13", "o_que": "banca de day trade (xgboost) e juro/tendência em moedas", "resultado": "banca passou na descoberta e no placebo; juro 0 de 4"},
+    {"rodada": "C14", "o_que": "Gotobi: compra de dólar antes do fix de Tóquio", "resultado": "APROVADA: 24 anos, confirmada em 2003-2011; roda na demo"},
 ]
 
 
@@ -104,7 +110,14 @@ def data(broker: Broker) -> dict:
     progress = [line for line in C7_LOG.read_text().splitlines() if line.endswith("sinais")] if C7_LOG.exists() else []
     c7 = "relatório pronto: docs/forex/c7-report.md" if C7_REPORT.exists() else \
         f"em andamento ({progress[-1]})" if progress else "em andamento"
+    gotobi_state = json.loads(gotobi.STATE.read_text()) if gotobi.STATE.exists() else {"legs": {}}
+    upcoming = gotobi.upcoming_days(time.time(), gotobi.c14.japanese_holidays())[:4]
     return {
+        "gotobi": {"proximos": [{"dia": str(day.date()), "compra": legs[0].open_at, "venda_final": legs[1].close_at}
+                                for day in upcoming for legs in [gotobi.legs_of(day)]],
+                   "pernas": [{"perna": key, "status": leg["status"], "entrada": leg.get("entry"),
+                               "usd": leg.get("profit"), "motivo": leg.get("reason", "")}
+                              for key, leg in sorted(gotobi_state["legs"].items(), reverse=True)]},
         "now": time.time(), "broker": {k: v for k, v in broker.snapshot.items() if k != "positions"},
         "dia": state.get("guard", {}) | {"meta": banca.DAILY_TARGET_USD, "limite": banca.DAILY_STOP_USD},
         "totais": {"sinais": len(signals), "aceitos": sum(int(e["take"]) for e in signals), "fechadas": len(exits),

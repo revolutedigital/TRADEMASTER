@@ -140,6 +140,7 @@ def data(broker: Broker) -> dict:
         "equity": [{"t": e["at"], "v": e["equity"]} for e in equity if e.get("equity") is not None],
         "pesquisa": [r | ({"resultado": c7} if r["rodada"] == "C7" else {}) for r in RESEARCH],
         "c13": {"dia": c13_state.get("guard", {}), "limite_fracao": c13.DAILY_STOP_FRACTION,
+                "risco": c13.LIVE_RISK, "teto_aberto": c13.MAX_OPEN_RISK, "ciclo": c13_state.get("cycle", {}),
                 "totais": {"sinais": len(c13_signals), "aceitos": sum(int(e["take"]) for e in c13_signals),
                            "abertas": len(c13_open)},
                 "abertas": c13_open,

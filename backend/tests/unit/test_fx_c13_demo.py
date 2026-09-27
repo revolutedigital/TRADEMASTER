@@ -128,6 +128,14 @@ def test_pending_since_keeps_only_the_recent_entries() -> None:
     assert len(recent) == int((everything["entry_time"] >= since).sum())
 
 
+def test_the_cycle_runs_65_seconds_after_each_five_minute_mark() -> None:
+    mark = pd.Timestamp("2026-09-28 14:05", tz="UTC").timestamp()
+    assert live.next_cycle(mark) == mark + 65
+    assert live.next_cycle(mark + 65) == mark + 365
+    assert live.next_cycle(mark - 1) == mark + 65  # 14:04:59 -> 14:06:05 (14:01:05 has passed)
+    assert live.next_cycle(mark + 64) == mark + 65
+
+
 def test_open_risk_adds_the_stops_of_open_positions() -> None:
     assert live.open_risk({}) == 0.0
     assert live.open_risk({"a": {"risk_usd": 9.5}, "b": {"risk_usd": 6.0}, "c": {}}) == pytest.approx(15.5)

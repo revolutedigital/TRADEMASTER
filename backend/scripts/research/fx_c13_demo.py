@@ -82,7 +82,10 @@ TRADE_ROWS_DAYS = 200  # the store's own resolved trades are only used from POOL
 POOL_SWITCH = banca.SAMPLE_END  # before it, the pool of past candidates is the discovery's own
 PENDING_DAYS = 2  # a candidate older than this has resolved (day trades end with their FX day) or is not a trade
 CHUNK_SECONDS = 900 * 60  # under the CLI's ~1,000-bar cap per `candles` call (checked: 961 minutes came back whole)
-CYCLE_SECONDS = 60
+TICK_SECONDS = 15  # stop files and the end-of-day closes
+CYCLE_PERIOD, CYCLE_OFFSET = 300, 65  # the pipeline runs 65 s after each 5-minute mark: every family's bars end on
+# that grid (whole steps of the New York clock, whole hours from UTC), and by then the entry minute has closed
+DAY_END_MARGIN = 45  # closed within the day's last minute, as the backtest, before the 17:00 NY rollover's swap
 WORKERS = 8
 MAX_LIVE_DELAY_SECONDS = 240  # a pending candidate older than this is logged as missed, not opened at a stale price
 LIVE_RISK = 0.01  # each stop worth 1% of equity (sweep: 0.5% skipped ~77% of the picks at US$ 1,000)
@@ -203,6 +206,12 @@ def pending_entries(symbol: str, m1: np.ndarray, since: float = -np.inf) -> pd.D
         frame[list(banca.DIRECTIONAL)] = frame[list(banca.DIRECTIONAL)].mul(trade_side, axis=0)
         rows.append(frame)
     return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
+
+
+def next_cycle(now: float) -> float:
+    """The next moment CYCLE_OFFSET seconds past a CYCLE_PERIOD mark, strictly after `now`."""
+    at = now - now % CYCLE_PERIOD + CYCLE_OFFSET
+    return at if at > now else at + CYCLE_PERIOD
 
 
 def leaves_room(entry_time: float) -> bool:
@@ -425,8 +434,20 @@ class LiveBanca:
 
     async def enforce_day_end(self, now: float) -> None:
         for key, position in list(self.state["positions"].items()):
-            if now >= position["day_end"]:
+            if now >= position["day_end"] - DAY_END_MARGIN:
                 await self._close(key, position, "fim do dia")
+
+    async def run_cycle(self, start: float) -> None:
+        await asyncio.to_thread(self.extend_tails, start)
+        await self.refresh_market()
+        pending = await self.cycle_markets(start)
+        if not self.paused():
+            await self.decide(pending, time.time())
+        await self.sync()
+        await self.guard(time.time())
+        self.state["cycle"] = {"at": time.time(), "seconds": time.time() - start, "candidates": len(pending),
+                               "last_minute": max(self.last.values())}
+        self.save()
 
     async def sync(self) -> None:
         """Positions the server closed on its own (stop, target) are journaled."""
@@ -483,6 +504,7 @@ async def loop() -> int:
         await runner.sync()
         runner.log("start", model_sha=runner.model_sha, threshold=runner.threshold, universe=len(runner.universe),
                    risk=LIVE_RISK, max_open_risk=MAX_OPEN_RISK)
+        cycle_at = time.time()  # the first cycle right away, then on the 5-minute grid
         while True:
             if RESTART_FILE.exists():
                 RESTART_FILE.unlink()
@@ -492,19 +514,20 @@ async def loop() -> int:
                 await runner.flatten("arquivo STOP")
                 runner.log("stop")
                 return 0
-            cycle_start = time.time()
             try:
-                await asyncio.to_thread(runner.extend_tails, cycle_start)
-                await runner.refresh_market()
-                pending = await runner.cycle_markets(cycle_start)
-                if not runner.paused():
-                    await runner.decide(pending, time.time())
                 await runner.enforce_day_end(time.time())
-                await runner.sync()
-                await runner.guard(time.time())
-            except (VenueUnavailable, OrderRejected) as error:
+                if time.time() >= cycle_at:
+                    try:
+                        await runner.run_cycle(time.time())
+                        cycle_at = next_cycle(time.time())
+                    except (VenueUnavailable, OrderRejected):
+                        raise  # the session logs in again by itself: the cycle is retried on the next tick
+                    except Exception:
+                        cycle_at = next_cycle(time.time())  # a fault of its own: retried on the grid, not every tick
+                        raise
+            except Exception as error:  # noqa: BLE001 - logged; open positions keep their server-side stops
                 runner.log("error", message=f"{type(error).__name__}: {str(error)[:300]}")
-            await asyncio.sleep(max(5.0, CYCLE_SECONDS - (time.time() - cycle_start)))
+            await asyncio.sleep(TICK_SECONDS)
     finally:
         workers.shutdown(cancel_futures=True)
         session.close()

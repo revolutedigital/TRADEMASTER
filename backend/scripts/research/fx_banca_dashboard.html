@@ -178,8 +178,13 @@ async function refresh() {
     {key: "usd", label: "US$", num: true, signed: true, fmt: v => v == null ? "—" : usd(v)}, {key: "motivo", label: "Motivo"}])
     : "<p class=\"sub\">Nenhuma operação ainda.</p>";
   const c13 = d.c13 || {dia: {}, limite_fracao: 0.03, totais: {}, abertas: [], ultimos_sinais: []};
-  $("c13-status").innerHTML = `${c13.dia.status || "operando"} · limite −${(c13.limite_fracao * 100).toFixed(0)}% do patrimônio do dia` +
-    ` · ${c13.totais.sinais || 0} sinais avaliados · ${c13.totais.aceitos || 0} aceitos · ${c13.totais.abertas || 0} posições abertas`;
+  const ciclo = c13.ciclo || {};
+  const cicloAge = ciclo.at ? Math.max(0, Math.round(d.now - ciclo.at)) : null;
+  $("c13-status").innerHTML = `${c13.dia.status || "operando"} · risco ${(c13.risco * 100).toFixed(0)}% por operação, stops abertos até ${(c13.teto_aberto * 100).toFixed(0)}%` +
+    ` · limite −${(c13.limite_fracao * 100).toFixed(0)}% do patrimônio do dia` +
+    ` · ${c13.totais.sinais || 0} sinais avaliados · ${c13.totais.aceitos || 0} aceitos · ${c13.totais.abertas || 0} posições abertas` +
+    (cicloAge == null ? "" : ` · último ciclo há ${cicloAge} s (levou ${Math.round(ciclo.seconds)} s, último minuto de preço ${when(ciclo.last_minute)})`) +
+    (cicloAge != null && cicloAge > 420 ? ` · <span class="error">robô parado?</span>` : "");
   $("c13-open").innerHTML = table(c13.abertas, [
     {key: "conjunto_mercado", label: "Conjunto | Mercado"}, {key: "lado", label: "Lado"},
     {key: "entrada", label: "Entrada", num: true, fmt: v => num(v, 5).replace(/0+$/, "").replace(/,$/, "")},

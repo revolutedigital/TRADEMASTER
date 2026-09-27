@@ -244,3 +244,21 @@ def test_no_stand_in_when_the_market_is_not_live_or_the_minute_is_already_there(
     assert len(live.with_stand_in(m1, last + 60)) == len(m1) + 1
     assert len(live.with_stand_in(m1, last + 301 + 60)) == len(m1)  # no tick in the whole bar: the market is shut
     assert len(live.with_stand_in(m1, last)) == len(m1)  # that minute is already in the store
+
+
+def test_a_closed_market_leaves_the_equity_read_and_says_nothing_can_be_opened() -> None:
+    import asyncio
+
+    from app.fx.runner.venue import Account, OrderRejected
+
+    class Weekend:
+        async def account(self):
+            return Account(balance=1000.0, equity=1005.0)
+
+        async def quote(self, symbol):
+            raise OrderRejected("No live quote for EURUSD after 5s. Market may be closed")
+
+    runner = live.LiveBanca.__new__(live.LiveBanca)
+    runner.venue, runner.equity, runner.usd_per = Weekend(), 0.0, {"USD": 1.0}
+    assert asyncio.run(runner.refresh_market()) is False
+    assert runner.equity == 1005.0 and runner.usd_per == {"USD": 1.0}  # the last rates are kept

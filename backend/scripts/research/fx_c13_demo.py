@@ -394,10 +394,17 @@ class LiveBanca:
                 self.last[symbol] = float(self.tails[symbol][-1, 0])
                 np.save(LIVE_ARRAYS / f"{symbol}.tail.npy", self.tails[symbol])
 
-    async def refresh_market(self) -> None:
+    async def refresh_market(self) -> bool:
+        """The equity always; the dollar value of each quote currency when the market quotes. False when it does not
+        (a weekend: the CLI answers "No live quote"), and nothing can be opened then."""
         self.equity = (await self.venue.account()).equity
-        mids = {pair: (lambda q: 0.5 * (q.bid + q.ask))(await self.venue.quote(pair)) for pair in old_banca.USD_PAIRS}
+        try:
+            mids = {pair: (lambda q: 0.5 * (q.bid + q.ask))(await self.venue.quote(pair))
+                    for pair in old_banca.USD_PAIRS}
+        except OrderRejected:
+            return False
         self.usd_per = old_banca.usd_per_currency(mids)
+        return True
 
     async def cycle_markets(self, now: float) -> pd.DataFrame:
         """Every market in parallel: the pool of resolved candidates, and the raw candidates of the last days."""
@@ -522,9 +529,9 @@ class LiveBanca:
         await asyncio.to_thread(self.extend_tails, start)
         if max(self.last.values()) < mark - 60 and start < mark + FRESH_WAIT_SECONDS:
             return False
-        await self.refresh_market()
+        quoting = await self.refresh_market()
         pending = await self.cycle_markets(start)
-        if not self.paused():
+        if quoting and not self.paused():
             await self.decide(pending, time.time())
         await self.sync()
         await self.guard(time.time())

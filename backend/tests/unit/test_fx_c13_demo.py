@@ -268,3 +268,10 @@ def test_an_entry_is_refused_when_the_spread_alone_passes_twice_the_modelled_rou
     cost = live.c3.cost_of("EURUSD")
     assert live.spread_ok(0.5 * cost, cost) and live.spread_ok(2 * cost, cost)
     assert not live.spread_ok(2.01 * cost, cost)  # e.g. the 17:00 New York rollover, or the weekly open
+
+
+def test_no_long_enters_while_the_rollover_spread_sags_the_bid() -> None:
+    at = lambda text: pd.Timestamp(text, tz="America/New_York").timestamp()  # noqa: E731
+    assert live.rollover_long(1, at("2026-01-14 17:00")) and live.rollover_long(1, at("2026-07-14 18:29"))  # EST, EDT
+    assert not live.rollover_long(-1, at("2026-07-14 17:15"))  # a short sells the same sagging bid as the backtest
+    assert not live.rollover_long(1, at("2026-07-14 18:30")) and not live.rollover_long(1, at("2026-07-14 16:59"))

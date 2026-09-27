@@ -91,7 +91,8 @@ CYCLE_PERIOD, CYCLE_OFFSET = 300, 8  # the pipeline runs just after each 5-minut
 # that grid (whole steps of the New York clock, whole hours from UTC); the minute now running stands in for the entry
 STAND_IN_REACH = 300  # a market whose last closed minute is older than the bar that just closed gets no stand-in
 FRESH_WAIT_SECONDS = 60  # how long a cycle waits for the CLI to serve the minute that closed the bar
-DAY_END_MARGIN = 45  # closed within the day's last minute, as the backtest, before the 17:00 NY rollover's swap
+DAY_END_MARGIN = 300  # closed 5 minutes before the 17:00 NY rollover: its swap, and the spreads that already
+# widen in the last minutes (the bid of the research data sags from about 16:58)
 WORKERS = 8
 MAX_LIVE_DELAY_SECONDS = 240  # a pending candidate older than this is logged as missed, not opened at a stale price
 # Money rules, chosen on 2016-2022 only and read on 2023-2026 (docs/forex/c13-a-sizing.md and -2.md, exploratory, as
@@ -110,6 +111,18 @@ DAILY_STOP_FRACTION = 0.10  # at -10%: everything is closed until the next day (
 # worse). An entry whose spread alone is above this many times the whole modelled round trip is refused: there the
 # backtest's edge does not hold. Every entry and refusal logs the spread, to learn the real one by market and hour.
 SPREAD_LIMIT = 2.0
+# The research's minutes are bid prices. Right after the 17:00 New York rollover the spread widens and the bid sags
+# with it, back only by about 18:30 (on the crosses, a sag of 5-29% of the daily ATR at 17:15, larger every year since
+# 2023): the backtest bought that sagging bid, where a real buyer pays the widened ask. Its longs of 17:15-17:30 made
+# +0.27-0.33 R in 2023-2026 against ~0 for its shorts there; without the longs of this window the edge is the same in
+# both periods (+0.059 R per trade, t 3.5, in 2016-2022; +0.067 R, t 2.2, in 2023-2026). No long enters in it.
+ROLLOVER_LONG_BLOCK = (17 * 60, 18 * 60 + 30)  # New York minutes of the day, start included, end excluded
+
+
+def rollover_long(side: int, ts: float) -> bool:
+    """A long entering at `ts` inside ROLLOVER_LONG_BLOCK (the New York clock)."""
+    minute = float(local_time_of_day(np.float64(ts), NEW_YORK)) // 60
+    return side == 1 and ROLLOVER_LONG_BLOCK[0] <= minute < ROLLOVER_LONG_BLOCK[1]
 
 
 def symbol_universe() -> list[str]:
@@ -463,10 +476,11 @@ class LiveBanca:
         features |= recent_features(self.pool, symbol, set_id, row["decision_time"])
         x = np.array([[features[f] for f in banca.FEATURES]], dtype=np.float32)
         prediction = float(self.model.predict(x)[0])
-        take = prediction > self.threshold and not stale and symbol not in old_banca.EXCLUDED
+        rollover = rollover_long(int(row["side"]), float(row["entry_time"]))
+        take = prediction > self.threshold and not stale and not rollover and symbol not in old_banca.EXCLUDED
         self.log("signal", key=key, symbol=symbol, set_id=set_id, side=int(row["side"]), prediction=prediction,
-                 threshold=self.threshold, take=take, stale=stale, delay=now - row["entry_time"],
-                 model_sha=self.model_sha)
+                 threshold=self.threshold, take=take, stale=stale, rollover_long=rollover,
+                 delay=now - row["entry_time"], model_sha=self.model_sha)
         return prediction if take else None
 
     async def _open(self, key: str, symbol: str, row: pd.Series, risk: float) -> None:
@@ -614,7 +628,8 @@ async def loop() -> int:
         await runner.sync()
         runner.log("start", model_sha=runner.model_sha, threshold=runner.threshold, universe=len(runner.universe),
                    risk_by_prediction=RISK_BY_PREDICTION, max_open_risk=MAX_OPEN_RISK, max_asset_risk=MAX_ASSET_RISK,
-                   daily_brake=DAILY_BRAKE, daily_stop=DAILY_STOP_FRACTION)
+                   daily_brake=DAILY_BRAKE, daily_stop=DAILY_STOP_FRACTION, rollover_long_block=ROLLOVER_LONG_BLOCK,
+                   day_end_margin=DAY_END_MARGIN)
         cycle_at = time.time()  # the first cycle right away, then on the 5-minute grid
         while True:
             if RESTART_FILE.exists():

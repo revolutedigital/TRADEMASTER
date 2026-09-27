@@ -262,3 +262,9 @@ def test_a_closed_market_leaves_the_equity_read_and_says_nothing_can_be_opened()
     runner.venue, runner.equity, runner.usd_per = Weekend(), 0.0, {"USD": 1.0}
     assert asyncio.run(runner.refresh_market()) is False
     assert runner.equity == 1005.0 and runner.usd_per == {"USD": 1.0}  # the last rates are kept
+
+
+def test_an_entry_is_refused_when_the_spread_alone_passes_twice_the_modelled_round_trip() -> None:
+    cost = live.c3.cost_of("EURUSD")
+    assert live.spread_ok(0.5 * cost, cost) and live.spread_ok(2 * cost, cost)
+    assert not live.spread_ok(2.01 * cost, cost)  # e.g. the 17:00 New York rollover, or the weekly open

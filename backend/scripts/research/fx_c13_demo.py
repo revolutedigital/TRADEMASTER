@@ -105,6 +105,11 @@ MAX_ASSET_RISK: float | None = None  # a cap on one currency in one direction (o
 PRIORITY_BY_PREDICTION = False  # give the room under the caps to the most confident candidates first (off)
 DAILY_BRAKE = 0.05  # at -5% of the FX day's first equity: no new entry until the next day (open ones run on)
 DAILY_STOP_FRACTION = 0.10  # at -10%: everything is closed until the next day (insurance; never reached in the study)
+# The research charged one fixed round-trip cost per market at every hour, yet 15% of the accepted entries fall in
+# 17:00-17:30 New York, right after the rollover, when real spreads widen many times over (and the weekly open is
+# worse). An entry whose spread alone is above this many times the whole modelled round trip is refused: there the
+# backtest's edge does not hold. Every entry and refusal logs the spread, to learn the real one by market and hour.
+SPREAD_LIMIT = 2.0
 
 
 def symbol_universe() -> list[str]:
@@ -295,6 +300,11 @@ def market_cycle(job: tuple[str, np.ndarray, float, float | None]) -> tuple[pd.D
     return resolved, pending_entries(symbol, live_edge, since=now - PENDING_DAYS * 86400)
 
 
+def spread_ok(spread: float, modelled_cost: float) -> bool:
+    """Whether the live spread leaves the backtest's cost assumption standing (see SPREAD_LIMIT)."""
+    return spread <= SPREAD_LIMIT * modelled_cost
+
+
 def open_risk(positions: dict) -> float:
     return float(sum(p.get("risk_usd", 0.0) for p in positions.values()))
 
@@ -467,6 +477,10 @@ class LiveBanca:
         side, atr = int(row["side"]), float(row["atr_d1"])
         quote = await self.venue.quote(fusion)
         price = quote.ask if side == 1 else quote.bid
+        spread, modelled = quote.ask - quote.bid, c3.cost_of(symbol)
+        if not spread_ok(spread, modelled):
+            self.log("refused", key=key, reason="spread alto", spread=spread, modelled_cost=modelled)
+            return
         if self.grid[self.g, core.STOP_ATR] > 0:
             distance = self.grid[self.g, core.STOP_ATR] * atr
         elif not np.isnan(row["stop_ref"]):
@@ -515,7 +529,7 @@ class LiveBanca:
                                         "stop": stop, "target": target, "day_end": day_end, "volume": volume,
                                         "risk_usd": risk_usd}
         self.log("entry", key=key, position_id=position.id, entry=position.entry_price, stop=stop, target=target,
-                 volume=volume, risk_usd=risk_usd, day_end=day_end)
+                 volume=volume, risk_usd=risk_usd, day_end=day_end, spread=spread, modelled_cost=modelled)
         self.save()
 
     async def enforce_day_end(self, now: float) -> None:

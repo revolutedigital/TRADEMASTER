@@ -13,6 +13,7 @@ import json
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -133,11 +134,30 @@ def add_intraday(frame: pd.DataFrame, workers: int = 8) -> pd.DataFrame:
     return frame
 
 
+VIX_FILE = Path("data/c15/VIX_History.csv")  # CBOE's daily history
+
+
+def add_vix(frame: pd.DataFrame, vix_file: Path = VIX_FILE) -> pd.DataFrame:
+    """The fear gauge as of the last VIX close before the decision's New York date (a day's lag, never the future):
+    its level, its ratio to the mean of the 20 closes before it, and its log change over 5 sessions."""
+    raw = pd.read_csv(vix_file)
+    close = pd.Series(raw["CLOSE"].to_numpy(dtype=float), index=pd.to_datetime(raw["DATE"], format="%m/%d/%Y"))
+    table = pd.DataFrame({"vix_level": close, "vix_ratio": close / close.shift(1).rolling(20).mean(),
+                          "vix_change": np.log(close / close.shift(5))})
+    ny_date = (pd.to_datetime(frame["decision_time"], unit="s", utc=True).dt.tz_convert("America/New_York")
+               .dt.tz_localize(None).dt.normalize())
+    known = np.searchsorted(table.index.to_numpy(), ny_date.to_numpy(), side="left") - 1  # strictly before that date
+    for column in table.columns:
+        frame[column] = np.where(known >= 0, table[column].to_numpy()[np.maximum(known, 0)], np.nan)
+    return frame
+
+
 GROUPS = {
     "rajada": ["burst_all", "burst_market", "burst_set"],
     "dolar": ["usd_side", "usd_breadth", "usd_count", "usd_aligned"],
     "rajada+dolar": ["burst_all", "burst_market", "burst_set", "usd_side", "usd_breadth", "usd_count", "usd_aligned"],
     "volatilidade": ["sigma_left", "vol_5m_surprise", "vol_day_surprise", "move_z"],
+    "vix": ["vix_level", "vix_ratio", "vix_change"],
 }
 INTRADAY = {"sigma_left", "vol_5m_surprise", "vol_day_surprise", "move_z"}
 
@@ -171,7 +191,7 @@ def score(frame: pd.DataFrame, prediction: np.ndarray) -> list[dict]:
 def main(argv: list[str] | None = None) -> int:
     groups = (argv or sys.argv[1:]) or list(GROUPS)
     frame = pd.read_parquet(banca.DATASET)
-    frame = add_features(frame)
+    frame = add_vix(add_features(frame))
     if any(INTRADAY & set(GROUPS[g]) for g in groups):
         started = time.time()
         frame = add_intraday(frame)

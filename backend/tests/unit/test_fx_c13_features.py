@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from scripts.research import fx_c13_features as feats
 
@@ -52,3 +53,16 @@ def test_sigma_left_shrinks_toward_the_exit() -> None:
     at = [int(np.flatnonzero((day == 35) & (slot == minute))[0]) for minute in (60, 720, 1380)]  # by the NY clock
     left = feats.intraday_features(m1, np.array(at))["sigma_left"]
     assert left[0] > left[1] > left[2] > 0
+
+
+def test_vix_features_use_the_last_close_before_the_new_york_date(tmp_path) -> None:
+    days = pd.bdate_range("2024-01-01", periods=30)
+    closes = np.arange(10.0, 40.0)
+    path = tmp_path / "vix.csv"
+    pd.DataFrame({"DATE": days.strftime("%m/%d/%Y"), "CLOSE": closes}).to_csv(path, index=False)
+    at = pd.Timestamp(f"{days[25].date()} 18:00", tz="America/New_York").timestamp()  # after that day's close
+    frame = feats.add_vix(pd.DataFrame({"decision_time": [at, days[0].timestamp()]}), path)
+    assert frame["vix_level"].iloc[0] == closes[24]  # the day before, never the same day
+    assert frame["vix_ratio"].iloc[0] == pytest.approx(closes[24] / closes[4:24].mean())
+    assert frame["vix_change"].iloc[0] == pytest.approx(np.log(closes[24] / closes[19]))
+    assert np.isnan(frame["vix_level"].iloc[1])  # nothing known before the first close

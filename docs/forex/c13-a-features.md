@@ -2,7 +2,7 @@
 
 Cada grupo de informações é somado às do modelo congelado, e o mesmo modelo (profundidade 3, peso 2000) é retreinado pelo walk-forward da descoberta: cada ano decidido por um modelo que só viu operações encerradas antes dele. Operações aceitas com previsão acima de 0.05. Julga-se em 2016-2022 e lê-se em 2023-2026.
 
-Grupos: `{"rajada": ["burst_all", "burst_market", "burst_set"], "dolar": ["usd_side", "usd_breadth", "usd_count", "usd_aligned"], "rajada+dolar": ["burst_all", "burst_market", "burst_set", "usd_side", "usd_breadth", "usd_count", "usd_aligned"], "volatilidade": ["sigma_left", "vol_5m_surprise", "vol_day_surprise", "move_z"]}`
+Grupos: `{"rajada": ["burst_all", "burst_market", "burst_set"], "dolar": ["usd_side", "usd_breadth", "usd_count", "usd_aligned"], "rajada+dolar": ["burst_all", "burst_market", "burst_set", "usd_side", "usd_breadth", "usd_count", "usd_aligned"], "volatilidade": ["sigma_left", "vol_5m_surprise", "vol_day_surprise", "move_z"], "vix": ["vix_level", "vix_ratio", "vix_change"]}`
 
 ```
        grupo   periodo  trades  mean_net  mean_stress  win_rate     t  market_share  trades_per_day
@@ -16,4 +16,6 @@ rajada+dolar 2016-2022   24896   0.05995      0.04152    0.5283  3.48        0.8
 rajada+dolar 2023-2026   11941    0.1231       0.1015    0.5694 5.024        0.9189           12.52
 volatilidade 2016-2022   25601   0.06122      0.04292    0.5256 3.325        0.8108           14.07
 volatilidade 2023-2026   11682    0.1273       0.1064     0.555 4.308        0.8649           12.25
+         vix 2016-2022   36187   0.01823   -0.0004526    0.5068 1.198        0.7027           19.88
+         vix 2023-2026   11775   0.04619       0.0254    0.5186 1.068        0.7297           12.34
 ```

@@ -39,8 +39,10 @@ STATE_FILE, JOURNAL = DATA / "state.json", DATA / "journal.jsonl"
 STOP_FILE = demo.STOP_FILE
 RESTART_FILE = STOP_FILE.with_name("RESTART_BANCA")  # exit without closing anything, to load new code
 # Igor, 2026-09-27: C9 off (never approved; its -US$10 guard on the whole account would fire on C13-A's stops).
-# No new entry; each position closes as soon as its market takes the order; the runner exits when none is left.
+# No new entry. The closes are sent once at the time written in the file (ISO, UTC; empty = now) and, for a market
+# still shut then, once an hour after — not every minute (Igor: no stream of refused orders). Exits when none is left.
 RETIRE_FILE = STOP_FILE.with_name("RETIRE_BANCA")
+RETIRE_RETRY_SECONDS = 3600
 TRAIN_END = pd.Timestamp("2026-09-01", tz="UTC").timestamp()
 FUSION = {s: s for s in c3.GROUP_A + c3.GROUP_B if len(s) == 6 and s not in c6.CLASSES} | {
     "XAUUSD": "XAUUSD", "XAGUSD": "XAGUSD", "SPXUSD": "US500", "NSXUSD": "NAS100", "GRXEUR": "GER40",
@@ -489,6 +491,12 @@ class Banca:
         return not self.state["positions"]
 
 
+def retire_time(text: str, now: float) -> float:
+    """When the retirement's first closes go out: the ISO time written in the file, or now if it holds none."""
+    text = text.strip()
+    return pd.Timestamp(text).timestamp() if text else now
+
+
 async def loop() -> int:
     DATA.mkdir(parents=True, exist_ok=True)
     demo.remove_container("BANCA")
@@ -498,7 +506,7 @@ async def loop() -> int:
         banca = Banca(session)
         await banca.sync()
         banca.log("start", model_sha=banca.model_sha)
-        last_hour, last_sync, last_guard = None, 0.0, 0.0
+        last_hour, last_sync, last_guard, retire_at = None, 0.0, 0.0, None
         while True:
             now = time.time()
             if RESTART_FILE.exists():  # leave the positions and their server-side stops as they are
@@ -510,7 +518,10 @@ async def loop() -> int:
                 banca.log("stop")
                 return 0
             if RETIRE_FILE.exists():  # no new entry from here on; what is open closes as its market allows
-                if now - last_sync >= SYNC_SECONDS:
+                if retire_at is None:
+                    retire_at = retire_time(RETIRE_FILE.read_text(), now)
+                    banca.log("retire_scheduled", close_at=retire_at)
+                if now >= retire_at:
                     try:
                         if await banca.retire():
                             RETIRE_FILE.unlink()
@@ -518,7 +529,7 @@ async def loop() -> int:
                             return 0
                     except (VenueUnavailable, OrderRejected) as error:
                         banca.log("error", message=str(error)[:300])
-                    last_sync = now
+                    retire_at = now + RETIRE_RETRY_SECONDS
                 await asyncio.sleep(5)
                 continue
             if now - last_guard >= GUARD_SECONDS:

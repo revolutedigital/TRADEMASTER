@@ -138,3 +138,8 @@ def test_retiring_closes_what_the_market_takes_waits_for_the_rest_and_ends_when_
     retiring.venue.open_all = True
     assert asyncio.run(retiring.retire()) is True
     assert exited[-1] == ("TSMOM|GER40", "banca desligada")
+
+
+def test_the_retirement_waits_for_the_time_written_in_its_file() -> None:
+    assert banca.retire_time("2026-09-27T22:00:00Z\n", 5.0) == pd.Timestamp("2026-09-27 22:00", tz="UTC").timestamp()
+    assert banca.retire_time("", 5.0) == 5.0

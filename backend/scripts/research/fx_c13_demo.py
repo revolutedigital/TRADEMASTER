@@ -34,9 +34,11 @@ risk, and without one per currency such a burst is one bet on the dollar. When t
 for that room, the most confident go first (docs/forex/c13-a-sizing-2.md).
 
 Declared deviations from the backtest: the store's live tail comes from the CLI's own quotes (composite/mid) while
-the HistData history is bid-only; the entry is a market order when the cycle finds the candidate (up to about two
-minutes after the backtest's next-minute entry; a late entry of 1-5 minutes kept 86-94% of the mean R, measured on
-2016-2026), and a candidate found more than MAX_LIVE_DELAY_SECONDS late is logged and never opened.
+the HistData history is bid-only; the entry is a market order when the cycle finds the candidate. The cycle runs
+seconds after each 5-minute mark, with the minute now running standing in for the entry minute (every feature reads
+the signal bar and earlier; tested against the real next minute), so an order goes out about a minute after the
+backtest's next-minute entry (a late entry of 1-5 minutes kept 86-94% of the mean R, measured on 2016-2026). A
+candidate found more than MAX_LIVE_DELAY_SECONDS late is logged and never opened.
 
     python -m scripts.research.fx_c13_demo        (touch ~/.config/trademaster/STOP to flatten and stop;
                                                     touch ~/.config/trademaster/RESTART_C13 to stop and keep)
@@ -87,8 +89,10 @@ POOL_SWITCH = banca.SAMPLE_END  # before it, the pool of past candidates is the 
 PENDING_DAYS = 2  # a candidate older than this has resolved (day trades end with their FX day) or is not a trade
 CHUNK_SECONDS = 900 * 60  # under the CLI's ~1,000-bar cap per `candles` call (checked: 961 minutes came back whole)
 TICK_SECONDS = 15  # stop files and the end-of-day closes
-CYCLE_PERIOD, CYCLE_OFFSET = 300, 65  # the pipeline runs 65 s after each 5-minute mark: every family's bars end on
-# that grid (whole steps of the New York clock, whole hours from UTC), and by then the entry minute has closed
+CYCLE_PERIOD, CYCLE_OFFSET = 300, 8  # the pipeline runs just after each 5-minute mark: every family's bars end on
+# that grid (whole steps of the New York clock, whole hours from UTC); the minute now running stands in for the entry
+STAND_IN_REACH = 300  # a market whose last closed minute is older than the bar that just closed gets no stand-in
+FRESH_WAIT_SECONDS = 60  # how long a cycle waits for the CLI to serve the minute that closed the bar
 DAY_END_MARGIN = 45  # closed within the day's last minute, as the backtest, before the 17:00 NY rollover's swap
 WORKERS = 8
 MAX_LIVE_DELAY_SECONDS = 240  # a pending candidate older than this is logged as missed, not opened at a stale price
@@ -223,6 +227,18 @@ def next_cycle(now: float) -> float:
     return at if at > now else at + CYCLE_PERIOD
 
 
+def with_stand_in(m1: np.ndarray, at: float) -> np.ndarray:
+    """The store plus a stand-in for the minute starting `at` (the one now running), when the market's last closed
+    minute belongs to the bar that just closed: that bar's candidates then show their entry a minute sooner. Every
+    feature reads the signal bar and earlier only, so the stand-in's prices are never read; its time is the entry's
+    time, as the next minute's would be."""
+    last = float(m1[-1, 0])
+    if not at - STAND_IN_REACH <= last < at:
+        return m1
+    close = m1[-1, 4]
+    return np.vstack([m1, [at, close, close, close, close]])
+
+
 def leaves_room(entry_time: float) -> bool:
     """manage()'s own rule: no entry with less than MIN_MINUTES_LEFT of its FX day still to run."""
     return day_end_after(entry_time) - entry_time >= (core.MIN_MINUTES_LEFT - 1) * 60
@@ -264,17 +280,18 @@ def history_pool() -> pd.DataFrame:
     return frame[frame["entry_time"] < POOL_SWITCH].reset_index(drop=True)
 
 
-def market_cycle(job: tuple[str, np.ndarray, float]) -> tuple[pd.DataFrame, pd.DataFrame]:
+def market_cycle(job: tuple[str, np.ndarray, float, float | None]) -> tuple[pd.DataFrame, pd.DataFrame]:
     """One market's share of a cycle (runs in a worker): the trades resolved on the store since POOL_SWITCH, and the
     raw candidates of the last PENDING_DAYS."""
-    symbol, tail, now = job
+    symbol, tail, now, stand_in_at = job
     base = np.load(LIVE_ARRAYS / f"{symbol}.npy", mmap_mode="r")
     m1 = np.concatenate([base, tail]) if len(tail) else np.asarray(base)
     recent = np.ascontiguousarray(m1[m1[:, 0] >= now - TRADE_ROWS_DAYS * 86400])
     resolved = banca.trade_rows(symbol, recent)
     resolved = resolved.loc[resolved["entry_time"] >= POOL_SWITCH, POOL_COLUMNS] if len(resolved) else \
         pd.DataFrame(columns=POOL_COLUMNS)
-    return resolved, pending_entries(symbol, m1, since=now - PENDING_DAYS * 86400)
+    live_edge = with_stand_in(m1, stand_in_at) if stand_in_at is not None else m1
+    return resolved, pending_entries(symbol, live_edge, since=now - PENDING_DAYS * 86400)
 
 
 def open_risk(positions: dict) -> float:
@@ -384,7 +401,9 @@ class LiveBanca:
     async def cycle_markets(self, now: float) -> pd.DataFrame:
         """Every market in parallel: the pool of resolved candidates, and the raw candidates of the last days."""
         loop = asyncio.get_running_loop()
-        jobs = [loop.run_in_executor(self.workers, market_cycle, (s, self.tails[s], now)) for s in self.universe]
+        stand_in_at = now - now % 60  # the minute now running
+        jobs = [loop.run_in_executor(self.workers, market_cycle, (s, self.tails[s], now, stand_in_at))
+                for s in self.universe]
         results = await asyncio.gather(*jobs)
         resolved = [r for r, _ in results if len(r)]
         self.pool = pd.concat([self.history, *resolved], ignore_index=True) if resolved else self.history
@@ -406,9 +425,9 @@ class LiveBanca:
                 continue
             row = fresh.iloc[0]
             key = f"{int(set_id)}|{symbol}"
-            if self.state["decided"].get(key) == row["entry_time"]:
+            if self.state["decided"].get(key) == row["decision_time"]:
                 continue
-            self.state["decided"][key] = float(row["entry_time"])
+            self.state["decided"][key] = float(row["decision_time"])
             prediction = self._score(key, symbol, int(set_id), row, now)
             if prediction is not None:
                 chosen.append((prediction, key, symbol, row))
@@ -493,8 +512,12 @@ class LiveBanca:
             if now >= position["day_end"] - DAY_END_MARGIN:
                 await self._close(key, position, "fim do dia")
 
-    async def run_cycle(self, start: float) -> None:
+    async def run_cycle(self, start: float, mark: float) -> bool:
+        """One pass of the pipeline; False, without deciding anything, while the CLI has not yet served the minute
+        that closed the bars of `mark` (tried again on the next tick, for up to FRESH_WAIT_SECONDS)."""
         await asyncio.to_thread(self.extend_tails, start)
+        if max(self.last.values()) < mark - 60 and start < mark + FRESH_WAIT_SECONDS:
+            return False
         await self.refresh_market()
         pending = await self.cycle_markets(start)
         if not self.paused():
@@ -504,6 +527,7 @@ class LiveBanca:
         self.state["cycle"] = {"at": time.time(), "seconds": time.time() - start, "candidates": len(pending),
                                "last_minute": max(self.last.values())}
         self.save()
+        return True
 
     async def sync(self) -> None:
         """Positions the server closed on its own (stop, target) are journaled."""
@@ -580,8 +604,8 @@ async def loop() -> int:
                 await runner.enforce_day_end(time.time())
                 if time.time() >= cycle_at:
                     try:
-                        await runner.run_cycle(time.time())
-                        cycle_at = next_cycle(time.time())
+                        if await runner.run_cycle(time.time(), cycle_at - CYCLE_OFFSET):
+                            cycle_at = next_cycle(time.time())
                     except (VenueUnavailable, OrderRejected):
                         raise  # the session logs in again by itself: the cycle is retried on the next tick
                     except Exception:

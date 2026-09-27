@@ -128,12 +128,11 @@ def test_pending_since_keeps_only_the_recent_entries() -> None:
     assert len(recent) == int((everything["entry_time"] >= since).sum())
 
 
-def test_the_cycle_runs_65_seconds_after_each_five_minute_mark() -> None:
-    mark = pd.Timestamp("2026-09-28 14:05", tz="UTC").timestamp()
-    assert live.next_cycle(mark) == mark + 65
-    assert live.next_cycle(mark + 65) == mark + 365
-    assert live.next_cycle(mark - 1) == mark + 65  # 14:04:59 -> 14:06:05 (14:01:05 has passed)
-    assert live.next_cycle(mark + 64) == mark + 65
+def test_the_cycle_runs_just_after_each_five_minute_mark() -> None:
+    mark, offset = pd.Timestamp("2026-09-28 14:05", tz="UTC").timestamp(), live.CYCLE_OFFSET
+    assert live.next_cycle(mark) == mark + offset
+    assert live.next_cycle(mark + offset) == mark + 300 + offset
+    assert live.next_cycle(mark - 1) == mark + offset  # 14:04:59 -> 14:05:08 (14:00:08 has passed)
 
 
 def test_the_stop_is_worth_more_as_the_prediction_rises() -> None:
@@ -207,7 +206,36 @@ def test_fresh_candidates_are_opened_most_confident_first() -> None:
 
     runner._open = record
     entry = pd.Timestamp("2026-09-28 14:05", tz="UTC").timestamp()  # 10:05 New York: the day has room left
-    pending = pd.DataFrame({"symbol": list(scores), "set_id": 3, "entry_time": entry, "valid": True})
+    pending = pd.DataFrame({"symbol": list(scores), "set_id": 3, "entry_time": entry, "decision_time": entry,
+                            "valid": True})
     asyncio.run(runner.decide(pending, entry + 60))
     assert opened == [("GBPUSD", 0.03), ("USDJPY", 0.02), ("EURUSD", 0.01)]
     assert len(runner.state["decided"]) == 4  # the refused one is decided too: never scored again
+
+
+def test_the_stand_in_minute_shows_the_same_candidates_as_the_real_one() -> None:
+    """At a bar close, the stand-in for the minute now running must yield the entries, sides, decision times and
+    every feature the real next minute will: the features only read the signal bar and earlier."""
+    m1 = random_walk(days=60)
+    cuts = [k for k in range(len(m1) - 3 * 1440, len(m1) - 1, 1) if m1[k, 0] % 300 == 0][::7]
+    compared = 0
+    for k in cuts:
+        at = m1[k, 0]
+        early = live.pending_entries("EURUSD", live.with_stand_in(m1[:k], at), since=at)
+        real = live.pending_entries("EURUSD", m1[:k + 1], since=at)
+        early, real = (f[f["entry_time"] == at].sort_values("set_id").reset_index(drop=True) if len(f) else None
+                       for f in (early, real))
+        if real is None or not len(real):
+            assert early is None or not len(early)
+            continue
+        pd.testing.assert_frame_equal(early, real)
+        compared += len(real)
+    assert compared >= 15  # the check is not vacuous (20 candidates at ~120 bar closes)
+
+
+def test_no_stand_in_when_the_market_is_not_live_or_the_minute_is_already_there() -> None:
+    m1 = random_walk(days=2)
+    last = m1[-1, 0]
+    assert len(live.with_stand_in(m1, last + 60)) == len(m1) + 1
+    assert len(live.with_stand_in(m1, last + 301 + 60)) == len(m1)  # no tick in the whole bar: the market is shut
+    assert len(live.with_stand_in(m1, last)) == len(m1)  # that minute is already in the store

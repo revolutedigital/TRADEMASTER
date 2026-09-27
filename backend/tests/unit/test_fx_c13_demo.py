@@ -2,6 +2,8 @@
 research trade_rows/add_recent, the FX-day end lands on 17:00 New York, and the live M1 store trims a bar still
 forming."""
 
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -95,6 +97,68 @@ def test_parse_bars_drops_the_bar_still_forming() -> None:
     bars = live.parse_bars(payload, now)
     assert len(bars) == 1
     assert bars[0, 0] == pd.Timestamp("2026-01-15T11:58:00", tz="UTC").timestamp()
+
+
+def test_an_entry_after_a_data_hole_is_not_valid() -> None:
+    """manage() refuses an entry minute more than 5 minutes after the signal bar; pending_entries must mark it so, or
+    it would sit as the earliest 'fresh' candidate and hide the valid ones after it."""
+    m1 = random_walk(days=40)
+    pending = live.pending_entries("EURUSD", m1)
+    holed = m1.copy()
+    target = pending.iloc[len(pending) // 2]
+    k = int(np.searchsorted(m1[:, 0], target["entry_time"]))
+    holed[k:, 0] += 600  # the entry minute now comes 11 minutes after the signal bar's last minute
+    again = live.pending_entries("EURUSD", holed)
+    moved = again[(again["set_id"] == target["set_id"]) & (again["entry_time"] == target["entry_time"] + 600)]
+    assert len(moved) == 1 and not bool(moved["valid"].iloc[0])
+    assert pending["valid"].mean() > 0.95  # a clean series: only entries across the 17:00 rollover are refused
+
+
+def test_leaves_room_is_managements_minutes_left_rule() -> None:
+    end = pd.Timestamp("2026-01-15 22:00", tz="UTC").timestamp()  # 17:00 New York
+    assert live.leaves_room(end - 14 * 60)
+    assert not live.leaves_room(end - 13 * 60)
+
+
+def test_pending_since_keeps_only_the_recent_entries() -> None:
+    m1 = random_walk(days=40)
+    since = m1[-1, 0] - 2 * 86400
+    everything, recent = live.pending_entries("EURUSD", m1), live.pending_entries("EURUSD", m1, since=since)
+    assert len(recent) and (recent["entry_time"] >= since).all()
+    assert len(recent) == int((everything["entry_time"] >= since).sum())
+
+
+def test_open_risk_adds_the_stops_of_open_positions() -> None:
+    assert live.open_risk({}) == 0.0
+    assert live.open_risk({"a": {"risk_usd": 9.5}, "b": {"risk_usd": 6.0}, "c": {}}) == pytest.approx(15.5)
+
+
+class FakeCandles:
+    """Serves one bar per minute on weekdays and nothing on Saturday, like the demo's CLI."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def send(self, command: str, timeout: float = 30.0) -> str:
+        self.calls += 1
+        _, _, _, frm, to = command.split()
+        start, end = pd.Timestamp(frm).timestamp(), pd.Timestamp(to).timestamp()
+        bars = [{"timestamp": pd.Timestamp(t, unit="s", tz="UTC").isoformat().replace("+00:00", "Z"), "open": 1.0,
+                 "high": 1.0, "low": 1.0, "close": 1.0}
+                for t in np.arange(start, end + 1, 60) if pd.Timestamp(t, unit="s").weekday() != 5]
+        return json.dumps({"bars": bars})
+
+
+def test_fetch_since_walks_chunks_across_an_empty_weekend() -> None:
+    session = FakeCandles()
+    last = pd.Timestamp("2026-09-25 20:00", tz="UTC").timestamp()  # Friday
+    now = pd.Timestamp("2026-09-27 01:00:30", tz="UTC").timestamp()  # Sunday
+    bars = live.fetch_since(session, "EURUSD", last, now)
+    friday = pd.Timestamp("2026-09-26", tz="UTC").timestamp()
+    assert bars[0, 0] == last + 60 and (np.diff(bars[:, 0]) > 0).all()
+    assert (bars[:, 0] < friday).sum() == 239  # 20:01 to 23:59
+    assert bars[-1, 0] == pd.Timestamp("2026-09-27 00:59", tz="UTC").timestamp()  # the last closed minute
+    assert session.calls <= 4
 
 
 def test_symbol_universe_matches_the_manifest() -> None:

@@ -189,3 +189,25 @@ def test_symbol_universe_matches_the_manifest() -> None:
     universe = live.symbol_universe()
     assert 20 <= len(universe) <= 45
     assert len(universe) == len(set(universe))
+
+
+def test_fresh_candidates_are_opened_most_confident_first() -> None:
+    import asyncio
+
+    runner = live.LiveBanca.__new__(live.LiveBanca)
+    runner.pool = pd.DataFrame(columns=live.POOL_COLUMNS)
+    runner.state = {"decided": {}, "positions": {}}
+    runner.save = lambda: None
+    scores = {"EURUSD": 0.06, "GBPUSD": 0.20, "USDJPY": 0.09, "AUDUSD": 0.01}
+    runner._score = lambda key, symbol, set_id, row, now: scores[symbol] if scores[symbol] > 0.05 else None
+    opened = []
+
+    async def record(key, symbol, row, risk):
+        opened.append((symbol, risk))
+
+    runner._open = record
+    entry = pd.Timestamp("2026-09-28 14:05", tz="UTC").timestamp()  # 10:05 New York: the day has room left
+    pending = pd.DataFrame({"symbol": list(scores), "set_id": 3, "entry_time": entry, "valid": True})
+    asyncio.run(runner.decide(pending, entry + 60))
+    assert opened == [("GBPUSD", 0.03), ("USDJPY", 0.02), ("EURUSD", 0.01)]
+    assert len(runner.state["decided"]) == 4  # the refused one is decided too: never scored again

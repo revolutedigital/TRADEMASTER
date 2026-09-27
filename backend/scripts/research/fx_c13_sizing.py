@@ -51,14 +51,14 @@ DD_CAP = 0.25
 
 
 @njit(cache=True)
-def simulate(entry_t, exit_t, net, per_unit, min_vol, step, risk, day, asset_a, sign_a, asset_b, sign_b, n_assets,
-             heat, currency_cap, brake, start):
-    """Sized on the starting balance (no compounding); skipped when the minimum volume risks more than the trade's
-    budget, when the open stops would pass `heat` of the balance, when one asset's open stops in one direction would
-    pass `currency_cap` of it, or once the FX day's realized result has reached -`brake` of the day's first balance.
-    Entries sorted by time; `asset_b` < 0 for an index. Returns final balance, worst drawdown of the realized
-    balance, worst drawdown had every open stop been hit at once, trades taken, skipped for the minimum volume, for
-    the heat cap, for the currency cap, for the daily brake."""
+def ledger(entry_t, exit_t, net, per_unit, min_vol, step, risk, day, asset_a, sign_a, asset_b, sign_b, n_assets,
+           heat, currency_cap, brake, start, tolerance=1.0):
+    """Sized on the starting balance (no compounding); taken at the minimum volume when that risks at most
+    `tolerance` times the trade's budget, else skipped; skipped when the open stops would pass `heat` of the balance,
+    when one asset's open stops in one direction would pass `currency_cap` of it, or once the FX day's realized
+    result has reached -`brake` of the day's first balance. Entries sorted by time (ties in the order they come:
+    the one first gets the room); `asset_b` < 0 for an index. Returns each trade's result in US$ (0 if refused), then
+    what `simulate` returns."""
     n = entry_t.shape[0]
     order = np.argsort(exit_t)
     pnl = np.zeros(n)
@@ -90,8 +90,10 @@ def simulate(entry_t, exit_t, net, per_unit, min_vol, step, risk, day, asset_a, 
             continue
         volume = np.floor(risk[i] * start / per_unit[i] / step[i] + 1e-9) * step[i]
         if volume < min_vol[i] - 1e-12:
-            n_small += 1
-            continue
+            if min_vol[i] * per_unit[i] > tolerance * risk[i] * start:
+                n_small += 1
+                continue
+            volume = min_vol[i]
         stop_usd = volume * per_unit[i]
         if open_risk + stop_usd > heat * balance:
             n_heat += 1
@@ -110,7 +112,18 @@ def simulate(entry_t, exit_t, net, per_unit, min_vol, step, risk, day, asset_a, 
         if b >= 0:
             exposure[b] += sign_b[i] * stop_usd
         worst_open = max(worst_open, (peak - (balance - open_risk)) / peak)
-    return balance, worst, worst_open, n_taken, n_small, n_heat, n_currency, n_brake
+    return pnl, balance, worst, worst_open, n_taken, n_small, n_heat, n_currency, n_brake
+
+
+@njit(cache=True)
+def simulate(entry_t, exit_t, net, per_unit, min_vol, step, risk, day, asset_a, sign_a, asset_b, sign_b, n_assets,
+             heat, currency_cap, brake, start, tolerance=1.0):
+    """`ledger` without the per-trade results: final balance, worst drawdown of the realized balance, worst drawdown
+    had every open stop been hit at once, trades taken, skipped for the minimum volume, the heat cap, the currency
+    cap, the daily brake."""
+    result = ledger(entry_t, exit_t, net, per_unit, min_vol, step, risk, day, asset_a, sign_a, asset_b, sign_b,
+                    n_assets, heat, currency_cap, brake, start, tolerance)
+    return result[1:]
 
 
 def trades() -> pd.DataFrame:
@@ -142,59 +155,81 @@ def risk_of(pred: np.ndarray, scheme: tuple) -> np.ndarray:
     return risk
 
 
-def run(frame: pd.DataFrame) -> pd.DataFrame:
-    side = frame["side"].to_numpy(dtype=np.float64)
-    arrays = {
-        "per_unit": frame["per_unit"].to_numpy(np.float64), "min_vol": frame["min_vol"].to_numpy(np.float64),
-        "step": frame["step"].to_numpy(np.float64), "day": frame["fx_day"].to_numpy(np.int64),
-        "asset_a": frame["asset_a"].to_numpy(np.int64), "asset_b": frame["asset_b"].to_numpy(np.int64),
-        "sign_a": side, "sign_b": -side}
+def run(frame: pd.DataFrame, schemes: dict = SCHEMES, heats=HEATS, caps=CURRENCY_CAPS, brakes=DAILY_BRAKES,
+        tolerances=(1.0,), priorities=(False,)) -> pd.DataFrame:
+    """Every combination of the rules, in every period. With `prioridade`, trades entering at the same minute are
+    offered the room in order of the model's prediction, highest first (else in the order the data holds them)."""
     rows = []
-    for period in sweep.PERIODS:
-        start, end, years = sweep.period_bounds(period)
-        inside = ((frame["entry_time"] >= start) & (frame["entry_time"] < end)).to_numpy()
-        part = {k: v[inside] for k, v in arrays.items()}
-        times = [frame.loc[inside, c].to_numpy(np.float64) for c in ("entry_time", "exit_time")]
-        pred = frame.loc[inside, "pred"].to_numpy()
-        for name, scheme in SCHEMES.items():
-            risk = risk_of(pred, scheme)
-            keep = risk > 0
-            sub = {k: v[keep] for k, v in part.items()}
-            t = [x[keep] for x in times]
-            results = {c: frame.loc[inside, c].to_numpy(np.float64)[keep] for c in ("net", "stress")}
-            for heat in HEATS:
-                for cap in CURRENCY_CAPS:
-                    for brake in DAILY_BRAKES:
-                        args = (sub["per_unit"], sub["min_vol"], sub["step"], risk[keep], sub["day"], sub["asset_a"],
-                                sub["sign_a"], sub["asset_b"], sub["sign_b"], frame.attrs["n_assets"], heat, cap,
-                                brake, sweep.START_USD)
-                        final, worst, worst_open, taken, small, capped, currency, braked = simulate(
-                            *t, results["net"], *args)
-                        stress = simulate(*t, results["stress"], *args)[0]
-                        rows.append({"periodo": period, "esquema": name, "teto_aberto": heat, "teto_moeda": cap,
-                                     "freio_dia": brake, "lucro_ano_usd": (final - sweep.START_USD) / years,
-                                     "lucro_ano_estresse_usd": (stress - sweep.START_USD) / years,
-                                     "pior_queda": worst, "pior_queda_todos_stops": worst_open, "operacoes": taken,
-                                     "puladas_volume": small, "puladas_teto": capped, "puladas_moeda": currency,
-                                     "puladas_freio": braked})
+    for priority in priorities:
+        ordered = frame.sort_values(["entry_time", "pred"], ascending=[True, False], kind="stable") \
+            if priority else frame
+        side = ordered["side"].to_numpy(dtype=np.float64)
+        arrays = {
+            "per_unit": ordered["per_unit"].to_numpy(np.float64), "min_vol": ordered["min_vol"].to_numpy(np.float64),
+            "step": ordered["step"].to_numpy(np.float64), "day": ordered["fx_day"].to_numpy(np.int64),
+            "asset_a": ordered["asset_a"].to_numpy(np.int64), "asset_b": ordered["asset_b"].to_numpy(np.int64),
+            "sign_a": side, "sign_b": -side}
+        for period in sweep.PERIODS:
+            start, end, years = sweep.period_bounds(period)
+            inside = ((ordered["entry_time"] >= start) & (ordered["entry_time"] < end)).to_numpy()
+            part = {k: v[inside] for k, v in arrays.items()}
+            times = [ordered.loc[inside, c].to_numpy(np.float64) for c in ("entry_time", "exit_time")]
+            pred = ordered.loc[inside, "pred"].to_numpy()
+            for name, scheme in schemes.items():
+                risk = risk_of(pred, scheme)
+                keep = risk > 0
+                sub = {k: v[keep] for k, v in part.items()}
+                t = [x[keep] for x in times]
+                results = {c: ordered.loc[inside, c].to_numpy(np.float64)[keep] for c in ("net", "stress")}
+                for heat in heats:
+                    for cap in caps:
+                        for brake in brakes:
+                            for tolerance in tolerances:
+                                args = (sub["per_unit"], sub["min_vol"], sub["step"], risk[keep], sub["day"],
+                                        sub["asset_a"], sub["sign_a"], sub["asset_b"], sub["sign_b"],
+                                        frame.attrs["n_assets"], heat, cap, brake, sweep.START_USD, tolerance)
+                                final, worst, worst_open, taken, small, capped, currency, braked = simulate(
+                                    *t, results["net"], *args)
+                                stress = simulate(*t, results["stress"], *args)[0]
+                                rows.append({
+                                    "periodo": period, "esquema": name, "teto_aberto": heat, "teto_moeda": cap,
+                                    "freio_dia": brake, "prioridade": priority, "tolerancia": tolerance,
+                                    "lucro_ano_usd": (final - sweep.START_USD) / years,
+                                    "lucro_ano_estresse_usd": (stress - sweep.START_USD) / years,
+                                    "pior_queda": worst, "pior_queda_todos_stops": worst_open, "operacoes": taken,
+                                    "puladas_volume": small, "puladas_teto": capped, "puladas_moeda": currency,
+                                    "puladas_freio": braked})
     return pd.DataFrame(rows)
 
 
 RULES = ["esquema", "teto_aberto", "teto_moeda", "freio_dia"]
+RULES_2 = [*RULES, "prioridade", "tolerancia"]
+LIVE = ("1% / 2% / 3% pela confiança", 0.075, 0.03, 0.05, False, 1.0)  # the rules running since 2026-09-27
+REFINE = {"esquema": ["1% / 2% / 3% pela confiança", "1% / 1,5% / 2% pela confiança"], "teto_aberto": list(HEATS),
+          "teto_moeda": list(CURRENCY_CAPS), "freio_dia": [np.inf, 0.05], "prioridade": [False, True],
+          "tolerancia": [1.0, 1.5, 2.0]}
+REPORT_2, RESULTS_2 = c3.DOCS / "c13-a-sizing-2.md", banca.LAB / "sizing2_money.parquet"
 
 
-def honest(money: pd.DataFrame, size: int = 12) -> pd.DataFrame:
+def _matches(money: pd.DataFrame, setting: dict) -> np.ndarray:
+    mask = np.ones(len(money), dtype=bool)
+    for k, v in setting.items():
+        column = money[k].to_numpy()
+        mask &= np.isinf(column.astype(float)) if isinstance(v, float) and np.isinf(v) else column == v
+    return mask
+
+
+def honest(money: pd.DataFrame, rules: list[str] = RULES, current: tuple = CURRENT, size: int = 12) -> pd.DataFrame:
     """The `size` rules that made the most in 2016-2022 at double cost within DD_CAP of worst drawdown, beside
-    their own 2023-2026, then the live rules for reference."""
+    their own 2023-2026, then the reference rules."""
     early = money[(money["periodo"] == "2016-2022") & (money["pior_queda_todos_stops"] <= DD_CAP)]
-    late = money[money["periodo"] == "2023-2026"].set_index(RULES)
+    late = money[money["periodo"] == "2023-2026"].set_index(rules)
     picks = list(early.sort_values("lucro_ano_estresse_usd", ascending=False).head(size).iterrows())
-    current = money[(money["periodo"] == "2016-2022") & (money["esquema"] == CURRENT[0]) &
-                    (money["teto_aberto"] == CURRENT[1]) & np.isinf(money["teto_moeda"]) & np.isinf(money["freio_dia"])]
+    reference = money[(money["periodo"] == "2016-2022") & _matches(money, dict(zip(rules, current)))]
     rows = []
-    for label, (_, best) in [(f"{i + 1}ª", p) for i, p in enumerate(picks)] + [("a de hoje", (0, current.iloc[0]))]:
-        after = late.loc[tuple(best[k] for k in RULES)]
-        rows.append({"posição": label, **{k: best[k] for k in RULES},
+    for label, (_, best) in [(f"{i + 1}ª", p) for i, p in enumerate(picks)] + [("referência", (0, reference.iloc[0]))]:
+        after = late.loc[tuple(best[k] for k in rules)]
+        rows.append({"posição": label, **{k: best[k] for k in rules},
                      "16-22_ano": best["lucro_ano_usd"], "16-22_estresse": best["lucro_ano_estresse_usd"],
                      "16-22_queda": best["pior_queda_todos_stops"],
                      "23-26_ano": after["lucro_ano_usd"], "23-26_estresse": after["lucro_ano_estresse_usd"],
@@ -202,19 +237,16 @@ def honest(money: pd.DataFrame, size: int = 12) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def one_at_a_time(money: pd.DataFrame) -> pd.DataFrame:
-    """Each rule changed alone from the live ones, both periods."""
-    base = dict(zip(RULES, CURRENT))
+def one_at_a_time(money: pd.DataFrame, rules: list[str] = RULES, current: tuple = CURRENT,
+                  grid: dict | None = None) -> pd.DataFrame:
+    """Each rule changed alone from the reference ones, in 2016-2022 and 2023-2026."""
+    grid = grid or {"esquema": list(SCHEMES), "teto_aberto": HEATS, "teto_moeda": CURRENCY_CAPS,
+                    "freio_dia": DAILY_BRAKES}
+    base = dict(zip(rules, current))
     rows = []
-    for rule, values in (("esquema", list(SCHEMES)), ("teto_aberto", HEATS), ("teto_moeda", CURRENCY_CAPS),
-                         ("freio_dia", DAILY_BRAKES)):
+    for rule, values in grid.items():
         for value in values:
-            setting = base | {rule: value}
-            mask = np.ones(len(money), dtype=bool)
-            for k, v in setting.items():
-                mask &= (money[k] == v).to_numpy() if not (isinstance(v, float) and np.isinf(v)) else \
-                    np.isinf(money[k].to_numpy())
-            for _, row in money[mask].iterrows():
+            for _, row in money[_matches(money, base | {rule: value})].iterrows():
                 if row["periodo"] == "2016-2026":
                     continue
                 rows.append({"regra": rule, "valor": value, "periodo": row["periodo"],
@@ -223,8 +255,11 @@ def one_at_a_time(money: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows).sort_values(["regra", "periodo"], kind="stable")
 
 
+def _table(frame: pd.DataFrame) -> str:
+    return "```\n" + frame.to_string(index=False, float_format=lambda v: f"{v:,.4g}") + "\n```\n"
+
+
 def write_report(money: pd.DataFrame) -> str:
-    table = lambda frame: "```\n" + frame.to_string(index=False, float_format=lambda v: f"{v:,.4g}") + "\n```\n"  # noqa: E731
     text = (
         "# C13, frente A: regras de dinheiro (exploratório, não é teste pré-registrado)\n\n"
         "Entradas e saídas congeladas (as escolhas do walk-forward, stop 1 ATR, alvo 3R, fim do dia FX); só muda "
@@ -235,16 +270,43 @@ def write_report(money: pd.DataFrame) -> str:
         "no dia (inf = sem freio; as posições abertas não são fechadas).\n\n"
         "**Isto não aprova nada.** As regras são escolhidas só com 2016-2022 e lidas em 2023-2026.\n\n"
         f"## 1. Uma regra de cada vez, a partir da de hoje ({CURRENT[0]}, teto aberto {CURRENT[1]:.0%})\n\n"
-        f"{table(one_at_a_time(money))}\n"
+        f"{_table(one_at_a_time(money))}\n"
         f"## 2. As 12 melhores de 2016-2022 (custo dobrado, queda ≤ {DD_CAP:.0%}), cada uma em 2023-2026\n\n"
-        f"{table(honest(money))}\n")
+        f"{_table(honest(money))}\n")
     REPORT.write_text(text, encoding="utf-8")
     return text
 
 
-def main() -> int:
+def write_report_2(money: pd.DataFrame) -> str:
+    text = (
+        "# C13, frente A: regras de dinheiro, rodada 2 (exploratório, não é teste pré-registrado)\n\n"
+        "Em volta das regras que rodam desde 2026-09-27 (1% / 2% / 3% pela confiança, stops abertos até 7,5%, 3% por "
+        "moeda, freio a -5% do dia). Duas regras novas: `prioridade` — operações que entram no mesmo minuto recebem a "
+        "vaga do teto em ordem da previsão do modelo, maior primeiro (sem ela, na ordem em que chegam); "
+        "`tolerancia` — quando o volume mínimo da corretora arrisca mais que o orçamento da operação, entra com o "
+        "mínimo se ele arriscar até essa vez o orçamento (1 = pula). Mesmas medidas da rodada 1 "
+        "(docs/forex/c13-a-sizing.md).\n\n"
+        "**Isto não aprova nada.** Escolhidas só com 2016-2022 e lidas em 2023-2026.\n\n"
+        "## 1. Uma regra de cada vez, a partir das de hoje\n\n"
+        f"{_table(one_at_a_time(money, RULES_2, LIVE, REFINE))}\n"
+        f"## 2. As 12 melhores de 2016-2022 (custo dobrado, queda ≤ {DD_CAP:.0%}), cada uma em 2023-2026; referência = "
+        "as de hoje\n\n"
+        f"{_table(honest(money, RULES_2, LIVE))}\n")
+    REPORT_2.write_text(text, encoding="utf-8")
+    return text
+
+
+def main(argv: list[str] | None = None) -> int:
+    command = (argv or sys.argv[1:] or ["run"])[0]
     frame = trades()
     sys.stdout.write(f"{len(frame):,} trades, {frame.attrs['n_assets']} assets\n")
+    if command == "refine":
+        schemes = {name: SCHEMES[name] for name in REFINE["esquema"]}
+        money = run(frame, schemes, REFINE["teto_aberto"], REFINE["teto_moeda"], REFINE["freio_dia"],
+                    REFINE["tolerancia"], REFINE["prioridade"])
+        money.to_parquet(RESULTS_2)
+        sys.stdout.write(write_report_2(money))
+        return 0
     money = run(frame)
     money.to_parquet(RESULTS)
     sys.stdout.write(write_report(money))

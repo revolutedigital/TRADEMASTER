@@ -30,7 +30,8 @@ each stop is worth 1%, 2% or 3% of equity as the model's prediction passes 0.05,
 positions add up to at most 7.5% of equity, and to at most 3% on one currency in one direction. At US$ 1,000 the 0.5%
 of the research skipped ~77% of the model's picks, because one minimum FX volume (1,000 units) is worth more than
 US$ 5 per daily ATR; without a cap on the open stops, a burst of simultaneous picks put several times the balance at
-risk, and without one per currency such a burst is one bet on the dollar.
+risk, and without one per currency such a burst is one bet on the dollar. When the candidates of a cycle compete
+for that room, the most confident go first (docs/forex/c13-a-sizing-2.md).
 
 Declared deviations from the backtest: the store's live tail comes from the CLI's own quotes (composite/mid) while
 the HistData history is bid-only; the entry is a market order when the cycle finds the candidate (up to about two
@@ -391,12 +392,14 @@ class LiveBanca:
         return pd.concat(pending, ignore_index=True) if pending else pd.DataFrame()
 
     async def decide(self, pending: pd.DataFrame, now: float) -> None:
+        """Every fresh candidate is scored first; the ones to take then get the room under the caps in order of the
+        model's prediction, highest first (docs/forex/c13-a-sizing-2.md: better than first come, first served)."""
         if not len(pending):
             return
         until = resolved_until(self.pool)
         pending = pending[pending["valid"]]
         pending = pending[[leaves_room(t) for t in pending["entry_time"]]]
-        changed = False
+        chosen = []
         for (symbol, set_id), rows in pending.groupby(["symbol", "set_id"]):
             fresh = rows[rows["entry_time"] > until.get((symbol, int(set_id)), -np.inf)].sort_values("entry_time")
             if not len(fresh):
@@ -406,12 +409,16 @@ class LiveBanca:
             if self.state["decided"].get(key) == row["entry_time"]:
                 continue
             self.state["decided"][key] = float(row["entry_time"])
-            changed = True
-            await self._decide_one(key, symbol, int(set_id), row, now)
-        if changed:
+            prediction = self._score(key, symbol, int(set_id), row, now)
+            if prediction is not None:
+                chosen.append((prediction, key, symbol, row))
+        for prediction, key, symbol, row in sorted(chosen, key=lambda item: -item[0]):
+            await self._open(key, symbol, row, risk_for(prediction))
+        if len(pending):
             self.save()
 
-    async def _decide_one(self, key: str, symbol: str, set_id: int, row: pd.Series, now: float) -> None:
+    def _score(self, key: str, symbol: str, set_id: int, row: pd.Series, now: float) -> float | None:
+        """The model's prediction for a fresh candidate, logged; None unless it is one to take."""
         stale = now - row["entry_time"] > MAX_LIVE_DELAY_SECONDS
         features = row[[f for f in banca.FEATURES if f not in banca.RECENT]].to_dict()
         features |= recent_features(self.pool, symbol, set_id, row["decision_time"])
@@ -421,8 +428,7 @@ class LiveBanca:
         self.log("signal", key=key, symbol=symbol, set_id=set_id, side=int(row["side"]), prediction=prediction,
                  threshold=self.threshold, take=take, stale=stale, delay=now - row["entry_time"],
                  model_sha=self.model_sha)
-        if take:
-            await self._open(key, symbol, row, risk_for(prediction))
+        return prediction if take else None
 
     async def _open(self, key: str, symbol: str, row: pd.Series, risk: float) -> None:
         if key in self.state["positions"]:

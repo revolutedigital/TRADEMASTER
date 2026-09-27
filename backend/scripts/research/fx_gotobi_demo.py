@@ -150,7 +150,7 @@ class Runner:
 async def loop() -> int:
     DATA.mkdir(parents=True, exist_ok=True)
     demo.remove_container(NAME)
-    session = PtySession(demo.cli_argv(NAME), password=demo.password())
+    session = demo.cli_session(NAME)
     try:
         await asyncio.to_thread(session.start)
         runner = Runner(session)

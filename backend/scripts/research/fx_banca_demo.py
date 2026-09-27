@@ -473,7 +473,7 @@ class Banca:
 async def loop() -> int:
     DATA.mkdir(parents=True, exist_ok=True)
     demo.remove_container("BANCA")
-    session = PtySession(demo.cli_argv("BANCA"), password=demo.password())
+    session = demo.cli_session("BANCA")
     try:
         await asyncio.to_thread(session.start)
         banca = Banca(session)
@@ -506,7 +506,10 @@ async def loop() -> int:
                     banca.log("error", message=str(error)[:300])
                 last_hour = hour
             if now - last_sync >= SYNC_SECONDS:
-                await banca.sync()
+                try:  # a dropped session raises once here; the next command logs in again
+                    await banca.sync()
+                except (VenueUnavailable, OrderRejected) as error:
+                    banca.log("error", message=str(error)[:300])
                 last_sync = now
             await asyncio.sleep(5)
     finally:

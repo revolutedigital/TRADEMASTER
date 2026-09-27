@@ -63,6 +63,12 @@ def password() -> str:
     return PASSWORD_FILE.read_text().rstrip("\r\n")
 
 
+def cli_session(strategy: str) -> PtySession:
+    """A session on the demo account that logs in again by itself when the broker drops it (it dropped every
+    runner at once on 2026-09-26, around 22:00 UTC), removing the old container first."""
+    return PtySession(cli_argv(strategy), password=password(), on_restart=lambda: remove_container(strategy))
+
+
 def remove_container(strategy: str) -> None:
     """A docker client killed in tty mode leaves its container running: remove it by name (no error if none)."""
     subprocess.run(  # noqa: S603

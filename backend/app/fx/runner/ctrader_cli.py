@@ -69,23 +69,52 @@ class PtySession:
 
     The password is typed into the CLI's own prompt, never given as an argument: an argument shows in
     every process listing of the host, for as long as the session lives.
+
+    A CLI that ends on its own (the broker dropped every session at once on 2026-09-26) or stops answering is
+    started again before the next command, after `on_restart` (e.g. removing a leftover container). The command
+    that was in flight when it ended still raises VenueUnavailable: it is never sent twice, since it may have
+    been an order the broker had already taken.
     """
 
-    def __init__(self, argv: Sequence[str], login_timeout: float = 90.0, password: str | None = None) -> None:
+    def __init__(self, argv: Sequence[str], login_timeout: float = 90.0, password: str | None = None,
+                 on_restart: Callable[[], None] | None = None) -> None:
         self._argv, self._login_timeout, self._password = list(argv), login_timeout, password
+        self._on_restart = on_restart
         self._lock = threading.Lock()
         self._pid = 0
         self._fd = -1
+        self._reaped = False  # the child's exit was collected: its pid may belong to another process now
+        self._broken = False  # it ended or stopped answering: the next command starts a new one
+        self._closed = False  # closed by its owner: stays closed
 
     def start(self) -> None:
         pid, fd = pty.fork()
         if pid == 0:  # child: become the CLI
             os.execvp(self._argv[0], self._argv)  # noqa: S606
-        self._pid, self._fd = pid, fd
+        self._pid, self._fd, self._reaped, self._closed = pid, fd, False, False
         if self._password is not None:
             self._read_until_prompt(self._login_timeout, PASSWORD_PROMPT)
             os.write(self._fd, (self._password + "\r").encode())
         self._read_until_prompt(self._login_timeout)
+        self._broken = False
+
+    def _ended(self) -> bool:
+        if self._broken or self._reaped:
+            return True
+        try:
+            if os.waitpid(self._pid, os.WNOHANG) == (0, 0):
+                return False
+        except ChildProcessError:
+            pass
+        self._reaped = True
+        return True
+
+    def _restart(self) -> None:
+        self._broken = True
+        self._terminate()
+        if self._on_restart is not None:
+            self._on_restart()
+        self.start()
 
     def _read_until_prompt(self, timeout: float, prompt: re.Pattern[str] = PROMPT, want_json: bool = False) -> str:
         """Read until the CLI shows its prompt. The echo of a command and the prompt it redraws arrive before
@@ -112,25 +141,46 @@ class PtySession:
 
     def send(self, command: str, timeout: float = 30.0) -> str:
         with self._lock:
+            if self._closed or not self._pid:
+                raise VenueUnavailable("the CLI session is closed")
+            if self._ended():
+                self._restart()  # a failed login raises here, and the next command tries again
             try:
                 os.write(self._fd, (command + "\r").encode())
+                return self._read_until_prompt(timeout, want_json=True)
             except OSError as error:
-                raise VenueUnavailable("the CLI session is closed") from error
-            return self._read_until_prompt(timeout, want_json=True)
+                self._broken = True
+                raise VenueUnavailable("the CLI session ended") from error
+            except VenueUnavailable:
+                self._broken = True  # ended, or silent past the timeout: its next answer could belong to this one
+                raise
 
     def close(self) -> None:
+        self._closed = True
+        self._terminate()
+
+    def _terminate(self) -> None:
+        if not self._pid:
+            return
         try:
             os.write(self._fd, b"quit\r")
             time.sleep(0.5)
         except OSError:
             pass
+        if not self._reaped:
+            try:
+                os.kill(self._pid, signal.SIGTERM)
+                if not self._reaped_within(TERMINATE_GRACE_SECONDS):
+                    os.kill(self._pid, signal.SIGKILL)  # the docker client catches SIGTERM and may never die of it
+                    os.waitpid(self._pid, 0)
+            except (OSError, ChildProcessError):
+                pass
+            self._reaped = True
         try:
-            os.kill(self._pid, signal.SIGTERM)
-            if not self._reaped_within(TERMINATE_GRACE_SECONDS):
-                os.kill(self._pid, signal.SIGKILL)  # the docker client catches SIGTERM and may never die of it
-                os.waitpid(self._pid, 0)
-        except (OSError, ChildProcessError):
+            os.close(self._fd)
+        except OSError:
             pass
+        self._fd = -1  # its number may be handed to another file: never close it twice
 
     def _reaped_within(self, seconds: float) -> bool:
         deadline = time.monotonic() + seconds

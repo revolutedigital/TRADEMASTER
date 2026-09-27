@@ -1,6 +1,8 @@
 """The persistent CLI session and the venue built on it, against a fake CLI (no docker, no broker)."""
 
 import json
+import os
+import signal
 import sys
 import time
 from datetime import UTC, datetime
@@ -19,6 +21,8 @@ for line in sys.stdin:
     command = line.strip()
     if command == "quit":
         break
+    if command == "die":
+        sys.exit(0)
     if command == "price EURUSD":
         body = {"symbolName": "EURUSD", "bid": 1.1, "ask": 1.10002, "spread": 0.2}
     elif command == "slow":
@@ -66,6 +70,39 @@ def test_a_command_that_never_answers_raises_and_a_dead_session_raises(session) 
     session.close()
     with pytest.raises(VenueUnavailable):
         session.send("price EURUSD", timeout=1)
+
+
+def test_a_cli_that_ends_mid_command_raises_once_and_the_next_command_starts_a_new_one() -> None:
+    restarts = []
+    dropped = PtySession([sys.executable, "-c", FAKE_CLI], login_timeout=10, on_restart=lambda: restarts.append(1))
+    dropped.start()
+    with pytest.raises(VenueUnavailable, match="ended"):
+        dropped.send("die", timeout=5)  # never retried: it could have been an order the broker took
+    assert json_of(dropped.send("price EURUSD", timeout=5))["bid"] == 1.1
+    assert restarts == [1]
+    dropped.close()
+
+
+def test_a_cli_that_ended_while_idle_is_started_again_before_the_next_command() -> None:
+    restarts = []
+    idle = PtySession([sys.executable, "-c", FAKE_CLI], login_timeout=10, on_restart=lambda: restarts.append(1))
+    idle.start()
+    os.kill(idle._pid, signal.SIGKILL)  # the broker drops the session while nothing is being asked
+    time.sleep(0.3)
+    assert json_of(idle.send("something", timeout=5)) == {"echo": "something"}
+    assert json_of(idle.send("more", timeout=5)) == {"echo": "more"}
+    assert restarts == [1]
+    idle.close()
+
+
+def test_a_session_closed_by_its_owner_is_not_started_again() -> None:
+    restarts = []
+    owned = PtySession([sys.executable, "-c", FAKE_CLI], login_timeout=10, on_restart=lambda: restarts.append(1))
+    owned.start()
+    owned.close()
+    with pytest.raises(VenueUnavailable, match="closed"):
+        owned.send("price EURUSD", timeout=1)
+    assert restarts == []
 
 
 def test_the_password_is_typed_at_the_prompt_and_never_given_in_the_arguments(monkeypatch) -> None:

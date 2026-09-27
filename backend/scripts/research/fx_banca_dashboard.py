@@ -52,7 +52,7 @@ class Broker:
     def _read(self) -> dict:
         if self._session is None:
             demo.remove_container("DASH")
-            self._session = PtySession(demo.cli_argv("DASH"), password=demo.password())
+            self._session = demo.cli_session("DASH")
             self._session.start()
         positions = json_of(self._session.send("positions", timeout=60)).get("positions", [])
         for symbol in {p["symbolName"] for p in positions}:  # a price request makes the session value the position

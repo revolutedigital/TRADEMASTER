@@ -42,7 +42,7 @@ def main() -> int:
         try:
             if session is None:
                 demo.remove_container(NAME)
-                session = PtySession(demo.cli_argv(NAME), password=demo.password())
+                session = demo.cli_session(NAME)
                 session.start()
             rows = cycle(session, symbols)
             with OUT.open("a", encoding="utf-8") as handle:

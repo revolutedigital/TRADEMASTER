@@ -34,7 +34,8 @@ DD_CAP = 0.25
 def c13_results() -> pd.DataFrame:
     """C13-A's trades under the live rules (priority by prediction): exit time and US$ result, per period."""
     frame = sizing.trades()
-    ordered = frame.sort_values(["entry_time", "pred"], ascending=[True, False], kind="stable")
+    ordered = frame.sort_values(["entry_time", "pred"], ascending=[True, False], kind="stable") \
+        if live.PRIORITY_BY_PREDICTION else frame
     rows = []
     for period in sweep.PERIODS:
         start, end, _ = sweep.period_bounds(period)
@@ -45,7 +46,8 @@ def c13_results() -> pd.DataFrame:
         common = (part["per_unit"].to_numpy(np.float64), part["min_vol"].to_numpy(np.float64),
                   part["step"].to_numpy(np.float64), risk, part["fx_day"].to_numpy(np.int64),
                   part["asset_a"].to_numpy(np.int64), side, part["asset_b"].to_numpy(np.int64), -side,
-                  frame.attrs["n_assets"], live.MAX_OPEN_RISK, live.MAX_ASSET_RISK, live.DAILY_BRAKE, sweep.START_USD)
+                  frame.attrs["n_assets"], live.MAX_OPEN_RISK,
+                  np.inf if live.MAX_ASSET_RISK is None else live.MAX_ASSET_RISK, live.DAILY_BRAKE, sweep.START_USD)
         times = [part[c].to_numpy(np.float64) for c in ("entry_time", "exit_time")]
         for cost in ("net", "stress"):
             pnl = sizing.ledger(*times, part[cost].to_numpy(np.float64), *common)[0]
@@ -129,8 +131,8 @@ def write_report(table: pd.DataFrame) -> str:
     fmt = lambda frame: "```\n" + frame.to_string(index=False, float_format=lambda v: f"{v:,.4g}") + "\n```\n"  # noqa: E731
     text = (
         "# C13-A e Gotobi na mesma conta (exploratório, não é teste pré-registrado)\n\n"
-        "Conta de US$ 1.000, sem juros compostos. C13-A com as regras que rodam na demo (1% / 2% / 3% pela "
-        "confiança, stops abertos até 7,5%, 3% por moeda, freio a -5% do dia, prioridade pela confiança). Cada perna "
+        "Conta de US$ 1.000, sem juros compostos (tamanho e tetos sempre sobre os US$ 1.000). C13-A com as regras que "
+        "rodam na demo (1% por operação, stops abertos até 5%, freio a -5% do dia). Cada perna "
         "do Gotobi (configuração B, USDJPY) arrisca a fração indicada dos US$ 1.000 por ATR diário, em lotes "
         "inteiros de 1.000 unidades e nunca menos que um (o que o robô faz); `lote mínimo (hoje)` é o que roda "
         "hoje. Lucro por ano em US$; `queda`: a pior queda do saldo realizado da conta, com as duas juntas.\n\n"

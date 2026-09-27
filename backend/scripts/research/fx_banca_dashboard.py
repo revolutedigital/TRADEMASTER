@@ -141,7 +141,7 @@ def data(broker: Broker) -> dict:
         "pesquisa": [r | ({"resultado": c7} if r["rodada"] == "C7" else {}) for r in RESEARCH],
         "c13": {"dia": c13_state.get("guard", {}), "limite_fracao": c13.DAILY_STOP_FRACTION,
                 "freio_fracao": c13.DAILY_BRAKE, "riscos": [r for _, r in c13.RISK_BY_PREDICTION],
-                "teto_aberto": c13.MAX_OPEN_RISK, "teto_moeda": c13.MAX_ASSET_RISK, "ciclo": c13_state.get("cycle", {}),
+                "teto_aberto": c13.MAX_OPEN_RISK, "teto_moeda": c13.MAX_ASSET_RISK,  # None when off "ciclo": c13_state.get("cycle", {}),
                 "totais": {"sinais": len(c13_signals), "aceitos": sum(int(e["take"]) for e in c13_signals),
                            "abertas": len(c13_open)},
                 "abertas": c13_open,

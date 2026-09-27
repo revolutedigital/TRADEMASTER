@@ -170,9 +170,10 @@ def usd_per_quote(table: pd.DataFrame) -> np.ndarray:
 @njit(cache=True)
 def simulate(entry_t, exit_t, net, per_unit, min_vol, step, risk, force_min, heat, compound, start):
     """Each position gets the largest multiple of the step whose stop is worth at most `risk` of the base (the
-    realized balance at entry if `compound`, else the starting balance); when even the minimum is worth more, it is
-    skipped, or taken at the minimum if `force_min`. A position is also skipped when the stops already open plus its
-    own would pass `heat` of the balance. Results are realized at exit. Entries must come sorted by time.
+    realized balance at entry if `compound`, else the starting balance for good); when even the minimum is worth
+    more, it is skipped, or taken at the minimum if `force_min`. A position is also skipped when the stops already
+    open plus its own would pass `heat` of the same base (the first version measured the cap on the balance while
+    sizing on the start, which let an account that had grown hold ever more trades: its yearly profits were inflated). Results are realized at exit. Entries must come sorted by time.
     Returns: final balance; worst drawdown of the realized balance; worst drawdown had every open stop been hit at
     once; trades taken; skipped for the minimum volume; skipped for the heat cap; the most positions open at once;
     whether it went broke."""
@@ -207,7 +208,7 @@ def simulate(entry_t, exit_t, net, per_unit, min_vol, step, risk, force_min, hea
                 n_small += 1
                 continue
             volume = min_vol[i]
-        if open_risk + volume * per_unit[i] > heat * balance:
+        if open_risk + volume * per_unit[i] > heat * base:
             n_heat += 1
             continue
         taken[i] = True
@@ -353,6 +354,9 @@ def write_report(stats: pd.DataFrame, money: pd.DataFrame, oos: pd.DataFrame) ->
         .sort_values(["periodo", "volume_minimo", "risco", "teto_aberto"])
     text = (
         "# C13, frente A: varredura exploratória de limiar, gestão e risco (não é teste pré-registrado)\n\n"
+        "**Corrigido em 2026-09-27.** A primeira versão dimensionava cada operação sobre os US$ 1.000 iniciais mas "
+        "media o teto de stops abertos sobre o saldo, que crescia: com a conta maior cabiam cada vez mais operações, e o "
+        "lucro por ano \"sem juros compostos\" saiu muito inflado. Agora o teto usa a mesma base do tamanho.\n\n"
         f"As candidatas que o walk-forward já decidiu em 2016-2026 (cada ano por um modelo que só viu operações "
         f"encerradas antes dele), refeitas com {len(THRESHOLDS)} limiares, {len(GRID)} gestões e {len(RISKS)} riscos, "
         f"em dinheiro a partir de US$ {START_USD:,.0f} com o volume mínimo real de cada mercado na demo. A gestão "

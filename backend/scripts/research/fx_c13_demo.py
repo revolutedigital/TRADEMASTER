@@ -25,13 +25,11 @@ trade_rows uses, as the earliest entry of its (market, set) after the last resol
 management would itself accept (a next minute within 5 minutes of the signal bar on the same FX day, at least
 MIN_MINUTES_LEFT before the day ends) — the live equivalent of the backtest's one-trade-at-a-time rule.
 
-Money rules (docs/forex/c13-a-sweep.md and c13-a-sizing.md, exploratory, chosen on 2016-2022 and read on 2023-2026):
-each stop is worth 1%, 2% or 3% of equity as the model's prediction passes 0.05, 0.08 and 0.12; the stops of open
-positions add up to at most 7.5% of equity, and to at most 3% on one currency in one direction. At US$ 1,000 the 0.5%
-of the research skipped ~77% of the model's picks, because one minimum FX volume (1,000 units) is worth more than
-US$ 5 per daily ATR; without a cap on the open stops, a burst of simultaneous picks put several times the balance at
-risk, and without one per currency such a burst is one bet on the dollar. When the candidates of a cycle compete
-for that room, the most confident go first (docs/forex/c13-a-sizing-2.md).
+Money rules (docs/forex/c13-a-sweep.md, c13-a-sizing.md and -2.md, exploratory, chosen on 2016-2022 and read on
+2023-2026, as corrected on 2026-09-27): each stop is worth 1% of equity and the stops of open positions add up to at
+most 5% of it. At US$ 1,000 the 0.5% of the research skipped ~77% of the model's picks, because one minimum FX volume
+(1,000 units) is worth more than US$ 5 per daily ATR; without a cap on the open stops, a burst of simultaneous picks
+put several times the balance at risk.
 
 Declared deviations from the backtest: the store's live tail comes from the CLI's own quotes (composite/mid) while
 the HistData history is bid-only; the entry is a market order when the cycle finds the candidate. The cycle runs
@@ -96,12 +94,15 @@ FRESH_WAIT_SECONDS = 60  # how long a cycle waits for the CLI to serve the minut
 DAY_END_MARGIN = 45  # closed within the day's last minute, as the backtest, before the 17:00 NY rollover's swap
 WORKERS = 8
 MAX_LIVE_DELAY_SECONDS = 240  # a pending candidate older than this is logged as missed, not opened at a stale price
-# Money rules, chosen on 2016-2022 only and read on 2023-2026 (docs/forex/c13-a-sizing.md, exploratory): the stop is
-# worth 1%, 2% or 3% of equity as the model's prediction passes 0.05, 0.08 and 0.12 (the first is the frozen
-# threshold); the open stops add up to at most 7.5% of equity, and to at most 3% on one currency in one direction.
-RISK_BY_PREDICTION = ((0.05, 0.01), (0.08, 0.02), (0.12, 0.03))
-MAX_OPEN_RISK = 0.075
-MAX_ASSET_RISK = 0.03
+# Money rules, chosen on 2016-2022 only and read on 2023-2026 (docs/forex/c13-a-sizing.md and -2.md, exploratory, as
+# corrected on 2026-09-27): every stop worth 1% of equity, the open stops adding up to at most 5% of it. Risk growing
+# with the model's confidence, a 7.5% cap, a cap per currency and giving the room to the most confident first looked
+# better in a first version of the study that sized trades on the starting US$ 1,000 but measured the caps on the
+# growing balance; measured consistently, none of them beat these.
+RISK_BY_PREDICTION = ((0.05, 0.01),)
+MAX_OPEN_RISK = 0.05
+MAX_ASSET_RISK: float | None = None  # a cap on one currency in one direction (off)
+PRIORITY_BY_PREDICTION = False  # give the room under the caps to the most confident candidates first (off)
 DAILY_BRAKE = 0.05  # at -5% of the FX day's first equity: no new entry until the next day (open ones run on)
 DAILY_STOP_FRACTION = 0.10  # at -10%: everything is closed until the next day (insurance; never reached in the study)
 
@@ -411,8 +412,8 @@ class LiveBanca:
         return pd.concat(pending, ignore_index=True) if pending else pd.DataFrame()
 
     async def decide(self, pending: pd.DataFrame, now: float) -> None:
-        """Every fresh candidate is scored first; the ones to take then get the room under the caps in order of the
-        model's prediction, highest first (docs/forex/c13-a-sizing-2.md: better than first come, first served)."""
+        """Every fresh candidate is scored first; the ones to take then get the room under the caps as they come,
+        or by the model's prediction, highest first, with PRIORITY_BY_PREDICTION."""
         if not len(pending):
             return
         until = resolved_until(self.pool)
@@ -431,7 +432,9 @@ class LiveBanca:
             prediction = self._score(key, symbol, int(set_id), row, now)
             if prediction is not None:
                 chosen.append((prediction, key, symbol, row))
-        for prediction, key, symbol, row in sorted(chosen, key=lambda item: -item[0]):
+        if PRIORITY_BY_PREDICTION:
+            chosen.sort(key=lambda item: -item[0])
+        for prediction, key, symbol, row in chosen:
             await self._open(key, symbol, row, risk_for(prediction))
         if len(pending):
             self.save()
@@ -484,7 +487,8 @@ class LiveBanca:
         if open_risk(self.state["positions"]) + risk_usd > MAX_OPEN_RISK * self.equity:
             self.log("refused", key=key, reason=f"os stops abertos passariam de {MAX_OPEN_RISK:.1%} do patrimônio")
             return
-        if not asset_room(self.state["positions"], symbol, side, risk_usd, MAX_ASSET_RISK * self.equity):
+        if MAX_ASSET_RISK is not None and \
+                not asset_room(self.state["positions"], symbol, side, risk_usd, MAX_ASSET_RISK * self.equity):
             self.log("refused", key=key, reason=f"passaria de {MAX_ASSET_RISK:.0%} numa moeda na mesma direção")
             return
         digits = int(spec["digits"])

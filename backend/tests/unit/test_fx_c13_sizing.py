@@ -28,3 +28,17 @@ def test_the_daily_brake_stops_new_entries_until_the_next_day() -> None:
               [-1, -1, -1, -1], [0, 0, 0, 0], brake=0.02)
     final, _, _, taken, _, _, _, braked = out
     assert (taken, braked) == (2, 2) and final == pytest.approx(1000.0 - 30.0 + 10.0)
+
+
+def test_the_caps_grow_with_the_account_only_when_the_trades_do() -> None:
+    """After a win that doubles the account, three trades enter together under a 2.5% cap on open stops. Fixed: each
+    risks US$ 10 and the cap is US$ 25; compounding: US$ 20 and US$ 50. Two fit either way — never three, which a
+    fixed trade size under a cap on the grown balance (the bug of the first version) would have allowed."""
+    for compound, final in ((False, 2000.0 + 2 * 10.0), (True, 2000.0 + 2 * 20.0)):
+        n = 4
+        out = sizing.simulate(np.array([0.0, 5, 5, 5]), np.array([1.0, 9, 9, 9]), np.array([100.0, 1, 1, 1]),
+                              np.ones(n), np.ones(n), np.ones(n), np.full(n, 0.01), np.zeros(n, dtype=np.int64),
+                              np.zeros(n, dtype=np.int64), np.ones(n), np.full(n, -1), np.ones(n), 1, 0.025, np.inf,
+                              np.inf, 1000.0, 1.0, compound)
+        assert out[3] == 3 and out[5] == 1  # the win and two of the three; one refused for the cap
+        assert out[0] == pytest.approx(final)

@@ -135,10 +135,9 @@ def test_the_cycle_runs_just_after_each_five_minute_mark() -> None:
     assert live.next_cycle(mark - 1) == mark + offset  # 14:04:59 -> 14:05:08 (14:00:08 has passed)
 
 
-def test_the_stop_is_worth_more_as_the_prediction_rises() -> None:
-    assert live.risk_for(0.04) == 0.0
-    assert (live.risk_for(0.06), live.risk_for(0.10), live.risk_for(0.30)) == (0.01, 0.02, 0.03)
-    assert live.risk_for(0.08) == 0.01  # a bucket starts above its floor, as the threshold does
+def test_every_stop_is_worth_one_percent_above_the_threshold() -> None:
+    assert live.risk_for(0.04) == 0.0 and live.risk_for(0.05) == 0.0  # the threshold itself is not above it
+    assert (live.risk_for(0.06), live.risk_for(0.10), live.risk_for(0.30)) == (0.01, 0.01, 0.01)
 
 
 def test_one_currency_in_one_direction_is_capped() -> None:
@@ -190,27 +189,33 @@ def test_symbol_universe_matches_the_manifest() -> None:
     assert len(universe) == len(set(universe))
 
 
-def test_fresh_candidates_are_opened_most_confident_first() -> None:
+def test_fresh_candidates_are_opened_as_they_come_or_most_confident_first(monkeypatch) -> None:
     import asyncio
 
-    runner = live.LiveBanca.__new__(live.LiveBanca)
-    runner.pool = pd.DataFrame(columns=live.POOL_COLUMNS)
-    runner.state = {"decided": {}, "positions": {}}
-    runner.save = lambda: None
     scores = {"EURUSD": 0.06, "GBPUSD": 0.20, "USDJPY": 0.09, "AUDUSD": 0.01}
-    runner._score = lambda key, symbol, set_id, row, now: scores[symbol] if scores[symbol] > 0.05 else None
-    opened = []
-
-    async def record(key, symbol, row, risk):
-        opened.append((symbol, risk))
-
-    runner._open = record
     entry = pd.Timestamp("2026-09-28 14:05", tz="UTC").timestamp()  # 10:05 New York: the day has room left
     pending = pd.DataFrame({"symbol": list(scores), "set_id": 3, "entry_time": entry, "decision_time": entry,
                             "valid": True})
-    asyncio.run(runner.decide(pending, entry + 60))
-    assert opened == [("GBPUSD", 0.03), ("USDJPY", 0.02), ("EURUSD", 0.01)]
-    assert len(runner.state["decided"]) == 4  # the refused one is decided too: never scored again
+
+    def opened_with(priority: bool) -> list:
+        monkeypatch.setattr(live, "PRIORITY_BY_PREDICTION", priority)
+        runner = live.LiveBanca.__new__(live.LiveBanca)
+        runner.pool = pd.DataFrame(columns=live.POOL_COLUMNS)
+        runner.state = {"decided": {}, "positions": {}}
+        runner.save = lambda: None
+        runner._score = lambda key, symbol, set_id, row, now: scores[symbol] if scores[symbol] > 0.05 else None
+        opened = []
+
+        async def record(key, symbol, row, risk):
+            opened.append(symbol)
+
+        runner._open = record
+        asyncio.run(runner.decide(pending, entry + 60))
+        assert len(runner.state["decided"]) == 4  # the refused one is decided too: never scored again
+        return opened
+
+    assert opened_with(False) == ["EURUSD", "GBPUSD", "USDJPY"]
+    assert opened_with(True) == ["GBPUSD", "USDJPY", "EURUSD"]
 
 
 def test_the_stand_in_minute_shows_the_same_candidates_as_the_real_one() -> None:

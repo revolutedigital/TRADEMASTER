@@ -1,5 +1,7 @@
 # C13, frente A: varredura exploratória de limiar, gestão e risco (não é teste pré-registrado)
 
+**Corrigido em 2026-09-27.** A primeira versão dimensionava cada operação sobre os US$ 1.000 iniciais mas media o teto de stops abertos sobre o saldo, que crescia: com a conta maior cabiam cada vez mais operações, e o lucro por ano "sem juros compostos" saiu muito inflado. Agora o teto usa a mesma base do tamanho.
+
 As candidatas que o walk-forward já decidiu em 2016-2026 (cada ano por um modelo que só viu operações encerradas antes dele), refeitas com 5 limiares, 40 gestões e 5 riscos, em dinheiro a partir de US$ 1,000 com o volume mínimo real de cada mercado na demo. A gestão congelada no limiar congelado reproduz a descoberta operação por operação (checado na execução). Operações com |R| > 15 num mesmo dia são vela ruim no dado e ficam de fora (contadas).
 
 **Isto não aprova nada.** A melhor linha entre centenas, medida no mesmo dado que a escolhe, é otimista por construção. O teste honesto é a última tabela: escolhida só com 2016-2022, olhada em 2023-2026.
@@ -117,172 +119,172 @@ Sem um teto para a soma dos stops abertos, a banca quebra US$ 1.000: em dias de 
 
 ```
   periodo  limiar               gestao  risco volume_minimo  teto_aberto  lucro_ano_usd  lucro_ano_estresse_usd  pior_queda  pior_queda_todos_stops  operacoes  puladas_volume  puladas_teto  posicoes_max  quebrou
-2016-2026    0.02 stop 1 ATR · alvo 3R  0.001        mínimo         0.05          3,698                   1,484      0.2421                  0.2773     119982               0         42746           240    False
-2016-2026    0.02 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05          3,658                   1,370      0.2357                  0.2724     118357               0         44371           240    False
-2016-2026    0.02 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          3,671                   1,492      0.2169                  0.2551     117510               0         45218           240    False
-2016-2026    0.02 stop 1 ATR · alvo 3R   0.01        mínimo         0.05          4,350                   1,688       0.235                  0.2698     115454               0         47274           240    False
-2016-2026    0.02 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          8,313                   2,441      0.2628                  0.2977      98287               0         64441           212    False
-2016-2026    0.02 stop 1 ATR · alvo 3R  0.001          pula         0.05         -6.326                  -21.49      0.1427                  0.1657       7550          155170             8            60    False
-2016-2026    0.02 stop 1 ATR · alvo 3R 0.0025          pula         0.05          33.95                  -16.11      0.2803                  0.3052      12085          149394          1249            31    False
-2016-2026    0.02 stop 1 ATR · alvo 3R  0.005          pula         0.05          698.7                   315.4      0.3738                  0.3979      29193          128812          4723            88    False
-2016-2026    0.02 stop 1 ATR · alvo 3R   0.01          pula         0.05          4,062                   2,116      0.2367                  0.2727     104722           34961         23045           229    False
-2016-2026    0.02 stop 1 ATR · alvo 3R   0.02          pula         0.05          8,307                   2,922      0.2623                  0.2974      98191            3623         60914           212    False
-2016-2026    0.05 stop 1 ATR · alvo 3R  0.001        mínimo         0.05          1,592                   967.2      0.2465                   0.274      26805               0          9930           118    False
-2016-2026    0.05 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05          1,612                   974.4      0.2392                  0.2626      26706               0         10029           118    False
-2016-2026    0.05 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          1,629                   1,015      0.2236                  0.2569      26526               0         10209           118    False
-2016-2026    0.05 stop 1 ATR · alvo 3R   0.01        mínimo         0.05          1,927                   1,232      0.2531                  0.2754      26311               0         10424           114    False
-2016-2026    0.05 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          3,741                   2,221      0.2443                  0.2676      24673               0         12062           102    False
-2016-2026    0.05 stop 1 ATR · alvo 3R  0.001          pula         0.05         -2.292                  -7.386     0.08332                  0.1108       2279           34455             1            58    False
-2016-2026    0.05 stop 1 ATR · alvo 3R 0.0025          pula         0.05          7.258                  -11.29      0.1565                  0.1844       3583           32863           289            27    False
-2016-2026    0.05 stop 1 ATR · alvo 3R  0.005          pula         0.05          277.4                   193.4      0.2035                    0.24       7152           28422          1161            41    False
-2016-2026    0.05 stop 1 ATR · alvo 3R   0.01          pula         0.05          1,679                   1,162      0.1819                  0.2187      23002            8889          4844            99    False
-2016-2026    0.05 stop 1 ATR · alvo 3R   0.02          pula         0.05          3,697                   2,325      0.2684                  0.2876      24541             840         11354           101    False
-2016-2026    0.08 stop 1 ATR · alvo 3R  0.001        mínimo         0.05            578                   436.7      0.3869                  0.4091       7406               0          5402            50    False
-2016-2026    0.08 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05            625                   439.6      0.3295                  0.3532       7522               0          5286            53    False
-2016-2026    0.08 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          636.6                   463.7      0.3093                  0.3314       7449               0          5359            53    False
-2016-2026    0.08 stop 1 ATR · alvo 3R   0.01        mínimo         0.05          754.9                     528      0.2899                  0.3194       7282               0          5526            54    False
-2016-2026    0.08 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          1,203                   862.9      0.3194                  0.3525       5979               0          6829            39    False
+2016-2026    0.02 stop 1 ATR · alvo 3R  0.001        mínimo         0.05          720.1                   462.4      0.1902                  0.2276      22558               0        140170            36    False
+2016-2026    0.02 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05          719.5                   461.4      0.1984                  0.2356      20835               0        141893            17    False
+2016-2026    0.02 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          730.7                   473.9      0.1718                  0.2042      19564               0        143164            12    False
+2016-2026    0.02 stop 1 ATR · alvo 3R   0.01        mínimo         0.05            728                   467.9      0.2068                   0.239      16981               0        145747             9    False
+2016-2026    0.02 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          666.3                   415.9      0.2068                  0.2367       8830               0        153898             4    False
+2016-2026    0.02 stop 1 ATR · alvo 3R  0.001          pula         0.05         -6.399                   -21.6      0.1434                  0.1665       7551          155170             7            61    False
+2016-2026    0.02 stop 1 ATR · alvo 3R 0.0025          pula         0.05          31.55                  -19.22      0.2679                  0.2961      11872          149394          1462            28    False
+2016-2026    0.02 stop 1 ATR · alvo 3R  0.005          pula         0.05          429.6                   231.2      0.3507                  0.3836      18559          128812         15357            16    False
+2016-2026    0.02 stop 1 ATR · alvo 3R   0.01          pula         0.05          773.6                   497.4      0.1875                  0.2157      18311           34961        109456             9    False
+2016-2026    0.02 stop 1 ATR · alvo 3R   0.02          pula         0.05          660.6                   409.8      0.2116                  0.2421       8852            3623        150253             4    False
+2016-2026    0.05 stop 1 ATR · alvo 3R  0.001        mínimo         0.05          636.9                   485.9      0.2614                  0.3021      13249               0         23486            29    False
+2016-2026    0.05 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05          645.5                   491.5       0.228                  0.2638      12773               0         23962            21    False
+2016-2026    0.05 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          662.9                   505.6      0.2133                  0.2484      12234               0         24501            13    False
+2016-2026    0.05 stop 1 ATR · alvo 3R   0.01        mínimo         0.05          683.8                   515.6       0.228                  0.2611      10819               0         25916             9    False
+2016-2026    0.05 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          751.1                   570.3      0.2386                  0.2753       6230               0         30505             4    False
+2016-2026    0.05 stop 1 ATR · alvo 3R  0.001          pula         0.05         -2.365                  -7.536     0.08408                  0.1115       2280           34455             0            59    False
+2016-2026    0.05 stop 1 ATR · alvo 3R 0.0025          pula         0.05          7.375                  -9.705      0.1607                  0.1921       3597           32863           275            27    False
+2016-2026    0.05 stop 1 ATR · alvo 3R  0.005          pula         0.05          234.9                   167.4      0.2004                  0.2409       6134           28422          2179            13    False
+2016-2026    0.05 stop 1 ATR · alvo 3R   0.01          pula         0.05          665.9                   502.5      0.1455                   0.178      10514            8889         17332             9    False
+2016-2026    0.05 stop 1 ATR · alvo 3R   0.02          pula         0.05          748.1                   567.2      0.2232                  0.2474       6232             840         29663             4    False
+2016-2026    0.08 stop 1 ATR · alvo 3R  0.001        mínimo         0.05          307.4                   251.3      0.4241                  0.4493       5099               0          7709            23    False
+2016-2026    0.08 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05          308.9                   250.8      0.4154                  0.4399       4915               0          7893            17    False
+2016-2026    0.08 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          317.7                   256.7      0.3924                  0.4204       4745               0          8063            12    False
+2016-2026    0.08 stop 1 ATR · alvo 3R   0.01        mínimo         0.05          353.5                   284.1      0.3354                  0.3522       4250               0          8558             9    False
+2016-2026    0.08 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          385.6                   305.6      0.3188                  0.3523       2586               0         10222             4    False
 2016-2026    0.08 stop 1 ATR · alvo 3R  0.001          pula         0.05        -0.9961                  -3.319     0.05904                 0.09028       1019           11789             0            42    False
-2016-2026    0.08 stop 1 ATR · alvo 3R 0.0025          pula         0.05          1.206                   -7.04      0.1414                  0.1667       1554           11118           136            25    False
-2016-2026    0.08 stop 1 ATR · alvo 3R  0.005          pula         0.05          144.5                   99.44      0.1452                   0.171       2667            9558           583            25    False
-2016-2026    0.08 stop 1 ATR · alvo 3R   0.01          pula         0.05          675.2                   462.3      0.2266                  0.2566       6545            3246          3017            49    False
-2016-2026    0.08 stop 1 ATR · alvo 3R   0.02          pula         0.05          1,185                   850.3      0.2962                  0.3313       5932             345          6531            39    False
-2016-2026    0.12 stop 1 ATR · alvo 3R  0.001        mínimo         0.05            315                   245.9      0.3915                  0.4214       2688               0          2630            34    False
-2016-2026    0.12 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05          307.9                   240.9      0.3831                  0.4127       2608               0          2710            32    False
-2016-2026    0.12 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          300.8                   248.6      0.3772                  0.4054       2550               0          2768            29    False
-2016-2026    0.12 stop 1 ATR · alvo 3R   0.01        mínimo         0.05          346.5                   287.2       0.372                  0.4002       2421               0          2897            28    False
-2016-2026    0.12 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          576.6                   473.6      0.3948                  0.4244       1974               0          3344            20    False
+2016-2026    0.08 stop 1 ATR · alvo 3R 0.0025          pula         0.05           1.25                  -6.417      0.1429                  0.1699       1561           11118           129            27    False
+2016-2026    0.08 stop 1 ATR · alvo 3R  0.005          pula         0.05          126.3                   98.98      0.1432                  0.1689       2431            9558           819            14    False
+2016-2026    0.08 stop 1 ATR · alvo 3R   0.01          pula         0.05          316.7                   250.7      0.2283                  0.2445       4022            3246          5540             9    False
+2016-2026    0.08 stop 1 ATR · alvo 3R   0.02          pula         0.05          381.6                   301.6      0.3328                  0.3677       2585             345          9878             4    False
+2016-2026    0.12 stop 1 ATR · alvo 3R  0.001        mínimo         0.05            202                   178.9      0.3916                  0.4385       2150               0          3168            23    False
+2016-2026    0.12 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05            201                   177.2      0.3867                   0.435       2076               0          3242            17    False
+2016-2026    0.12 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          199.9                   174.9       0.392                   0.438       1984               0          3334            10    False
+2016-2026    0.12 stop 1 ATR · alvo 3R   0.01        mínimo         0.05            216                   187.3      0.3949                  0.4411       1810               0          3508             8    False
+2016-2026    0.12 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          244.4                   210.8      0.3941                  0.4423       1138               0          4180             4    False
 2016-2026    0.12 stop 1 ATR · alvo 3R  0.001          pula         0.05          -3.75                  -4.559      0.0501                 0.05678        386            4932             0            31    False
-2016-2026    0.12 stop 1 ATR · alvo 3R 0.0025          pula         0.05         -11.44                  -14.65      0.2006                  0.2406        620            4658            40            23    False
-2016-2026    0.12 stop 1 ATR · alvo 3R  0.005          pula         0.05          42.87                   30.02      0.1955                  0.2322        994            4046           278            14    False
-2016-2026    0.12 stop 1 ATR · alvo 3R   0.01          pula         0.05          283.7                   235.5      0.1831                  0.2209       2164            1493          1661            25    False
-2016-2026    0.12 stop 1 ATR · alvo 3R   0.02          pula         0.05          581.6                     480       0.388                  0.4176       1997             160          3161            20    False
-2016-2026    0.16 stop 1 ATR · alvo 3R  0.001        mínimo         0.05          185.8                   169.2      0.2164                  0.2551       1266               0          1329            24    False
-2016-2026    0.16 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05          181.7                   161.6      0.2197                  0.2582       1218               0          1377            23    False
-2016-2026    0.16 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          173.5                   162.4      0.2165                  0.2551       1168               0          1427            19    False
-2016-2026    0.16 stop 1 ATR · alvo 3R   0.01        mínimo         0.05          212.3                   189.7      0.2212                  0.2593       1123               0          1472            21    False
-2016-2026    0.16 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          349.2                   310.8      0.2112                  0.2488        891               0          1704            13    False
+2016-2026    0.12 stop 1 ATR · alvo 3R 0.0025          pula         0.05         -11.33                  -14.23       0.204                   0.246        627            4658            33            26    False
+2016-2026    0.12 stop 1 ATR · alvo 3R  0.005          pula         0.05          40.43                   29.39      0.2127                  0.2552        977            4046           295            12    False
+2016-2026    0.12 stop 1 ATR · alvo 3R   0.01          pula         0.05          180.8                   154.6      0.2003                  0.2465       1644            1493          2181             8    False
+2016-2026    0.12 stop 1 ATR · alvo 3R   0.02          pula         0.05          244.9                   211.2      0.3905                  0.4387       1141             160          4017             4    False
+2016-2026    0.16 stop 1 ATR · alvo 3R  0.001        mínimo         0.05          137.9                   127.1      0.2325                  0.2786       1020               0          1575            16    False
+2016-2026    0.16 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05          138.7                   127.6      0.2346                  0.2812        995               0          1600            15    False
+2016-2026    0.16 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          137.3                   125.9      0.2305                   0.276        953               0          1642            11    False
+2016-2026    0.16 stop 1 ATR · alvo 3R   0.01        mínimo         0.05          154.6                   141.6      0.2418                  0.2836        882               0          1713             8    False
+2016-2026    0.16 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          187.1                   171.2      0.2244                  0.2624        580               0          2015             4    False
 2016-2026    0.16 stop 1 ATR · alvo 3R  0.001          pula         0.05         -2.054                  -2.384     0.03663                 0.04163        176            2419             0            23    False
-2016-2026    0.16 stop 1 ATR · alvo 3R 0.0025          pula         0.05          -4.11                  -5.327      0.1185                  0.1457        297            2290             8            22    False
-2016-2026    0.16 stop 1 ATR · alvo 3R  0.005          pula         0.05          14.46                   9.503      0.1269                  0.1607        433            2049           113            12    False
-2016-2026    0.16 stop 1 ATR · alvo 3R   0.01          pula         0.05            187                   176.7      0.1702                  0.2057        972             790           833            19    False
-2016-2026    0.16 stop 1 ATR · alvo 3R   0.02          pula         0.05          341.9                   309.9      0.2205                  0.2578        881              68          1646            13    False
-2023-2026    0.02 stop 1 ATR · alvo 3R  0.001        mínimo         0.05          2,738                   1,364      0.3143                  0.3475      18251               0         49294            97    False
-2023-2026    0.02 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05          2,591                   1,522      0.3415                  0.3723      16939               0         50606            95    False
-2023-2026    0.02 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          2,827                   1,503      0.3136                   0.346      18000               0         49545           101    False
-2023-2026    0.02 stop 1 ATR · alvo 3R   0.01        mínimo         0.05          3,290                   1,704       0.324                  0.3554      15770               0         51775            88    False
-2023-2026    0.02 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          5,051                   2,548      0.3953                  0.4246       9888               0         57657            58    False
+2016-2026    0.16 stop 1 ATR · alvo 3R 0.0025          pula         0.05         -3.736                  -4.962       0.118                  0.1451        298            2290             7            23    False
+2016-2026    0.16 stop 1 ATR · alvo 3R  0.005          pula         0.05          14.28                   9.949      0.1265                  0.1646        437            2049           109            12    False
+2016-2026    0.16 stop 1 ATR · alvo 3R   0.01          pula         0.05          147.2                   135.4      0.1868                  0.2288        803             790          1002             8    False
+2016-2026    0.16 stop 1 ATR · alvo 3R   0.02          pula         0.05          189.6                   173.7      0.2215                   0.259        581              68          1946             4    False
+2023-2026    0.02 stop 1 ATR · alvo 3R  0.001        mínimo         0.05          936.3                   658.1      0.4291                  0.4779       8165               0         59380            18    False
+2023-2026    0.02 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05          936.3                   657.9      0.4199                  0.4691       7662               0         59883            15    False
+2023-2026    0.02 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          942.6                     665      0.3858                  0.4326       7348               0         60197            12    False
+2023-2026    0.02 stop 1 ATR · alvo 3R   0.01        mínimo         0.05          1,056                   770.7      0.3123                  0.3523       6168               0         61377             9    False
+2023-2026    0.02 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          925.1                   649.3      0.4489                   0.494       2957               0         64588             4    False
 2023-2026    0.02 stop 1 ATR · alvo 3R  0.001          pula         0.05          6.958                  -4.464     0.03636                 0.05174       2207           65338             0            37    False
-2023-2026    0.02 stop 1 ATR · alvo 3R 0.0025          pula         0.05          89.92                   45.43      0.1317                  0.1615       3702           63646           197            29    False
-2023-2026    0.02 stop 1 ATR · alvo 3R  0.005          pula         0.05          1,080                   621.4      0.1615                  0.1965      11996           50935          4614            55    False
-2023-2026    0.02 stop 1 ATR · alvo 3R   0.01          pula         0.05          3,287                   815.2       0.302                  0.3362      16063            7230         44252            88    False
-2023-2026    0.02 stop 1 ATR · alvo 3R   0.02          pula         0.05          5,051                   2,548      0.3953                  0.4246       9888              12         57645            58    False
-2023-2026    0.05 stop 1 ATR · alvo 3R  0.001        mínimo         0.05          1,301                   959.1      0.2173                  0.2538       6892               0          5766            50    False
-2023-2026    0.05 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05          1,293                   1,001      0.2247                  0.2602       6773               0          5885            49    False
-2023-2026    0.05 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          1,266                   995.5      0.2304                  0.2657       6704               0          5954            49    False
-2023-2026    0.05 stop 1 ATR · alvo 3R   0.01        mínimo         0.05          1,696                   1,237      0.1823                   0.221       6467               0          6191            45    False
-2023-2026    0.05 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          2,849                   2,264      0.2416                  0.2769       4616               0          8042            31    False
+2023-2026    0.02 stop 1 ATR · alvo 3R 0.0025          pula         0.05          87.48                   44.03      0.1327                  0.1675       3660           63646           239            26    False
+2023-2026    0.02 stop 1 ATR · alvo 3R  0.005          pula         0.05          735.1                   471.1      0.1735                  0.2148       7968           50935          8642            16    False
+2023-2026    0.02 stop 1 ATR · alvo 3R   0.01          pula         0.05          986.1                   685.3      0.2496                   0.299       6445            7230         53870             9    False
+2023-2026    0.02 stop 1 ATR · alvo 3R   0.02          pula         0.05          925.1                   649.3      0.4489                   0.494       2957              12         64576             4    False
+2023-2026    0.05 stop 1 ATR · alvo 3R  0.001        mínimo         0.05            878                   713.3      0.1888                  0.2209       4777               0          7881            18    False
+2023-2026    0.05 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05          885.9                   718.6      0.1713                   0.211       4655               0          8003            16    False
+2023-2026    0.05 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          901.5                   731.8        0.17                  0.1998       4511               0          8147            13    False
+2023-2026    0.05 stop 1 ATR · alvo 3R   0.01        mínimo         0.05            937                   751.2      0.1607                  0.2011       3817               0          8841             9    False
+2023-2026    0.05 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          1,009                   808.9      0.2055                  0.2362       2051               0         10607             4    False
 2023-2026    0.05 stop 1 ATR · alvo 3R  0.001          pula         0.05          6.007                   2.706     0.02184                 0.02728        564           12094             0            18    False
-2023-2026    0.05 stop 1 ATR · alvo 3R 0.0025          pula         0.05          41.03                   28.08     0.07101                  0.1016        979           11652            27            29    False
-2023-2026    0.05 stop 1 ATR · alvo 3R  0.005          pula         0.05          490.5                   379.5      0.1442                  0.1853       3183            9013           462            31    False
-2023-2026    0.05 stop 1 ATR · alvo 3R   0.01          pula         0.05          1,831                   1,234      0.1528                  0.1948       6797            1540          4321            48    False
-2023-2026    0.05 stop 1 ATR · alvo 3R   0.02          pula         0.05          2,834                   2,264      0.2416                  0.2769       4597               1          8060            31    False
-2023-2026    0.08 stop 1 ATR · alvo 3R  0.001        mínimo         0.05          653.5                   539.8       0.161                  0.1964       2430               0          1969            32    False
-2023-2026    0.08 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05            644                   541.7       0.173                  0.2054       2374               0          2025            32    False
-2023-2026    0.08 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          663.8                   541.2        0.17                  0.2017       2369               0          2030            32    False
-2023-2026    0.08 stop 1 ATR · alvo 3R   0.01        mínimo         0.05          775.9                   570.4      0.2073                  0.2372       2094               0          2305            25    False
-2023-2026    0.08 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          1,029                   700.4      0.2045                    0.24       1343               0          3056            14    False
+2023-2026    0.05 stop 1 ATR · alvo 3R 0.0025          pula         0.05          40.07                   27.97     0.07122                  0.1016        972           11652            34            27    False
+2023-2026    0.05 stop 1 ATR · alvo 3R  0.005          pula         0.05          419.7                   329.3      0.1388                  0.1801       2708            9013           937            13    False
+2023-2026    0.05 stop 1 ATR · alvo 3R   0.01          pula         0.05          870.2                   685.8      0.1217                   0.164       3737            1540          7381             9    False
+2023-2026    0.05 stop 1 ATR · alvo 3R   0.02          pula         0.05          1,009                   808.9      0.2055                  0.2362       2051               1         10606             4    False
+2023-2026    0.08 stop 1 ATR · alvo 3R  0.001        mínimo         0.05          422.9                   358.5      0.1558                  0.2005       1906               0          2493            17    False
+2023-2026    0.08 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05          418.3                   352.8      0.1548                  0.1996       1858               0          2541            14    False
+2023-2026    0.08 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          433.6                   366.4      0.1637                  0.1998       1812               0          2587            12    False
+2023-2026    0.08 stop 1 ATR · alvo 3R   0.01        mínimo         0.05          458.9                     381      0.1974                  0.2338       1574               0          2825             9    False
+2023-2026    0.08 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          486.7                   396.3       0.165                  0.2045        883               0          3516             4    False
 2023-2026    0.08 stop 1 ATR · alvo 3R  0.001          pula         0.05          2.925                    1.83     0.01367                 0.01767        231            4168             0            13    False
-2023-2026    0.08 stop 1 ATR · alvo 3R 0.0025          pula         0.05          11.21                    6.61     0.07435                  0.1089        436            3952            11            26    False
-2023-2026    0.08 stop 1 ATR · alvo 3R  0.005          pula         0.05          209.2                   171.6      0.1019                  0.1312       1115            3018           266            19    False
-2023-2026    0.08 stop 1 ATR · alvo 3R   0.01          pula         0.05          754.5                   553.4      0.1318                  0.1642       2043             467          1889            24    False
-2023-2026    0.08 stop 1 ATR · alvo 3R   0.02          pula         0.05          1,029                   700.4      0.2045                    0.24       1343               0          3056            14    False
-2023-2026    0.12 stop 1 ATR · alvo 3R  0.001        mínimo         0.05          338.8                   297.6      0.1197                  0.1457       1011               0           785            22    False
-2023-2026    0.12 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05          339.6                   297.7       0.123                  0.1548       1000               0           796            22    False
-2023-2026    0.12 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          314.2                   274.4      0.1156                  0.1565        948               0           848            21    False
-2023-2026    0.12 stop 1 ATR · alvo 3R   0.01        mínimo         0.05          375.5                   323.4     0.08782                  0.1252        867               0           929            15    False
-2023-2026    0.12 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          434.1                   320.4      0.1341                  0.1688        529               0          1267             7    False
+2023-2026    0.08 stop 1 ATR · alvo 3R 0.0025          pula         0.05          11.44                    6.84     0.07429                  0.1104        437            3952            10            27    False
+2023-2026    0.08 stop 1 ATR · alvo 3R  0.005          pula         0.05          207.2                   173.1      0.0823                  0.1063       1047            3018           334            13    False
+2023-2026    0.08 stop 1 ATR · alvo 3R   0.01          pula         0.05          434.3                   357.6      0.1319                  0.1683       1529             467          2403             9    False
+2023-2026    0.08 stop 1 ATR · alvo 3R   0.02          pula         0.05          486.7                   396.3       0.165                  0.2045        883               0          3516             4    False
+2023-2026    0.12 stop 1 ATR · alvo 3R  0.001        mínimo         0.05          269.1                   241.5     0.07037                 0.09143        855               0           941            16    False
+2023-2026    0.12 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05          264.1                     236     0.06816                 0.08996        843               0           953            17    False
+2023-2026    0.12 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          255.8                   226.7     0.06724                  0.1021        814               0           982            10    False
+2023-2026    0.12 stop 1 ATR · alvo 3R   0.01        mínimo         0.05          271.5                   236.7     0.09026                  0.1276        722               0          1074             8    False
+2023-2026    0.12 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          243.9                   202.9      0.1356                  0.1706        406               0          1390             4    False
 2023-2026    0.12 stop 1 ATR · alvo 3R  0.001          pula         0.05         0.6616                  0.2127    0.007863                 0.01454        110            1686             0             9    False
 2023-2026    0.12 stop 1 ATR · alvo 3R 0.0025          pula         0.05           10.7                   8.654     0.05406                 0.09567        214            1582             0            24    False
-2023-2026    0.12 stop 1 ATR · alvo 3R  0.005          pula         0.05          88.35                   72.01     0.08274                  0.1265        473            1195           128            13    False
-2023-2026    0.12 stop 1 ATR · alvo 3R   0.01          pula         0.05          327.8                   280.9      0.1278                  0.1617        830             147           819            14    False
-2023-2026    0.12 stop 1 ATR · alvo 3R   0.02          pula         0.05          434.1                   320.4      0.1341                  0.1688        529               0          1267             7    False
-2023-2026    0.16 stop 1 ATR · alvo 3R  0.001        mínimo         0.05          285.8                   268.2     0.07471                    0.12        485               0           367            18    False
-2023-2026    0.16 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05          291.6                   276.4     0.07065                  0.1169        469               0           383            18    False
-2023-2026    0.16 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          291.9                   272.8      0.0865                  0.1263        451               0           401            16    False
-2023-2026    0.16 stop 1 ATR · alvo 3R   0.01        mínimo         0.05          331.1                     307     0.07867                  0.1246        424               0           428            13    False
-2023-2026    0.16 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          484.6                     456     0.08312                  0.1262        292               0           560             8    False
+2023-2026    0.12 stop 1 ATR · alvo 3R  0.005          pula         0.05          87.91                   72.82     0.08149                   0.125        466            1195           135            12    False
+2023-2026    0.12 stop 1 ATR · alvo 3R   0.01          pula         0.05          245.5                   211.3     0.09616                  0.1344        702             147           947             8    False
+2023-2026    0.12 stop 1 ATR · alvo 3R   0.02          pula         0.05          243.9                   202.9      0.1356                  0.1706        406               0          1390             4    False
+2023-2026    0.16 stop 1 ATR · alvo 3R  0.001        mínimo         0.05            239                     227     0.07063                  0.1001        402               0           450            16    False
+2023-2026    0.16 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05          242.6                   230.5     0.06798                 0.09799        394               0           458            15    False
+2023-2026    0.16 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          241.1                   228.9     0.07429                 0.09931        376               0           476            10    False
+2023-2026    0.16 stop 1 ATR · alvo 3R   0.01        mínimo         0.05          277.1                   262.1     0.05955                 0.08867        340               0           512             8    False
+2023-2026    0.16 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          337.3                     318     0.06087                  0.0903        200               0           652             3    False
 2023-2026    0.16 stop 1 ATR · alvo 3R  0.001          pula         0.05         0.6045                  0.3723    0.007693                 0.01083         59             793             0             7    False
 2023-2026    0.16 stop 1 ATR · alvo 3R 0.0025          pula         0.05          12.51                   11.47     0.04304                 0.06983        124             728             0            17    False
-2023-2026    0.16 stop 1 ATR · alvo 3R  0.005          pula         0.05          52.68                   45.71      0.0772                  0.1205        220             572            60            12    False
-2023-2026    0.16 stop 1 ATR · alvo 3R   0.01          pula         0.05          331.9                   311.9     0.07596                  0.1209        416              73           363            14    False
-2023-2026    0.16 stop 1 ATR · alvo 3R   0.02          pula         0.05          484.6                     456     0.08312                  0.1262        292               0           560             8    False
+2023-2026    0.16 stop 1 ATR · alvo 3R  0.005          pula         0.05          53.29                   47.53     0.07248                  0.1158        215             572            65            11    False
+2023-2026    0.16 stop 1 ATR · alvo 3R   0.01          pula         0.05          272.2                   257.2     0.06377                 0.09036        336              73           443             8    False
+2023-2026    0.16 stop 1 ATR · alvo 3R   0.02          pula         0.05          337.3                     318     0.06087                  0.0903        200               0           652             3    False
 ```
 
 ### O teto aberto, no limiar 0.05
 
 ```
   periodo  limiar               gestao  risco volume_minimo  teto_aberto  lucro_ano_usd  lucro_ano_estresse_usd  pior_queda  pior_queda_todos_stops  operacoes  puladas_volume  puladas_teto  posicoes_max  quebrou
-2016-2026    0.05 stop 1 ATR · alvo 3R  0.001        mínimo         0.02          606.8                   392.1       0.212                  0.2244      12590               0         24145            30    False
-2016-2026    0.05 stop 1 ATR · alvo 3R  0.001        mínimo         0.05          1,592                   967.2      0.2465                   0.274      26805               0          9930           118    False
-2016-2026    0.05 stop 1 ATR · alvo 3R  0.001        mínimo          0.1          1,885                   1,452      0.5165                  0.5567      30862               0          5873           176    False
-2016-2026    0.05 stop 1 ATR · alvo 3R 0.0025        mínimo         0.02          615.4                   441.3      0.1939                  0.2041      12297               0         24438            30    False
-2016-2026    0.05 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05          1,612                   974.4      0.2392                  0.2626      26706               0         10029           118    False
-2016-2026    0.05 stop 1 ATR · alvo 3R 0.0025        mínimo          0.1          1,850                   1,442      0.4999                  0.5368      30496               0          6239           171    False
-2016-2026    0.05 stop 1 ATR · alvo 3R  0.005        mínimo         0.02          663.1                   433.2      0.1895                  0.2034      12636               0         24099            32    False
-2016-2026    0.05 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          1,629                   1,015      0.2236                  0.2569      26526               0         10209           118    False
-2016-2026    0.05 stop 1 ATR · alvo 3R  0.005        mínimo          0.1          1,886                   1,466      0.4403                  0.4926      30567               0          6168           168    False
-2016-2026    0.05 stop 1 ATR · alvo 3R   0.01        mínimo         0.02          799.9                   489.8      0.2101                  0.2191      11594               0         25141            24    False
-2016-2026    0.05 stop 1 ATR · alvo 3R   0.01        mínimo         0.05          1,927                   1,232      0.2531                  0.2754      26311               0         10424           114    False
-2016-2026    0.05 stop 1 ATR · alvo 3R   0.01        mínimo          0.1          2,179                   1,672      0.3398                   0.401      30251               0          6484           159    False
-2016-2026    0.05 stop 1 ATR · alvo 3R   0.02        mínimo         0.02          968.5                   417.9      0.2623                  0.2763       6332               0         30403            13    False
-2016-2026    0.05 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          3,741                   2,221      0.2443                  0.2676      24673               0         12062           102    False
-2016-2026    0.05 stop 1 ATR · alvo 3R   0.02        mínimo          0.1          4,477                   3,416      0.3481                  0.3997      29349               0          7386           154    False
-2016-2026    0.05 stop 1 ATR · alvo 3R  0.001          pula         0.02         -1.344                   -6.21     0.06089                 0.07446       2185           34455            95            27    False
-2016-2026    0.05 stop 1 ATR · alvo 3R  0.001          pula         0.05         -2.292                  -7.386     0.08332                  0.1108       2279           34455             1            58    False
+2016-2026    0.05 stop 1 ATR · alvo 3R  0.001        mínimo         0.02          263.6                   192.3       0.212                  0.2285       6941               0         29794            25    False
+2016-2026    0.05 stop 1 ATR · alvo 3R  0.001        mínimo         0.05          636.9                   485.9      0.2614                  0.3021      13249               0         23486            29    False
+2016-2026    0.05 stop 1 ATR · alvo 3R  0.001        mínimo          0.1          913.7                   678.9      0.5168                  0.5671      19859               0         16876            37    False
+2016-2026    0.05 stop 1 ATR · alvo 3R 0.0025        mínimo         0.02          273.2                   200.6       0.189                   0.203       6294               0         30441            10    False
+2016-2026    0.05 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05          645.5                   491.5       0.228                  0.2638      12773               0         23962            21    False
+2016-2026    0.05 stop 1 ATR · alvo 3R 0.0025        mínimo          0.1          911.3                   671.9      0.5049                  0.5616      19469               0         17266            29    False
+2016-2026    0.05 stop 1 ATR · alvo 3R  0.005        mínimo         0.02            273                     200      0.1747                  0.1874       5738               0         30997             6    False
+2016-2026    0.05 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          662.9                   505.6      0.2133                  0.2484      12234               0         24501            13    False
+2016-2026    0.05 stop 1 ATR · alvo 3R  0.005        mínimo          0.1          924.6                   678.7      0.4038                  0.4643      18988               0         17747            23    False
+2016-2026    0.05 stop 1 ATR · alvo 3R   0.01        mínimo         0.02          290.4                   216.7      0.1531                  0.1689       4797               0         31938             3    False
+2016-2026    0.05 stop 1 ATR · alvo 3R   0.01        mínimo         0.05          683.8                   515.6       0.228                  0.2611      10819               0         25916             9    False
+2016-2026    0.05 stop 1 ATR · alvo 3R   0.01        mínimo          0.1          1,076                   803.4      0.3658                   0.444      17480               0         19255            16    False
+2016-2026    0.05 stop 1 ATR · alvo 3R   0.02        mínimo         0.02          265.3                   189.9       0.135                  0.1486       2448               0         34287             1    False
+2016-2026    0.05 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          751.1                   570.3      0.2386                  0.2753       6230               0         30505             4    False
+2016-2026    0.05 stop 1 ATR · alvo 3R   0.02        mínimo          0.1          1,385                   1,043      0.3181                  0.3902      11318               0         25417             9    False
+2016-2026    0.05 stop 1 ATR · alvo 3R  0.001          pula         0.02         -1.324                  -6.259     0.06065                 0.07422       2187           34455            93            27    False
+2016-2026    0.05 stop 1 ATR · alvo 3R  0.001          pula         0.05         -2.365                  -7.536     0.08408                  0.1115       2280           34455             0            59    False
 2016-2026    0.05 stop 1 ATR · alvo 3R  0.001          pula          0.1         -2.365                  -7.536     0.08408                  0.1115       2280           34455             0            59    False
-2016-2026    0.05 stop 1 ATR · alvo 3R 0.0025          pula         0.02          12.54                  0.2443     0.08996                  0.1064       2821           32863          1051            13    False
-2016-2026    0.05 stop 1 ATR · alvo 3R 0.0025          pula         0.05          7.258                  -11.29      0.1565                  0.1844       3583           32863           289            27    False
-2016-2026    0.05 stop 1 ATR · alvo 3R 0.0025          pula          0.1          7.817                  -11.18      0.2098                  0.2796       3821           32863            51            46    False
-2016-2026    0.05 stop 1 ATR · alvo 3R  0.005          pula         0.02            235                   153.9     0.09305                  0.1099       5317           28422          2996            16    False
-2016-2026    0.05 stop 1 ATR · alvo 3R  0.005          pula         0.05          277.4                   193.4      0.2035                    0.24       7152           28422          1161            41    False
-2016-2026    0.05 stop 1 ATR · alvo 3R  0.005          pula          0.1          285.7                   204.4      0.2776                  0.3465       7807           28422           506            67    False
-2016-2026    0.05 stop 1 ATR · alvo 3R   0.01          pula         0.02          918.9                   580.5      0.1008                  0.1183      13055            8889         14791            27    False
-2016-2026    0.05 stop 1 ATR · alvo 3R   0.01          pula         0.05          1,679                   1,162      0.1819                  0.2187      23002            8889          4844            99    False
-2016-2026    0.05 stop 1 ATR · alvo 3R   0.01          pula          0.1          1,878                   1,366      0.2752                   0.342      25694            8889          2152           144    False
-2016-2026    0.05 stop 1 ATR · alvo 3R   0.02          pula         0.02          968.5                   417.9      0.2623                  0.2763       6334             840         29561            13    False
-2016-2026    0.05 stop 1 ATR · alvo 3R   0.02          pula         0.05          3,697                   2,325      0.2684                  0.2876      24541             840         11354           101    False
-2016-2026    0.05 stop 1 ATR · alvo 3R   0.02          pula          0.1          4,502                   3,415      0.3305                    0.39      29929             840          5966           156    False
-2023-2026    0.05 stop 1 ATR · alvo 3R  0.001        mínimo         0.02          769.9                   490.2        0.12                  0.1374       3494               0          9164            16    False
-2023-2026    0.05 stop 1 ATR · alvo 3R  0.001        mínimo         0.05          1,301                   959.1      0.2173                  0.2538       6892               0          5766            50    False
-2023-2026    0.05 stop 1 ATR · alvo 3R  0.001        mínimo          0.1          1,777                   1,361      0.3562                  0.4147       9593               0          3065            94    False
-2023-2026    0.05 stop 1 ATR · alvo 3R 0.0025        mínimo         0.02          814.7                   491.7      0.1268                  0.1439       3461               0          9197            17    False
-2023-2026    0.05 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05          1,293                   1,001      0.2247                  0.2602       6773               0          5885            49    False
-2023-2026    0.05 stop 1 ATR · alvo 3R 0.0025        mínimo          0.1          1,765                   1,352      0.3451                  0.4036       9490               0          3168            94    False
-2023-2026    0.05 stop 1 ATR · alvo 3R  0.005        mínimo         0.02          817.7                   557.9      0.1296                   0.146       3373               0          9285            17    False
-2023-2026    0.05 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          1,266                   995.5      0.2304                  0.2657       6704               0          5954            49    False
-2023-2026    0.05 stop 1 ATR · alvo 3R  0.005        mínimo          0.1          1,842                   1,384      0.2757                  0.3479       9696               0          2962            94    False
-2023-2026    0.05 stop 1 ATR · alvo 3R   0.01        mínimo         0.02          903.7                   701.9      0.1202                  0.1344       2815               0          9843            12    False
-2023-2026    0.05 stop 1 ATR · alvo 3R   0.01        mínimo         0.05          1,696                   1,237      0.1823                   0.221       6467               0          6191            45    False
-2023-2026    0.05 stop 1 ATR · alvo 3R   0.01        mínimo          0.1          2,346                   1,829      0.2953                  0.3637       9537               0          3121            94    False
-2023-2026    0.05 stop 1 ATR · alvo 3R   0.02        mínimo         0.02          685.9                   341.4      0.1311                  0.1453       1199               0         11459             4    False
-2023-2026    0.05 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          2,849                   2,264      0.2416                  0.2769       4616               0          8042            31    False
-2023-2026    0.05 stop 1 ATR · alvo 3R   0.02        mínimo          0.1          4,962                   3,526      0.3032                  0.3659       8399               0          4259            80    False
+2016-2026    0.05 stop 1 ATR · alvo 3R 0.0025          pula         0.02          13.81                  0.8633     0.08454                  0.1006       2788           32863          1084            13    False
+2016-2026    0.05 stop 1 ATR · alvo 3R 0.0025          pula         0.05          7.375                  -9.705      0.1607                  0.1921       3597           32863           275            27    False
+2016-2026    0.05 stop 1 ATR · alvo 3R 0.0025          pula          0.1          8.717                  -9.793      0.2085                  0.2819       3831           32863            41            48    False
+2016-2026    0.05 stop 1 ATR · alvo 3R  0.005          pula         0.02          156.1                     113     0.08803                  0.1044       3888           28422          4425             7    False
+2016-2026    0.05 stop 1 ATR · alvo 3R  0.005          pula         0.05          234.9                   167.4      0.2004                  0.2409       6134           28422          2179            13    False
+2016-2026    0.05 stop 1 ATR · alvo 3R  0.005          pula          0.1          258.7                   176.5      0.2784                  0.3516       7410           28422           903            26    False
+2016-2026    0.05 stop 1 ATR · alvo 3R   0.01          pula         0.02          305.2                   231.8     0.07737                 0.08549       4796            8889         23050             3    False
+2016-2026    0.05 stop 1 ATR · alvo 3R   0.01          pula         0.05          665.9                   502.5      0.1455                   0.178      10514            8889         17332             9    False
+2016-2026    0.05 stop 1 ATR · alvo 3R   0.01          pula          0.1          1,030                   774.4       0.247                  0.3292      16290            8889         11556            17    False
+2016-2026    0.05 stop 1 ATR · alvo 3R   0.02          pula         0.02          265.3                   189.9       0.135                  0.1486       2448             840         33447             1    False
+2016-2026    0.05 stop 1 ATR · alvo 3R   0.02          pula         0.05          748.1                   567.2      0.2232                  0.2474       6232             840         29663             4    False
+2016-2026    0.05 stop 1 ATR · alvo 3R   0.02          pula          0.1          1,394                   1,051      0.2896                  0.3471      11305             840         24590             9    False
+2023-2026    0.05 stop 1 ATR · alvo 3R  0.001        mínimo         0.02          363.1                   283.6       0.115                  0.1329       2459               0         10199            14    False
+2023-2026    0.05 stop 1 ATR · alvo 3R  0.001        mínimo         0.05            878                   713.3      0.1888                  0.2209       4777               0          7881            18    False
+2023-2026    0.05 stop 1 ATR · alvo 3R  0.001        mínimo          0.1          1,124                   873.1      0.3535                  0.4501       7131               0          5527            28    False
+2023-2026    0.05 stop 1 ATR · alvo 3R 0.0025        mínimo         0.02          375.8                   295.3      0.1144                  0.1322       2294               0         10364            10    False
+2023-2026    0.05 stop 1 ATR · alvo 3R 0.0025        mínimo         0.05          885.9                   718.6      0.1713                   0.211       4655               0          8003            16    False
+2023-2026    0.05 stop 1 ATR · alvo 3R 0.0025        mínimo          0.1          1,127                   873.1      0.3213                  0.4179       7031               0          5627            24    False
+2023-2026    0.05 stop 1 ATR · alvo 3R  0.005        mínimo         0.02          374.3                     294       0.111                  0.1288       2137               0         10521             6    False
+2023-2026    0.05 stop 1 ATR · alvo 3R  0.005        mínimo         0.05          901.5                   731.8        0.17                  0.1998       4511               0          8147            13    False
+2023-2026    0.05 stop 1 ATR · alvo 3R  0.005        mínimo          0.1          1,126                   867.1      0.3021                  0.3959       6902               0          5756            23    False
+2023-2026    0.05 stop 1 ATR · alvo 3R   0.01        mínimo         0.02          414.5                   332.6       0.114                  0.1289       1689               0         10969             3    False
+2023-2026    0.05 stop 1 ATR · alvo 3R   0.01        mínimo         0.05            937                   751.2      0.1607                  0.2011       3817               0          8841             9    False
+2023-2026    0.05 stop 1 ATR · alvo 3R   0.01        mínimo          0.1          1,385                   1,087      0.3335                  0.4246       6162               0          6496            16    False
+2023-2026    0.05 stop 1 ATR · alvo 3R   0.02        mínimo         0.02          327.2                   240.2      0.1325                  0.1491        824               0         11834             1    False
+2023-2026    0.05 stop 1 ATR · alvo 3R   0.02        mínimo         0.05          1,009                   808.9      0.2055                  0.2362       2051               0         10607             4    False
+2023-2026    0.05 stop 1 ATR · alvo 3R   0.02        mínimo          0.1          1,750                   1,370      0.2869                  0.3724       3713               0          8945             9    False
 2023-2026    0.05 stop 1 ATR · alvo 3R  0.001          pula         0.02          6.007                   2.706     0.02184                 0.02728        564           12094             0            18    False
 2023-2026    0.05 stop 1 ATR · alvo 3R  0.001          pula         0.05          6.007                   2.706     0.02184                 0.02728        564           12094             0            18    False
 2023-2026    0.05 stop 1 ATR · alvo 3R  0.001          pula          0.1          6.007                   2.706     0.02184                 0.02728        564           12094             0            18    False
-2023-2026    0.05 stop 1 ATR · alvo 3R 0.0025          pula         0.02          23.64                   13.04     0.06739                 0.08009        827           11652           179            12    False
-2023-2026    0.05 stop 1 ATR · alvo 3R 0.0025          pula         0.05          41.03                   28.08     0.07101                  0.1016        979           11652            27            29    False
+2023-2026    0.05 stop 1 ATR · alvo 3R 0.0025          pula         0.02          21.99                   11.69     0.06717                 0.07992        820           11652           186            12    False
+2023-2026    0.05 stop 1 ATR · alvo 3R 0.0025          pula         0.05          40.07                   27.97     0.07122                  0.1016        972           11652            34            27    False
 2023-2026    0.05 stop 1 ATR · alvo 3R 0.0025          pula          0.1          38.74                   25.88     0.07153                  0.1166       1006           11652             0            40    False
-2023-2026    0.05 stop 1 ATR · alvo 3R  0.005          pula         0.02          349.6                   265.8     0.07177                 0.08213       2114            9013          1531            11    False
-2023-2026    0.05 stop 1 ATR · alvo 3R  0.005          pula         0.05          490.5                   379.5      0.1442                  0.1853       3183            9013           462            31    False
-2023-2026    0.05 stop 1 ATR · alvo 3R  0.005          pula          0.1          584.6                   453.5      0.1525                  0.1934       3544            9013           101            49    False
-2023-2026    0.05 stop 1 ATR · alvo 3R   0.01          pula         0.02          736.4                   585.8      0.1115                  0.1275       2613            1540          8505            10    False
-2023-2026    0.05 stop 1 ATR · alvo 3R   0.01          pula         0.05          1,831                   1,234      0.1528                  0.1948       6797            1540          4321            48    False
-2023-2026    0.05 stop 1 ATR · alvo 3R   0.01          pula          0.1          2,590                   1,871      0.1862                   0.262       9669            1540          1449            97    False
-2023-2026    0.05 stop 1 ATR · alvo 3R   0.02          pula         0.02          685.9                   341.4      0.1311                  0.1453       1199               1         11458             4    False
-2023-2026    0.05 stop 1 ATR · alvo 3R   0.02          pula         0.05          2,834                   2,264      0.2416                  0.2769       4597               1          8060            31    False
-2023-2026    0.05 stop 1 ATR · alvo 3R   0.02          pula          0.1          4,957                   3,526      0.3032                  0.3659       8384               1          4273            80    False
+2023-2026    0.05 stop 1 ATR · alvo 3R  0.005          pula         0.02          255.2                   199.7     0.06954                 0.07988       1623            9013          2022             7    False
+2023-2026    0.05 stop 1 ATR · alvo 3R  0.005          pula         0.05          419.7                   329.3      0.1388                  0.1801       2708            9013           937            13    False
+2023-2026    0.05 stop 1 ATR · alvo 3R  0.005          pula          0.1          520.2                   409.6      0.1525                  0.1934       3283            9013           362            24    False
+2023-2026    0.05 stop 1 ATR · alvo 3R   0.01          pula         0.02          386.7                   304.7     0.09575                  0.1109       1677            1540          9441             3    False
+2023-2026    0.05 stop 1 ATR · alvo 3R   0.01          pula         0.05          870.2                   685.8      0.1217                   0.164       3737            1540          7381             9    False
+2023-2026    0.05 stop 1 ATR · alvo 3R   0.01          pula          0.1          1,413                   1,120      0.1759                  0.2595       5960            1540          5158            16    False
+2023-2026    0.05 stop 1 ATR · alvo 3R   0.02          pula         0.02          327.2                   240.2      0.1325                  0.1491        824               1         11833             1    False
+2023-2026    0.05 stop 1 ATR · alvo 3R   0.02          pula         0.05          1,009                   808.9      0.2055                  0.2362       2051               1         10606             4    False
+2023-2026    0.05 stop 1 ATR · alvo 3R   0.02          pula          0.1          1,749                   1,370      0.2869                  0.3724       3713               1          8944             9    False
 ```
 
 ## 4. O teste honesto: escolhida em 2016-2022, olhada em 2023-2026
@@ -291,27 +293,27 @@ Para cada teto de queda (todos os stops abertos batendo juntos), a combinação 
 
 ```
                     escolha  limiar                                  gestao  risco volume_minimo  teto_aberto  16-22_lucro_ano  16-22_estresse_ano  16-22_queda  23-26_lucro_ano  23-26_estresse_ano  23-26_queda  23-26_quebrou
-                queda ≤ 20%    0.05 stop 1 ATR · metade em 1R + resto em 3R   0.01          pula         0.05            947.3               579.2       0.1899            1,653               1,102       0.1967          False
-                queda ≤ 35%    0.02                    stop 1 ATR · alvo 3R   0.01          pula          0.1            3,232               1,727       0.3317            4,880               2,336       0.4909          False
-                queda ≤ 50%    0.02                    stop 1 ATR · alvo 3R   0.02          pula          0.1            7,562               2,875       0.4292            9,869               5,308       0.6013          False
-a congelada (0,5%, teto 5%)    0.05                    stop 1 ATR · alvo 3R  0.005          pula         0.05            131.6               77.48         0.24            490.5               379.5       0.1853          False
+                queda ≤ 20%    0.05                    stop 1 ATR · alvo 3R   0.01          pula         0.05            558.9               406.5        0.178            870.2               685.8        0.164          False
+                queda ≤ 35%    0.05 stop 1 ATR · empate em 1R + trailing 1R   0.02          pula          0.1            1,272               945.9       0.2991            1,674               1,293       0.4977          False
+                queda ≤ 50%    0.05 stop 1 ATR · empate em 1R + trailing 1R   0.02          pula          0.1            1,272               945.9       0.2991            1,674               1,293       0.4977          False
+a congelada (0,5%, teto 5%)    0.05                    stop 1 ATR · alvo 3R  0.005          pula         0.05            138.1               82.56       0.2409            419.7               329.3       0.1801          False
 ```
 
 ### As 12 melhores de 2016-2022 (queda ≤ 25%), cada uma em 2023-2026
 
 ```
- limiar                                  gestao  risco volume_minimo  teto_aberto  16-22_lucro_ano  16-22_estresse_ano  16-22_queda  23-26_lucro_ano  23-26_estresse_ano  23-26_queda
-   0.05                    stop 2 ATR · alvo 1R   0.02          pula          0.1            959.8               667.7       0.2278            1,761               1,210       0.2231
-   0.05                  stop 1.5 ATR · alvo 3R   0.02          pula         0.05            1,099               658.6       0.2063            1,510               1,133       0.1989
-   0.05                    stop 1 ATR · alvo 2R   0.01          pula         0.05            1,010               653.4       0.2102            1,770               1,155       0.1947
-   0.05 stop 2 ATR · metade em 1R + trailing 1R   0.02          pula          0.1            963.3               643.7       0.2262            1,707               1,152       0.2297
-   0.05                    stop 1 ATR · alvo 3R   0.01          pula         0.05            997.7               643.5       0.2181            1,831               1,234       0.1948
-   0.05 stop 2 ATR · metade em 1R + resto em 3R   0.02          pula          0.1            969.5               641.2       0.2295            1,713               1,089       0.2491
-   0.05 stop 2 ATR · empate em 1R + trailing 1R   0.02          pula          0.1            943.1               639.3       0.2258            1,732               1,125        0.228
-   0.05 stop 1 ATR · empate em 1R + trailing 1R   0.01          pula         0.05              918               612.3       0.2133            1,639               1,101       0.1972
-   0.05                  stop 1.5 ATR · alvo 2R   0.02          pula         0.05            1,073                 604       0.2043            1,576               1,135       0.2028
-   0.05                    stop 2 ATR · alvo 2R   0.02          pula          0.1            942.4               602.7        0.247            1,705               1,168       0.2527
-   0.05                    stop 1 ATR · alvo 5R   0.01          pula         0.05            940.9               597.1       0.2234            1,847               1,270       0.2026
-   0.05                  stop 1.5 ATR · alvo 3R   0.02        mínimo         0.05            973.8               596.2       0.2196            1,379               1,023       0.2076
+ limiar                                     gestao  risco volume_minimo  teto_aberto  16-22_lucro_ano  16-22_estresse_ano  16-22_queda  23-26_lucro_ano  23-26_estresse_ano  23-26_queda
+   0.05                       stop 1 ATR · alvo 3R   0.02          pula         0.05            611.2               440.6       0.2474            1,009               808.9       0.2362
+   0.05    stop 1 ATR · metade em 1R + resto em 3R   0.02          pula         0.05            609.7               437.5        0.244            961.2               760.1       0.2361
+   0.05                       stop 1 ATR · alvo 3R   0.01          pula         0.05            558.9               406.5        0.178            870.2               685.8        0.164
+   0.02                       stop 1 ATR · alvo 3R   0.01          pula         0.05            662.3               399.1       0.2157            986.1               685.3        0.299
+   0.05                       stop 1 ATR · alvo 2R   0.01          pula         0.05            541.6               388.1       0.1813            850.1               664.6        0.164
+   0.05                       stop 1 ATR · alvo 3R  0.005        mínimo         0.05            537.9               387.1       0.2484            901.5               731.8       0.1998
+   0.05 stop 2 ATR · empate em 1R + trailing 0,25R   0.02          pula          0.1            533.3               386.3       0.2068            867.9               689.1       0.2066
+   0.05    stop 2 ATR · metade em 1R + trailing 1R   0.02          pula          0.1              533               386.2        0.192            781.8               603.5       0.2064
+   0.05    stop 1 ATR · empate em 1R + trailing 1R   0.01          pula         0.05              540               385.3       0.1714            851.7               665.6       0.1908
+   0.05    stop 2 ATR · empate em 1R + trailing 1R   0.02          pula          0.1            530.4               383.6       0.1926            776.6               598.3       0.2064
+   0.05  stop 2 ATR · metade em 1R + trailing 0,5R   0.02          pula          0.1            525.8               378.5       0.2087            739.4               559.6       0.2201
+   0.05  stop 2 ATR · empate em 1R + trailing 0,5R   0.02          pula          0.1            522.3                 375       0.2114            730.6               550.9       0.2201
 ```
 

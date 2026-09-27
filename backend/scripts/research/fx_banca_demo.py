@@ -38,6 +38,9 @@ ENTRY_MODEL_FILE, EXIT_MODEL_FILE = DATA / "c9_entry_model.json", DATA / "c9_exi
 STATE_FILE, JOURNAL = DATA / "state.json", DATA / "journal.jsonl"
 STOP_FILE = demo.STOP_FILE
 RESTART_FILE = STOP_FILE.with_name("RESTART_BANCA")  # exit without closing anything, to load new code
+# Igor, 2026-09-27: C9 off (never approved; its -US$10 guard on the whole account would fire on C13-A's stops).
+# No new entry; each position closes as soon as its market takes the order; the runner exits when none is left.
+RETIRE_FILE = STOP_FILE.with_name("RETIRE_BANCA")
 TRAIN_END = pd.Timestamp("2026-09-01", tz="UTC").timestamp()
 FUSION = {s: s for s in c3.GROUP_A + c3.GROUP_B if len(s) == 6 and s not in c6.CLASSES} | {
     "XAUUSD": "XAUUSD", "XAGUSD": "XAGUSD", "SPXUSD": "US500", "NSXUSD": "NAS100", "GRXEUR": "GER40",
@@ -202,6 +205,7 @@ class Banca:
         self.model_sha = hashlib.sha256(ENTRY_MODEL_FILE.read_bytes() + EXIT_MODEL_FILE.read_bytes()).hexdigest()
         self.state = json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else {"positions": {}, "processed": {}}
         self.specs: dict[str, dict] = {}
+        self.waiting: set[str] = set()  # positions a retirement could not close yet (logged once each)
 
     def log(self, event: str, **fields) -> None:
         with JOURNAL.open("a", encoding="utf-8") as handle:
@@ -469,6 +473,21 @@ class Banca:
             await self.venue.close(position["id"])
             await self._record_exit(key, position, reason)
 
+    async def retire(self) -> bool:
+        """Close every open position whose market takes the order now; the others are tried again later.
+        True once nothing is left open."""
+        await self.sync()
+        for key, position in list(self.state["positions"].items()):
+            try:
+                await self.venue.close(position["id"])
+            except OrderRejected as error:  # its market is closed (a weekend, an index session): later
+                if key not in self.waiting:
+                    self.waiting.add(key)
+                    self.log("retire_wait", key=key, message=str(error)[:200])
+                continue
+            await self._record_exit(key, position, "banca desligada")
+        return not self.state["positions"]
+
 
 async def loop() -> int:
     DATA.mkdir(parents=True, exist_ok=True)
@@ -490,6 +509,18 @@ async def loop() -> int:
                 await banca.flatten("stop file")
                 banca.log("stop")
                 return 0
+            if RETIRE_FILE.exists():  # no new entry from here on; what is open closes as its market allows
+                if now - last_sync >= SYNC_SECONDS:
+                    try:
+                        if await banca.retire():
+                            RETIRE_FILE.unlink()
+                            banca.log("retired")
+                            return 0
+                    except (VenueUnavailable, OrderRejected) as error:
+                        banca.log("error", message=str(error)[:300])
+                    last_sync = now
+                await asyncio.sleep(5)
+                continue
             if now - last_guard >= GUARD_SECONDS:
                 try:
                     await banca.guard(now)

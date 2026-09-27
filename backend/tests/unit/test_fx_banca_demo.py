@@ -99,3 +99,42 @@ def test_the_exit_row_exists_only_in_profit_and_measures_from_the_entry() -> Non
     assert row["to_stop_atr"] == pytest.approx(0.03 / 0.005) and np.isnan(row["to_target_atr"])
     losing = long | {"entry": last_close + 0.01}
     assert banca.exit_features(losing, "TURTLE20", "EURUSD", d1, daily) is None
+
+
+class ClosedMarketVenue:
+    """Positions 'a' and 'b' are open; 'b' is on a market that refuses orders until `open_all`."""
+
+    def __init__(self) -> None:
+        self.open = {"a", "b"}
+        self.open_all = False
+
+    async def positions(self):
+        return [type("P", (), {"id": i})() for i in self.open]
+
+    async def close(self, position_id: str) -> float:
+        if position_id == "b" and not self.open_all:
+            raise banca.OrderRejected("Trading is not available: Market is closed")
+        self.open.discard(position_id)
+        return 0.0
+
+
+def test_retiring_closes_what_the_market_takes_waits_for_the_rest_and_ends_when_none_is_left() -> None:
+    import asyncio
+
+    retiring = banca.Banca.__new__(banca.Banca)
+    retiring.venue = ClosedMarketVenue()
+    retiring.state = {"positions": {"TSMOM|EURUSD": {"id": "a"}, "TSMOM|GER40": {"id": "b"}}}
+    retiring.waiting, logged, exited = set(), [], []
+    retiring.log = lambda event, **fields: logged.append(event)
+
+    async def record(key, position, reason):
+        exited.append((key, reason))
+        retiring.state["positions"].pop(key)
+
+    retiring._record_exit = record
+    assert asyncio.run(retiring.retire()) is False
+    assert exited == [("TSMOM|EURUSD", "banca desligada")] and logged == ["retire_wait"]
+    assert asyncio.run(retiring.retire()) is False and logged == ["retire_wait"]  # the wait is logged once
+    retiring.venue.open_all = True
+    assert asyncio.run(retiring.retire()) is True
+    assert exited[-1] == ("TSMOM|GER40", "banca desligada")

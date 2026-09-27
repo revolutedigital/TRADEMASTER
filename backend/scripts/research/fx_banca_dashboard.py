@@ -33,7 +33,7 @@ RESEARCH = [
     {"rodada": "C5", "o_que": "TSMOM e RSI2 em índices (Yahoo, 2000-2026)", "resultado": "passa no período antigo, não nos índices novos"},
     {"rodada": "C6", "o_que": "banca xgboost sobre as 14, último ano", "resultado": "perda de −0,10 para −0,03 ATR; não aprovada"},
     {"rodada": "C7", "o_que": "Claude como banca, sinais diários", "resultado": "em andamento"},
-    {"rodada": "C8-C9", "o_que": "banca de saída e bancas otimizadas (diário)", "resultado": "melhora real na saída; total ~0; roda na demo"},
+    {"rodada": "C8-C9", "o_que": "banca de saída e bancas otimizadas (diário)", "resultado": "melhora real na saída; total ~0; desligada em 27/09 (nunca aprovada)"},
     {"rodada": "C10", "o_que": "12 regras de day trade x 144 gestões assimétricas x 37 mercados", "resultado": "0 de 4.464"},
     {"rodada": "C11-C12", "o_que": "fluxos e calendário (fixes, noite dos EUA, virada do mês)", "resultado": "0; padrões existem antes do custo"},
     {"rodada": "C13", "o_que": "banca de day trade (xgboost) e juro/tendência em moedas", "resultado": "APROVADA (frente A): confirmada em 2003-2011, +0,050 R/trade, 9 de 9 anos; juro 0 de 4"},

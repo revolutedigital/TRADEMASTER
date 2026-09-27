@@ -180,8 +180,10 @@ async function refresh() {
   const c13 = d.c13 || {dia: {}, limite_fracao: 0.03, totais: {}, abertas: [], ultimos_sinais: []};
   const ciclo = c13.ciclo || {};
   const cicloAge = ciclo.at ? Math.max(0, Math.round(d.now - ciclo.at)) : null;
-  $("c13-status").innerHTML = `${c13.dia.status || "operando"} · risco ${(c13.risco * 100).toFixed(0)}% por operação, stops abertos até ${(c13.teto_aberto * 100).toFixed(0)}%` +
-    ` · limite −${(c13.limite_fracao * 100).toFixed(0)}% do patrimônio do dia` +
+  const pct = (v) => (v * 100).toLocaleString("pt-BR", {maximumFractionDigits: 1}) + "%";
+  $("c13-status").innerHTML = `${c13.dia.status || "operando"} · risco ${(c13.riscos || []).map(pct).join(" / ")} por operação conforme a confiança do modelo` +
+    ` · stops abertos até ${pct(c13.teto_aberto)}, ${pct(c13.teto_moeda)} por moeda` +
+    ` · freio a −${pct(c13.freio_fracao)} e limite a −${pct(c13.limite_fracao)} do dia` +
     ` · ${c13.totais.sinais || 0} sinais avaliados · ${c13.totais.aceitos || 0} aceitos · ${c13.totais.abertas || 0} posições abertas` +
     (cicloAge == null ? "" : ` · último ciclo há ${cicloAge} s (levou ${Math.round(ciclo.seconds)} s, último minuto de preço ${when(ciclo.last_minute)})`) +
     (cicloAge != null && cicloAge > 420 ? ` · <span class="error">robô parado?</span>` : "");

@@ -136,6 +136,22 @@ def test_the_cycle_runs_65_seconds_after_each_five_minute_mark() -> None:
     assert live.next_cycle(mark + 64) == mark + 65
 
 
+def test_the_stop_is_worth_more_as_the_prediction_rises() -> None:
+    assert live.risk_for(0.04) == 0.0
+    assert (live.risk_for(0.06), live.risk_for(0.10), live.risk_for(0.30)) == (0.01, 0.02, 0.03)
+    assert live.risk_for(0.08) == 0.01  # a bucket starts above its floor, as the threshold does
+
+
+def test_one_currency_in_one_direction_is_capped() -> None:
+    open_now = {"a": {"symbol": "EURUSD", "side": 1, "risk_usd": 20.0},  # long EUR, short USD
+                "b": {"symbol": "UDXUSD", "side": -1, "risk_usd": 5.0}}  # the dollar index sold: short USD
+    assert live.asset_exposure(open_now) == {"EUR": 20.0, "USD": -25.0}
+    assert not live.asset_room(open_now, "GBPUSD", 1, 10.0, 30.0)  # USD would be -35
+    assert live.asset_room(open_now, "GBPUSD", -1, 10.0, 30.0)  # buying USD back: -15
+    assert live.asset_room(open_now, "SPXUSD", 1, 25.0, 30.0)  # an index is its own asset
+    assert live.assets_of("EURJPY") == ("EUR", "JPY") and live.assets_of("SPXUSD") == ("US500", None)
+
+
 def test_open_risk_adds_the_stops_of_open_positions() -> None:
     assert live.open_risk({}) == 0.0
     assert live.open_risk({"a": {"risk_usd": 9.5}, "b": {"risk_usd": 6.0}, "c": {}}) == pytest.approx(15.5)

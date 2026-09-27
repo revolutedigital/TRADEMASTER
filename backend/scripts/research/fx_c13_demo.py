@@ -25,10 +25,12 @@ trade_rows uses, as the earliest entry of its (market, set) after the last resol
 management would itself accept (a next minute within 5 minutes of the signal bar on the same FX day, at least
 MIN_MINUTES_LEFT before the day ends) — the live equivalent of the backtest's one-trade-at-a-time rule.
 
-Sizing (docs/forex/c13-a-sweep.md, exploratory): each stop is worth 1% of equity, and the stops of open positions add
-up to at most 5% of it. At US$ 1,000 the 0.5% of the research skipped ~77% of the model's picks, because one minimum
-FX volume (1,000 units) is worth more than US$ 5 per daily ATR; without a cap on the open stops, a burst of
-simultaneous picks put several times the balance at risk.
+Money rules (docs/forex/c13-a-sweep.md and c13-a-sizing.md, exploratory, chosen on 2016-2022 and read on 2023-2026):
+each stop is worth 1%, 2% or 3% of equity as the model's prediction passes 0.05, 0.08 and 0.12; the stops of open
+positions add up to at most 7.5% of equity, and to at most 3% on one currency in one direction. At US$ 1,000 the 0.5%
+of the research skipped ~77% of the model's picks, because one minimum FX volume (1,000 units) is worth more than
+US$ 5 per daily ATR; without a cap on the open stops, a burst of simultaneous picks put several times the balance at
+risk, and without one per currency such a burst is one bet on the dollar.
 
 Declared deviations from the backtest: the store's live tail comes from the CLI's own quotes (composite/mid) while
 the HistData history is bid-only; the entry is a market order when the cycle finds the candidate (up to about two
@@ -39,9 +41,10 @@ minutes after the backtest's next-minute entry; a late entry of 1-5 minutes kept
                                                     touch ~/.config/trademaster/RESTART_C13 to stop and keep)
 
 Only the demo account (10139135) is used, pinned by fx_demo_runner.cli_argv. Gold, silver, WTI and Brent are
-excluded from real orders (Igor, 2026-09-25); none of them is in this universe. This banca gets its own daily guard:
--3% of the day's starting equity closes every C13-A position and pauses new entries until the next FX day (Igor,
-2026-09-26: no objection to the default offered; separate from the old banca's -US$10/+US$20 guard).
+excluded from real orders (Igor, 2026-09-25); none of them is in this universe. Its own daily guard, on the FX day's
+first equity: at -5% no new entry until the next FX day, open positions running on (the brake the study measured:
+closing trades with a positive expectancy early is itself a cost); at -10% everything is closed too (insurance).
+It replaced a -3% close-everything default (Igor, 2026-09-26) on 2026-09-27, when Igor asked to improve the banca.
 """
 
 from __future__ import annotations
@@ -88,9 +91,14 @@ CYCLE_PERIOD, CYCLE_OFFSET = 300, 65  # the pipeline runs 65 s after each 5-minu
 DAY_END_MARGIN = 45  # closed within the day's last minute, as the backtest, before the 17:00 NY rollover's swap
 WORKERS = 8
 MAX_LIVE_DELAY_SECONDS = 240  # a pending candidate older than this is logged as missed, not opened at a stale price
-LIVE_RISK = 0.01  # each stop worth 1% of equity (sweep: 0.5% skipped ~77% of the picks at US$ 1,000)
-MAX_OPEN_RISK = 0.05  # the stops of open C13-A positions add up to at most 5% of equity
-DAILY_STOP_FRACTION = 0.03  # Igor, 2026-09-26: this banca's own daily stop; closes and pauses until the next FX day
+# Money rules, chosen on 2016-2022 only and read on 2023-2026 (docs/forex/c13-a-sizing.md, exploratory): the stop is
+# worth 1%, 2% or 3% of equity as the model's prediction passes 0.05, 0.08 and 0.12 (the first is the frozen
+# threshold); the open stops add up to at most 7.5% of equity, and to at most 3% on one currency in one direction.
+RISK_BY_PREDICTION = ((0.05, 0.01), (0.08, 0.02), (0.12, 0.03))
+MAX_OPEN_RISK = 0.075
+MAX_ASSET_RISK = 0.03
+DAILY_BRAKE = 0.05  # at -5% of the FX day's first equity: no new entry until the next day (open ones run on)
+DAILY_STOP_FRACTION = 0.10  # at -10%: everything is closed until the next day (insurance; never reached in the study)
 
 
 def symbol_universe() -> list[str]:
@@ -272,6 +280,43 @@ def open_risk(positions: dict) -> float:
     return float(sum(p.get("risk_usd", 0.0) for p in positions.values()))
 
 
+def risk_for(prediction: float) -> float:
+    """The share of equity a stop is worth at this prediction (0 below the threshold)."""
+    share = 0.0
+    for floor, risk in RISK_BY_PREDICTION:
+        if prediction > floor:
+            share = risk
+    return share
+
+
+def assets_of(symbol: str) -> tuple[str, str | None]:
+    """What a long position in `symbol` is long and short of: a pair's two currencies, the dollar for the dollar
+    index, an index itself."""
+    fusion = old_banca.FUSION.get(symbol, symbol)
+    if fusion == symbol:
+        return symbol[:3], symbol[3:]
+    return ("USD", None) if fusion == "USDX" else (fusion, None)
+
+
+def asset_exposure(positions: dict) -> dict[str, float]:
+    """The stop money open on each asset, signed by direction."""
+    exposure: dict[str, float] = {}
+    for position in positions.values():
+        long, short = assets_of(position["symbol"])
+        signed = position["side"] * position.get("risk_usd", 0.0)
+        exposure[long] = exposure.get(long, 0.0) + signed
+        if short:
+            exposure[short] = exposure.get(short, 0.0) - signed
+    return exposure
+
+
+def asset_room(positions: dict, symbol: str, side: int, risk_usd: float, limit_usd: float) -> bool:
+    exposure = asset_exposure(positions)
+    long, short = assets_of(symbol)
+    fits = abs(exposure.get(long, 0.0) + side * risk_usd) <= limit_usd
+    return fits and (short is None or abs(exposure.get(short, 0.0) - side * risk_usd) <= limit_usd)
+
+
 # --- the runner ----------------------------------------------------------------------------------------------------
 
 
@@ -284,6 +329,8 @@ class LiveBanca:
         if not event["passes"]:
             raise RuntimeError("front A did not pass discovery: nothing to run on the demo")
         self.threshold = float(event["chosen"]["threshold"])
+        if RISK_BY_PREDICTION[0][0] != self.threshold:
+            raise RuntimeError("the first risk bucket must start at the frozen threshold")
         if banca.sha256(banca.MODEL_FILE) != event["model_sha256"]:
             raise RuntimeError("the frozen model on disk is not the one recorded in the registry")
         self.model = XGBRegressor()
@@ -375,9 +422,9 @@ class LiveBanca:
                  threshold=self.threshold, take=take, stale=stale, delay=now - row["entry_time"],
                  model_sha=self.model_sha)
         if take:
-            await self._open(key, symbol, row)
+            await self._open(key, symbol, row, risk_for(prediction))
 
-    async def _open(self, key: str, symbol: str, row: pd.Series) -> None:
+    async def _open(self, key: str, symbol: str, row: pd.Series, risk: float) -> None:
         if key in self.state["positions"]:
             self.log("refused", key=key, reason="já tem posição aberta nesse conjunto e mercado")
             return
@@ -403,14 +450,17 @@ class LiveBanca:
             if self.grid[self.g, core.RUNNER_R] > 0 else None
         per_unit = distance * self.usd_per[old_banca.QUOTE.get(fusion, fusion[3:])]
         spec = await self.spec(fusion)
-        volume = old_banca.position_volume(LIVE_RISK * self.equity, per_unit, float(spec["minVolume"]),
+        volume = old_banca.position_volume(risk * self.equity, per_unit, float(spec["minVolume"]),
                                            float(spec["volumeStep"]))
         if volume is None:
-            self.log("refused", key=key, reason=f"o volume mínimo arrisca mais que {LIVE_RISK:.0%} do patrimônio")
+            self.log("refused", key=key, reason=f"o volume mínimo arrisca mais que {risk:.0%} do patrimônio")
             return
         risk_usd = float(volume) * per_unit
         if open_risk(self.state["positions"]) + risk_usd > MAX_OPEN_RISK * self.equity:
-            self.log("refused", key=key, reason=f"os stops abertos passariam de {MAX_OPEN_RISK:.0%} do patrimônio")
+            self.log("refused", key=key, reason=f"os stops abertos passariam de {MAX_OPEN_RISK:.1%} do patrimônio")
+            return
+        if not asset_room(self.state["positions"], symbol, side, risk_usd, MAX_ASSET_RISK * self.equity):
+            self.log("refused", key=key, reason=f"passaria de {MAX_ASSET_RISK:.0%} numa moeda na mesma direção")
             return
         digits = int(spec["digits"])
         stop, target = round(stop, digits), round(target, digits) if target is not None else None
@@ -474,7 +524,8 @@ class LiveBanca:
         self.save()
 
     async def guard(self, now: float) -> None:
-        """The day's own stop: -3% of the day's starting equity closes every C13-A position until the next FX day."""
+        """The day's brake and stop, on the FX day's first equity: at -DAILY_BRAKE no new entry until the next FX day
+        (open positions run on); at -DAILY_STOP_FRACTION every C13-A position is closed too."""
         day = int(lab.fx_day_array(np.array([now]))[0])
         guard = self.state.setdefault("guard", {})
         if guard.get("day") != day:
@@ -482,11 +533,15 @@ class LiveBanca:
             self.log("new_day", day=day, start_equity=self.equity)
             self.save()
             return
-        if guard["status"] == "operando" and \
-                self.equity - guard["start_equity"] <= -DAILY_STOP_FRACTION * guard["start_equity"]:
+        result = self.equity - guard["start_equity"]
+        if guard["status"] != "limite do dia" and result <= -DAILY_STOP_FRACTION * guard["start_equity"]:
             guard["status"] = "limite do dia"
             await self.flatten("limite do dia")
-            self.log("day_closed", result=self.equity - guard["start_equity"])
+            self.log("day_closed", result=result)
+            self.save()
+        elif guard["status"] == "operando" and result <= -DAILY_BRAKE * guard["start_equity"]:
+            guard["status"] = "freio do dia"
+            self.log("day_brake", result=result)
             self.save()
 
 
@@ -503,7 +558,8 @@ async def loop() -> int:
         await runner.refresh_market()
         await runner.sync()
         runner.log("start", model_sha=runner.model_sha, threshold=runner.threshold, universe=len(runner.universe),
-                   risk=LIVE_RISK, max_open_risk=MAX_OPEN_RISK)
+                   risk_by_prediction=RISK_BY_PREDICTION, max_open_risk=MAX_OPEN_RISK, max_asset_risk=MAX_ASSET_RISK,
+                   daily_brake=DAILY_BRAKE, daily_stop=DAILY_STOP_FRACTION)
         cycle_at = time.time()  # the first cycle right away, then on the 5-minute grid
         while True:
             if RESTART_FILE.exists():

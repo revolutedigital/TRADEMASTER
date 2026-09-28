@@ -101,10 +101,16 @@ MAX_LIVE_DELAY_SECONDS = 240  # a pending candidate older than this is logged as
 # better in a first version of the study that sized trades on the starting US$ 1,000 but measured the caps on the
 # growing balance; measured consistently, none of them beat these.
 # Igor, 2026-09-28: entering below the frozen 0.05 threshold did not hold up in the honest 2023-2026 read (worse
-# first year, worse under stress, out of the top 12 without reinvesting) — trying it live anyway, at half risk in
-# that weaker band, one entry threshold below the discovery's own; watch and revert with RESTART_C13 if it drags.
-RISK_BY_PREDICTION = ((0.02, 0.005), (0.05, 0.01))
-MAX_OPEN_RISK = 0.05
+# first year, worse under stress, out of the top 12 without reinvesting) — trying it live anyway, one entry threshold
+# below the discovery's own. Then raised well past anything sized in the study (which topped out at 2% flat, and
+# that alone had shown a -29% first year and a 51% drawdown on 2016-2022, before this threshold change): 2% in the
+# weaker band, 5% above 0.05. The open-risk cap has to move with it — at the old 5%, a single top-tier stop would
+# have used the whole cap, so at most one position could ever be open, killing the diversification the edge counts
+# on; raised to 20% (four full-size positions, or more smaller ones) to keep that shape. The daily brake (-5%, no
+# new entries) and stop (-10%, flatten) are unchanged and now bind much sooner: one full-size loss alone reaches the
+# brake. Untested combination, on the demo, by Igor's call; watch and revert with RESTART_C13 if it drags.
+RISK_BY_PREDICTION = ((0.02, 0.02), (0.05, 0.05))
+MAX_OPEN_RISK = 0.20
 MAX_ASSET_RISK: float | None = None  # a cap on one currency in one direction (off)
 PRIORITY_BY_PREDICTION = False  # give the room under the caps to the most confident candidates first (off)
 DAILY_BRAKE = 0.05  # at -5% of the FX day's first equity: no new entry until the next day (open ones run on)

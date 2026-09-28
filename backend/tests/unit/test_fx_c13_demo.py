@@ -135,11 +135,11 @@ def test_the_cycle_runs_just_after_each_five_minute_mark() -> None:
     assert live.next_cycle(mark - 1) == mark + offset  # 14:04:59 -> 14:05:08 (14:00:08 has passed)
 
 
-def test_risk_grows_from_half_a_percent_at_0_02_to_one_percent_above_0_05() -> None:
+def test_risk_grows_from_two_percent_at_0_02_to_five_percent_above_0_05() -> None:
     assert live.risk_for(0.01) == 0.0  # below every floor
     assert live.risk_for(0.02) == 0.0  # a floor itself is not above it
-    assert (live.risk_for(0.03), live.risk_for(0.04), live.risk_for(0.05)) == (0.005, 0.005, 0.005)
-    assert (live.risk_for(0.06), live.risk_for(0.10), live.risk_for(0.30)) == (0.01, 0.01, 0.01)
+    assert (live.risk_for(0.03), live.risk_for(0.04), live.risk_for(0.05)) == (0.02, 0.02, 0.02)
+    assert (live.risk_for(0.06), live.risk_for(0.10), live.risk_for(0.30)) == (0.05, 0.05, 0.05)
 
 
 def test_one_currency_in_one_direction_is_capped() -> None:

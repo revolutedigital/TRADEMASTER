@@ -100,7 +100,10 @@ MAX_LIVE_DELAY_SECONDS = 240  # a pending candidate older than this is logged as
 # with the model's confidence, a 7.5% cap, a cap per currency and giving the room to the most confident first looked
 # better in a first version of the study that sized trades on the starting US$ 1,000 but measured the caps on the
 # growing balance; measured consistently, none of them beat these.
-RISK_BY_PREDICTION = ((0.05, 0.01),)
+# Igor, 2026-09-28: entering below the frozen 0.05 threshold did not hold up in the honest 2023-2026 read (worse
+# first year, worse under stress, out of the top 12 without reinvesting) — trying it live anyway, at half risk in
+# that weaker band, one entry threshold below the discovery's own; watch and revert with RESTART_C13 if it drags.
+RISK_BY_PREDICTION = ((0.02, 0.005), (0.05, 0.01))
 MAX_OPEN_RISK = 0.05
 MAX_ASSET_RISK: float | None = None  # a cap on one currency in one direction (off)
 PRIORITY_BY_PREDICTION = False  # give the room under the caps to the most confident candidates first (off)
@@ -370,9 +373,8 @@ class LiveBanca:
         event = banca._events("c13_a_discovery")[-1]
         if not event["passes"]:
             raise RuntimeError("front A did not pass discovery: nothing to run on the demo")
-        self.threshold = float(event["chosen"]["threshold"])
-        if RISK_BY_PREDICTION[0][0] != self.threshold:
-            raise RuntimeError("the first risk bucket must start at the frozen threshold")
+        self.threshold = RISK_BY_PREDICTION[0][0]  # the live entry floor: may run looser than the frozen discovery
+        # one above (docs/forex/c13-a-sizing.md), a deliberate, tracked choice rather than the pre-registered result
         if banca.sha256(banca.MODEL_FILE) != event["model_sha256"]:
             raise RuntimeError("the frozen model on disk is not the one recorded in the registry")
         self.model = XGBRegressor()

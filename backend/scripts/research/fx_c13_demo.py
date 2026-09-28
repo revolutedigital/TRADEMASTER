@@ -111,7 +111,12 @@ MAX_LIVE_DELAY_SECONDS = 240  # a pending candidate older than this is logged as
 # brake. Untested combination, on the demo, by Igor's call; watch and revert with RESTART_C13 if it drags.
 RISK_BY_PREDICTION = ((0.02, 0.02), (0.05, 0.05))
 MAX_OPEN_RISK = 0.20
-MAX_ASSET_RISK: float | None = None  # a cap on one currency in one direction (off)
+# Igor, 2026-09-28: turned back on after 4 of the first 9 live entries stacked on the same instrument (GER40 long,
+# from 4 different sets that all fired the same view at once) — the exploratory study's 2-3% caps were sized for the
+# old 1% risk/5% open cap; scaled the same way as the open-risk cap (about two full 5% positions per instrument).
+# `assets_of` buckets an index under its own name, so this caps GER40 alone, not "long equities" across GER40, NAS100,
+# JPN225 and US500 together — those can still stack independently; a coarser cap would need its own bucketing.
+MAX_ASSET_RISK: float | None = 0.10
 PRIORITY_BY_PREDICTION = False  # give the room under the caps to the most confident candidates first (off)
 # Igor, 2026-09-28: raised with the risk per trade (was 0.05/0.10, sized for a 1% trade) so one full-size loss does
 # not brake the day on its own; kept the same 2x ratio and the same "how many losing trades in a row" shape as

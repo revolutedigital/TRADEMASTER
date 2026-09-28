@@ -113,6 +113,13 @@ def data(broker: Broker) -> dict:
         f"em andamento ({progress[-1]})" if progress else "em andamento"
     gotobi_state = json.loads(gotobi.STATE.read_text()) if gotobi.STATE.exists() else {"legs": {}}
     upcoming = gotobi.upcoming_days(time.time(), gotobi.c14.japanese_holidays())[:4]
+    gotobi_legs = gotobi_state["legs"]
+    for leg in gotobi_legs.values():  # live price and P&L while a leg is open (closed legs already carry `profit`)
+        if leg["status"] == "open":
+            live = by_id.get(str(leg["id"]), {})
+            leg["atual"], leg["usd"] = live.get("currentPrice"), live.get("netProfit")
+    gotobi_open = [leg for leg in gotobi_legs.values() if leg["status"] == "open"]
+    gotobi_closed = [leg for leg in gotobi_legs.values() if leg["status"] == "closed"]
     c13_state = json.loads(c13.STATE_FILE.read_text()) if c13.STATE_FILE.exists() else {"positions": {}, "guard": {}}
     c13_events = [json.loads(line) for line in c13.JOURNAL.read_text().splitlines()] if c13.JOURNAL.exists() else []
     c13_signals = [e for e in c13_events if e["event"] == "signal"]
@@ -120,14 +127,33 @@ def data(broker: Broker) -> dict:
     c13_open = [{"conjunto_mercado": key, "lado": "compra" if p["side"] == 1 else "venda", "entrada": p["entry"],
                 "atual": by_id.get(str(p["id"]), {}).get("currentPrice"),
                 "usd": by_id.get(str(p["id"]), {}).get("netProfit")} for key, p in c13_state["positions"].items()]
+    retired = bool(events) and events[-1]["event"] == "retired"  # C9: never approved, off since 2026-09-27; the
+    # RETIRE_BANCA file that triggers this is self-consuming (unlinked once every position is closed)
+    c13_ciclo_age = time.time() - c13_state.get("cycle", {}).get("at", 0) if c13_state.get("cycle") else None
+    resumo = {
+        "abertas": len(open_rows) + len(c13_open) + len(gotobi_open),
+        "usd_aberto": sum(r["usd"] or 0.0 for r in open_rows) + sum(r["usd"] or 0.0 for r in c13_open)
+                     + sum(leg.get("usd") or 0.0 for leg in gotobi_open),
+        "fechadas": len(exits) + len(c13_exits) + len(gotobi_closed),
+        "usd_fechado": sum(e.get("profit") or 0.0 for e in exits) + sum(e.get("profit") or 0.0 for e in c13_exits)
+                      + sum(leg.get("profit") or 0.0 for leg in gotobi_closed),
+        "robos": {"c13": "vivo" if c13_ciclo_age is not None and c13_ciclo_age < 420 else "parado?",
+                  "gotobi": "agendado", "c9": "desligada" if retired else "vivo"}}
     return {
         "gotobi": {"proximos": [{"dia": str(day.date()), "compra": legs[0].open_at, "venda_final": legs[1].close_at}
                                 for day in upcoming for legs in [gotobi.legs_of(day)]],
                    "pernas": [{"perna": key, "status": leg["status"], "entrada": leg.get("entry"),
-                               "usd": leg.get("profit"), "motivo": leg.get("reason", "")}
-                              for key, leg in sorted(gotobi_state["legs"].items(), reverse=True)]},
+                               "atual": leg.get("atual"),
+                               "usd": leg.get("usd") if leg["status"] == "open" else leg.get("profit"),
+                               "motivo": leg.get("reason", "")}
+                              for key, leg in sorted(gotobi_state["legs"].items(), reverse=True)],
+                   "abertas": len(gotobi_open), "usd_aberto": sum(leg.get("usd") or 0.0 for leg in gotobi_open),
+                   "fechadas": len(gotobi_closed),
+                   "usd_fechado": sum(leg.get("profit") or 0.0 for leg in gotobi_closed)},
         "now": time.time(), "broker": {k: v for k, v in broker.snapshot.items() if k != "positions"},
-        "dia": state.get("guard", {}) | {"meta": banca.DAILY_TARGET_USD, "limite": banca.DAILY_STOP_USD},
+        "resumo": resumo,
+        "dia": state.get("guard", {}) | {"meta": banca.DAILY_TARGET_USD, "limite": banca.DAILY_STOP_USD,
+                                         "desligada": retired},
         "totais": {"sinais": len(signals), "aceitos": sum(int(e["take"]) for e in signals), "fechadas": len(exits),
                    "abertas": len(open_rows), "usd_fechado": sum(e.get("profit") or 0.0 for e in exits),
                    "usd_aberto": sum(r["usd"] or 0.0 for r in open_rows)},
@@ -141,14 +167,19 @@ def data(broker: Broker) -> dict:
         "pesquisa": [r | ({"resultado": c7} if r["rodada"] == "C7" else {}) for r in RESEARCH],
         "c13": {"dia": c13_state.get("guard", {}), "limite_fracao": c13.DAILY_STOP_FRACTION,
                 "freio_fracao": c13.DAILY_BRAKE, "riscos": [r for _, r in c13.RISK_BY_PREDICTION],
-                "teto_aberto": c13.MAX_OPEN_RISK, "teto_moeda": c13.MAX_ASSET_RISK,  # None when off "ciclo": c13_state.get("cycle", {}),
+                "teto_aberto": c13.MAX_OPEN_RISK, "teto_moeda": c13.MAX_ASSET_RISK,  # None when off
+                "ciclo": c13_state.get("cycle", {}),
                 "totais": {"sinais": len(c13_signals), "aceitos": sum(int(e["take"]) for e in c13_signals),
-                           "abertas": len(c13_open)},
+                           "abertas": len(c13_open), "fechadas": len(c13_exits),
+                           "usd_aberto": sum(r["usd"] or 0.0 for r in c13_open),
+                           "usd_fechado": sum(e.get("profit") or 0.0 for e in c13_exits)},
                 "abertas": c13_open,
                 "ultimos_sinais": [{"quando": e["at"], "conjunto_mercado": f"{e['set_id']}|{e['symbol']}",
                                     "lado": "compra" if e["side"] == 1 else "venda", "previsao": e["prediction"],
                                     "decisao": "entrou" if e["take"] else "pulou"}
-                                   for e in c13_signals[-40:]][::-1]},
+                                   for e in c13_signals[-40:]][::-1],
+                "fechadas": [{"quando": e["at"], "conjunto_mercado": e["key"], "atr": e["net"],
+                             "usd": e.get("profit"), "motivo": e["reason"]} for e in c13_exits][::-1]},
     }
 
 

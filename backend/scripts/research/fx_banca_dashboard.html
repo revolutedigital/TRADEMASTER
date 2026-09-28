@@ -55,12 +55,25 @@ td.num, th.num { text-align: right; }
 @media (min-width: 900px) { .grid2 { grid-template-columns: 1fr 1fr; } }
 .grid2 .card { margin-bottom: 0; }
 .empty { color: var(--text-muted); padding: 8px 0; }
+.badges { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 20px; padding: 0; list-style: none; }
+.badges li { color: var(--text-secondary); font-size: 13px; }
+.badges .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
+.dot.vivo, .dot.agendado { background: var(--good); }
+.dot.parado, .dot.off { background: var(--text-muted); }
+.dot.critico { background: var(--critical); }
+details.card { padding: 0; }
+details.card summary { cursor: pointer; padding: 14px 16px; font-size: 15px; font-weight: 600; list-style: none; }
+details.card summary::-webkit-details-marker { display: none; }
+details.card summary::before { content: "▸ "; color: var(--text-muted); }
+details.card[open] summary::before { content: "▾ "; }
+details.card .inner { padding: 0 16px 14px; }
 </style>
 </head>
 <body>
 <main>
   <h1>Banca na demo</h1>
   <p class="sub" id="status">carregando…</p>
+  <ul class="badges" id="robos"></ul>
 
   <div class="tiles" id="tiles"></div>
 
@@ -69,19 +82,33 @@ td.num, th.num { text-align: right; }
     <div class="chart" id="chart"><svg id="svg" role="img" aria-label="Patrimônio da conta demo ao longo do tempo"></svg><div class="tip" id="tip"></div></div>
   </div>
 
-  <div class="card"><h2>Gotobi (C14, aprovada) — compra USDJPY 03:00→09:54 JST e vende 09:56→11:59 nos dias 5, 10, 15, 20, 25 e 30</h2><div id="gotobi-next"></div><div id="gotobi"></div></div>
-  <div class="card"><h2>Banca de day trade (C13, aprovada) — 34 conjuntos, modelo decide qual operar, stop 1 ATR/alvo 3R/até o fim do dia</h2>
-    <p class="sub" id="c13-status"></p><div id="c13-open"></div></div>
-  <div class="card"><h2>Últimos sinais da banca de day trade</h2><div id="c13-signals"></div></div>
-  <div class="card"><h2>Posições abertas pela banca</h2><div id="open"></div></div>
-
+  <div class="card"><h2>Banca de day trade (C13-A, aprovada) — 34 conjuntos, modelo decide qual operar, stop 1 ATR/alvo 3R/até o fim do dia</h2>
+    <p class="sub" id="c13-status"></p>
+    <h2 style="margin-top:14px">Posições abertas</h2><div id="c13-open"></div></div>
   <div class="grid2">
-    <div class="card"><h2>Por estratégia</h2><div id="configs"></div></div>
-    <div class="card"><h2>Últimos sinais (a banca decide)</h2><div id="signals"></div></div>
+    <div class="card"><h2>Últimos sinais</h2><div id="c13-signals"></div></div>
+    <div class="card"><h2>Operações fechadas</h2><div id="c13-closed"></div></div>
   </div>
   <div style="height:16px"></div>
-  <div class="card"><h2>Operações fechadas</h2><div id="closed"></div></div>
-  <div class="card"><h2>O que já foi testado</h2><div id="research"></div></div>
+
+  <div class="card"><h2>Gotobi (C14, aprovada) — compra USDJPY 03:00→09:54 JST e vende 09:56→11:59 nos dias 5, 10, 15, 20, 25 e 30</h2><div id="gotobi-next"></div><div id="gotobi"></div></div>
+
+  <details class="card" id="c9-card">
+    <summary>Banca de day trade original (C9, controle) — <span id="c9-status"></span></summary>
+    <div class="inner">
+      <p class="sub">14 regras técnicas com meta-labeling de entrada e saída; nunca passou de controle e foi desligada em 2026-09-27. Fica aqui só como histórico.</p>
+      <h2>Posições abertas</h2><div id="open"></div>
+      <div class="grid2">
+        <div><h2>Por estratégia</h2><div id="configs"></div></div>
+        <div><h2>Últimos sinais</h2><div id="signals"></div></div>
+      </div>
+      <div style="height:16px"></div>
+      <h2>Operações fechadas</h2><div id="closed"></div>
+    </div>
+  </details>
+
+  <details class="card"><summary>O que já foi testado (todas as rodadas de pesquisa)</summary>
+    <div class="inner"><div id="research"></div></div></details>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -133,25 +160,29 @@ function chart(points) {
   $("hit").onmouseleave = () => { tip.style.display = "none"; $("cross").setAttribute("visibility", "hidden"); $("dot").setAttribute("visibility", "hidden"); };
 }
 
+const ROBOT_LABEL = {c13: "C13-A (day trade)", gotobi: "Gotobi", c9: "C9 (controle)"};
+
 async function refresh() {
   let d;
   try { d = await (await fetch("/data.json", {cache: "no-store"})).json(); }
   catch (e) { $("status").innerHTML = '<span class="error">sem resposta do painel local</span>'; return; }
-  const b = d.broker, t = d.totais;
+  const b = d.broker, r = d.resumo || {abertas: 0, usd_aberto: 0, fechadas: 0, usd_fechado: 0, robos: {}};
   const age = b.fetched_at ? Math.max(0, Math.round(d.now - b.fetched_at)) : null;
-  const next = new Date(Math.ceil(d.now / 3600) * 3600 * 1000).toLocaleTimeString("pt-BR", {hour: "2-digit", minute: "2-digit"});
   $("status").innerHTML = `Conta demo 10139135 · preços e patrimônio lidos há ${age == null ? "—" : age + " s"} (a cada 20 s)` +
-    ` · a banca avalia sinais novos de hora em hora: próxima rodada às ${next}` +
     (b.error ? ` · <span class="error">${esc(b.error)}</span>` : "");
-  const dia = d.dia || {}, hoje = dia.start_equity != null && b.equity != null ? b.equity - dia.start_equity : null;
+  $("robos").innerHTML = Object.entries(r.robos).map(([k, status]) => {
+    const cls = status === "vivo" || status === "agendado" ? "vivo" : status === "parado?" ? "critico" : "off";
+    return `<li><span class="dot ${cls}"></span>${ROBOT_LABEL[k] || k}: ${status}</li>`;
+  }).join("");
   $("tiles").innerHTML =
-    tile("Resultado de hoje", usd(dia.status && dia.status !== "operando" ? dia.closed_result : hoje),
-         `${dia.status || "—"} · meta +US$ ${dia.meta} · limite −US$ ${dia.limite}`, hoje) +
     tile("Patrimônio (demo)", usd(b.equity), `saldo ${usd(b.balance)}`) +
-    tile("Resultado em aberto", usd(t.usd_aberto), `${t.abertas} posições`, t.usd_aberto) +
-    tile("Resultado fechado", usd(t.usd_fechado), `${t.fechadas} operações`, t.usd_fechado) +
-    tile("Sinais avaliados", t.sinais.toLocaleString("pt-BR"), `${t.aceitos} aceitos · ${t.sinais - t.aceitos} pulados`);
+    tile("Resultado em aberto", usd(r.usd_aberto), `${r.abertas} posições, todas as estratégias`, r.usd_aberto) +
+    tile("Resultado fechado", usd(r.usd_fechado), `${r.fechadas} operações, todas as estratégias`, r.usd_fechado);
   chart(d.equity);
+  const c9 = d.dia || {};
+  $("c9-status").textContent = c9.desligada
+    ? `desligada em 2026-09-27, sem novas entradas — ${d.totais.fechadas} operações no histórico, ${usd(d.totais.usd_fechado)}`
+    : (c9.status || "operando");
   $("open").innerHTML = table(d.abertas, [
     {key: "estrategia", label: "Estratégia"}, {key: "mercado", label: "Mercado"}, {key: "lado", label: "Lado"},
     {key: "entrada", label: "Entrada", num: true, fmt: v => num(v, 5).replace(/0+$/, "").replace(/,$/, "")},
@@ -175,6 +206,7 @@ async function refresh() {
     {key: "compra", label: "Compra (seu horário)", fmt: when}, {key: "venda_final", label: "Última saída", fmt: when}]);
   $("gotobi").innerHTML = d.gotobi.pernas.length ? table(d.gotobi.pernas, [{key: "perna", label: "Perna"},
     {key: "status", label: "Status"}, {key: "entrada", label: "Entrada", num: true, fmt: v => v == null ? "—" : num(v, 3)},
+    {key: "atual", label: "Atual", num: true, fmt: v => v == null ? "—" : num(v, 3)},
     {key: "usd", label: "US$", num: true, signed: true, fmt: v => v == null ? "—" : usd(v)}, {key: "motivo", label: "Motivo"}])
     : "<p class=\"sub\">Nenhuma operação ainda.</p>";
   const c13 = d.c13 || {dia: {}, limite_fracao: 0.03, totais: {}, abertas: [], ultimos_sinais: []};
@@ -184,7 +216,9 @@ async function refresh() {
   $("c13-status").innerHTML = `${c13.dia.status || "operando"} · risco ${(c13.riscos || []).map(pct).join(" / ")} por operação` + ((c13.riscos || []).length > 1 ? " conforme a confiança do modelo" : "") +
     ` · stops abertos até ${pct(c13.teto_aberto)}` + (c13.teto_moeda == null ? "" : `, ${pct(c13.teto_moeda)} por moeda`) +
     ` · freio a −${pct(c13.freio_fracao)} e limite a −${pct(c13.limite_fracao)} do dia` +
-    ` · ${c13.totais.sinais || 0} sinais avaliados · ${c13.totais.aceitos || 0} aceitos · ${c13.totais.abertas || 0} posições abertas` +
+    ` · ${c13.totais.sinais || 0} sinais avaliados · ${c13.totais.aceitos || 0} aceitos` +
+    ` · ${c13.totais.abertas || 0} posições abertas (${usd(c13.totais.usd_aberto)})` +
+    ` · ${c13.totais.fechadas || 0} fechadas (${usd(c13.totais.usd_fechado)})` +
     (cicloAge == null ? "" : ` · último ciclo há ${cicloAge} s (levou ${Math.round(ciclo.seconds)} s, último minuto de preço ${when(ciclo.last_minute)})`) +
     (cicloAge != null && cicloAge > 420 ? ` · <span class="error">robô parado?</span>` : "");
   $("c13-open").innerHTML = table(c13.abertas, [
@@ -196,6 +230,10 @@ async function refresh() {
     {key: "quando", label: "Quando", fmt: when}, {key: "conjunto_mercado", label: "Conjunto | Mercado"},
     {key: "lado", label: "Lado"}, {key: "previsao", label: "Previsão (R)", num: true, fmt: v => num(v, 3)},
     {key: "decisao", label: "Banca"}]);
+  $("c13-closed").innerHTML = table((c13.fechadas || []).slice(0, 15), [
+    {key: "quando", label: "Saída", fmt: when}, {key: "conjunto_mercado", label: "Conjunto | Mercado"},
+    {key: "motivo", label: "Motivo"}, {key: "atr", label: "R", num: true, signed: true, fmt: v => num(v, 3)},
+    {key: "usd", label: "US$", num: true, signed: true, fmt: v => v == null ? "—" : usd(v)}]);
   $("research").innerHTML = table(d.pesquisa, [{key: "rodada", label: "Rodada"}, {key: "o_que", label: "O que"}, {key: "resultado", label: "Resultado"}]);
 }
 refresh(); setInterval(refresh, 10000);

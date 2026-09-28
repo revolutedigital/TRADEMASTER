@@ -113,8 +113,12 @@ RISK_BY_PREDICTION = ((0.02, 0.02), (0.05, 0.05))
 MAX_OPEN_RISK = 0.20
 MAX_ASSET_RISK: float | None = None  # a cap on one currency in one direction (off)
 PRIORITY_BY_PREDICTION = False  # give the room under the caps to the most confident candidates first (off)
-DAILY_BRAKE = 0.05  # at -5% of the FX day's first equity: no new entry until the next day (open ones run on)
-DAILY_STOP_FRACTION = 0.10  # at -10%: everything is closed until the next day (insurance; never reached in the study)
+# Igor, 2026-09-28: raised with the risk per trade (was 0.05/0.10, sized for a 1% trade) so one full-size loss does
+# not brake the day on its own; kept the same 2x ratio and the same "how many losing trades in a row" shape as
+# before (three at the top tier to brake, six to flatten) rather than scaling blindly. Still demo money, still an
+# untested combination — a truly bad day can now go to -30% before the stop flattens everything.
+DAILY_BRAKE = 0.15  # at -15% of the FX day's first equity: no new entry until the next day (open ones run on)
+DAILY_STOP_FRACTION = 0.30  # at -30%: everything is closed until the next day (insurance; never reached in the study)
 # The research charged one fixed round-trip cost per market at every hour, yet 15% of the accepted entries fall in
 # 17:00-17:30 New York, right after the rollover, when real spreads widen many times over (and the weekly open is
 # worse). An entry whose spread alone is above this many times the whole modelled round trip is refused: there the

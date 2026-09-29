@@ -23,7 +23,7 @@ from scripts.research.fx_c10_families import FAMILIES
 
 REPORT = c3.DOCS / "c13-a-management-test.md"
 CONFIG = banca.config_name(3, 2000)
-THRESHOLDS = (0.02, 0.05)  # the threshold live now, and the frozen discovery's own
+THRESHOLDS = (0.0, 0.02, 0.05)  # Igor, 2026-09-29: below the live 0.02 too, and the frozen discovery's own
 # (stop ATR, first target R, fraction banked there, runner target R, trailing R, max minutes — core.py's columns)
 GRID = np.array([
     (1.0, 0.0, 0.0, 3.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.5, 0.0, 0.0),

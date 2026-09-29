@@ -1,5 +1,8 @@
-"""C13-A, a quick side test Igor asked for (exploratory, not pre-registered): stop 1 ATR and target 0.5R, against
-the frozen stop 1 ATR and target 3R, on the exact same candidates — how much each shape would have won and lost.
+"""C13-A, a quick side test Igor asked for (exploratory, not pre-registered): tighter stops (1, 0.5, 0.25 ATR) and a
+tighter target (0.5R instead of 3R), against the frozen stop 1 ATR / target 3R, on the exact same candidates — how
+much each shape would have won and lost. This is a one-shot read of the trailing year, not the choose-on-2016-2022,
+read-on-2023-2026 discipline the frozen shape itself was held to — a good result here is not a green light to switch,
+only something worth taking to that honest split before it goes live.
 
     python -m scripts.research.fx_c13_management_test
 """
@@ -22,8 +25,13 @@ REPORT = c3.DOCS / "c13-a-management-test.md"
 CONFIG = banca.config_name(3, 2000)
 THRESHOLDS = (0.02, 0.05)  # the threshold live now, and the frozen discovery's own
 # (stop ATR, first target R, fraction banked there, runner target R, trailing R, max minutes — core.py's columns)
-GRID = np.array([(1.0, 0.0, 0.0, 3.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.5, 0.0, 0.0)])
-NAMES = ("stop 1 ATR · alvo 3R (congelada)", "stop 1 ATR · alvo 0,5R (teste do Igor)")
+GRID = np.array([
+    (1.0, 0.0, 0.0, 3.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.5, 0.0, 0.0),
+    (0.5, 0.0, 0.0, 3.0, 0.0, 0.0), (0.5, 0.0, 0.0, 0.5, 0.0, 0.0),
+    (0.25, 0.0, 0.0, 3.0, 0.0, 0.0), (0.25, 0.0, 0.0, 0.5, 0.0, 0.0)])
+NAMES = ("stop 1 ATR · alvo 3R (congelada)", "stop 1 ATR · alvo 0,5R",
+        "stop 0,5 ATR · alvo 3R", "stop 0,5 ATR · alvo 0,5R (os dois apertados)",
+        "stop 0,25 ATR · alvo 3R", "stop 0,25 ATR · alvo 0,5R (os dois bem apertados)")
 LAST_DAY = banca.SAMPLE_END  # the discovery data ends 2026-09-01; Igor asked for the trailing 12 months of it
 WINDOW_DAYS = 365
 
@@ -114,12 +122,15 @@ def main() -> int:
     cols = ["limiar", "gestao", "trades", "win_rate", "media_ganho_R", "media_perda_R", "mean_net", "mean_stress",
            "t", "total_R", "trades_per_day"]
     text = (
-        "# C13-A: stop 1 ATR / alvo 0,5R contra a gestão congelada (teste do Igor, exploratório)\n\n"
+        "# C13-A: stops e alvo mais apertados contra a gestão congelada (teste do Igor, exploratório)\n\n"
         f"Último ano de dado ({pd.Timestamp(LAST_DAY - WINDOW_DAYS * 86400, unit='s', tz='UTC').date()} a "
-        f"{pd.Timestamp(LAST_DAY, unit='s', tz='UTC').date()}). As mesmas candidatas do modelo, geridas pelas duas "
-        "regras: a congelada (stop 1 ATR, alvo 3R) e a nova (stop 1 ATR, alvo 0,5R — o mesmo stop, um alvo bem mais "
-        "perto). `media_ganho_R`/`media_perda_R`: a média de R só das operações que ganharam / só das que perderam. "
-        "Nos dois limiares em uso: 0,05 (a descoberta) e 0,02 (o que está rodando ao vivo).\n\n```\n"
+        f"{pd.Timestamp(LAST_DAY, unit='s', tz='UTC').date()}) — leitura única, não é a disciplina de escolher em "
+        "2016-2022 e ler em 2023-2026 que a gestão congelada passou; um número bom aqui não é aval pra trocar, é "
+        "candidata pra passar por esse teste honesto antes de ir pro robô. As mesmas candidatas do modelo, geridas "
+        "por 6 regras: a congelada (stop 1 ATR, alvo 3R) e 5 combinações de stop mais apertado (1 / 0,5 / 0,25 ATR) "
+        "com o alvo de sempre ou o alvo mais perto (0,5R). `media_ganho_R`/`media_perda_R`: a média de R só das "
+        "operações que ganharam / só das que perderam. Nos dois limiares em uso: 0,05 (a descoberta) e 0,02 (o que "
+        "está rodando ao vivo).\n\n```\n"
         + table[cols].to_string(index=False, float_format=lambda v: f"{v:,.4g}") + "\n```\n")
     REPORT.write_text(text, encoding="utf-8")
     sys.stdout.write(text)

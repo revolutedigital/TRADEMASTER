@@ -124,9 +124,14 @@ def data(broker: Broker) -> dict:
     c13_events = [json.loads(line) for line in c13.JOURNAL.read_text().splitlines()] if c13.JOURNAL.exists() else []
     c13_signals = [e for e in c13_events if e["event"] == "signal"]
     c13_exits = [e for e in c13_events if e["event"] == "exit"]
-    c13_open = [{"conjunto_mercado": key, "lado": "compra" if p["side"] == 1 else "venda", "entrada": p["entry"],
-                "atual": by_id.get(str(p["id"]), {}).get("currentPrice"),
-                "usd": by_id.get(str(p["id"]), {}).get("netProfit")} for key, p in c13_state["positions"].items()]
+    c13_open = []
+    for key, p in c13_state["positions"].items():
+        current = by_id.get(str(p["id"]), {}).get("currentPrice")
+        c13_open.append({
+            "conjunto_mercado": key, "lado": "compra" if p["side"] == 1 else "venda", "entrada": p["entry"],
+            "atual": current, "alvo": p.get("target"), "stop": p["stop"], "fecha": p["day_end"],
+            "r": p["side"] * (current - p["entry"]) / p["unit"] if current is not None else None,
+            "usd": by_id.get(str(p["id"]), {}).get("netProfit")})
     retired = bool(events) and events[-1]["event"] == "retired"  # C9: never approved, off since 2026-09-27; the
     # RETIRE_BANCA file that triggers this is self-consuming (unlinked once every position is closed)
     c13_ciclo_age = time.time() - c13_state.get("cycle", {}).get("at", 0) if c13_state.get("cycle") else None

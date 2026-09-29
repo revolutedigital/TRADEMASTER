@@ -221,10 +221,15 @@ async function refresh() {
     ` · ${c13.totais.fechadas || 0} fechadas (${usd(c13.totais.usd_fechado)})` +
     (cicloAge == null ? "" : ` · último ciclo há ${cicloAge} s (levou ${Math.round(ciclo.seconds)} s, último minuto de preço ${when(ciclo.last_minute)})`) +
     (cicloAge != null && cicloAge > 420 ? ` · <span class="error">robô parado?</span>` : "");
+  const price = v => v == null ? "—" : num(v, 5).replace(/0+$/, "").replace(/,$/, "");  // trims the trailing zeros
   $("c13-open").innerHTML = table(c13.abertas, [
     {key: "conjunto_mercado", label: "Conjunto | Mercado"}, {key: "lado", label: "Lado"},
-    {key: "entrada", label: "Entrada", num: true, fmt: v => num(v, 5).replace(/0+$/, "").replace(/,$/, "")},
-    {key: "atual", label: "Atual", num: true, fmt: v => v == null ? "—" : num(v, 5).replace(/0+$/, "").replace(/,$/, "")},
+    {key: "entrada", label: "Entrada", num: true, fmt: price},
+    {key: "atual", label: "Atual", num: true, fmt: price},
+    {key: "stop", label: "Sai no stop", num: true, fmt: price},
+    {key: "alvo", label: "Sai no alvo (3R)", num: true, fmt: price},
+    {key: "r", label: "R agora", num: true, signed: true, fmt: v => v == null ? "—" : num(v, 2)},
+    {key: "fecha", label: "Sai no fim do dia", fmt: when},
     {key: "usd", label: "Resultado", num: true, signed: true, fmt: v => v == null ? "—" : usd(v)}]);
   $("c13-signals").innerHTML = table(c13.ultimos_sinais.slice(0, 15), [
     {key: "quando", label: "Quando", fmt: when}, {key: "conjunto_mercado", label: "Conjunto | Mercado"},

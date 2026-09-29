@@ -597,7 +597,15 @@ class LiveBanca:
             await self._close(key, position, reason)
 
     async def _close(self, key: str, position: dict, reason: str) -> None:
-        await self.venue.close(position["id"])
+        """A rejection (the position's own market is shut, unlike FX's, an index or a metal has trading hours) is
+        logged and left for the next tick: it must not stop the loop from closing every other position too. Igor,
+        2026-09-28: one GER40 position blocked the whole day-end close for over 3 hours this way (714 identical
+        rejections) while six other positions past their own day-end sat there untried."""
+        try:
+            await self.venue.close(position["id"])
+        except OrderRejected as error:
+            self.log("close_failed", key=key, position_id=position["id"], reason=reason, message=str(error)[:300])
+            return
         await self._record_exit(key, position, reason)
 
     async def _record_exit(self, key: str, position: dict, reason: str) -> None:

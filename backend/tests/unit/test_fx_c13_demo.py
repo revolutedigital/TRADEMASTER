@@ -277,3 +277,32 @@ def test_no_long_enters_while_the_rollover_spread_sags_the_bid() -> None:
     assert live.rollover_long(1, at("2026-01-14 17:00")) and live.rollover_long(1, at("2026-07-14 18:29"))  # EST, EDT
     assert not live.rollover_long(-1, at("2026-07-14 17:15"))  # a short sells the same sagging bid as the backtest
     assert not live.rollover_long(1, at("2026-07-14 18:30")) and not live.rollover_long(1, at("2026-07-14 16:59"))
+
+
+def test_one_position_stuck_in_a_shut_market_does_not_block_the_others_from_closing() -> None:
+    import asyncio
+
+    from app.fx.runner.venue import Exit, OrderRejected
+
+    class HalfShut:
+        def __init__(self):
+            self.closed = []
+
+        async def close(self, position_id):
+            if position_id == "shut":
+                raise OrderRejected("Trading is not available: Market is closed")
+            self.closed.append(position_id)
+            return 5.0
+
+        async def exit_of(self, position_id, symbol):
+            return Exit(result=5.0, price=1.1, reason="market", time=0.0)
+
+    runner = live.LiveBanca.__new__(live.LiveBanca)
+    runner.venue, runner.log = HalfShut(), lambda *a, **k: None
+    runner.save = lambda: None
+    runner.state = {"positions": {
+        "a": {"id": "shut", "symbol": "GRXEUR", "fusion": "GER40", "side": 1, "entry": 100.0, "unit": 1.0},
+        "b": {"id": "open", "symbol": "EURUSD", "fusion": "EURUSD", "side": 1, "entry": 1.1, "unit": 0.01}}}
+    asyncio.run(runner.flatten("fim do dia"))
+    assert "a" in runner.state["positions"]  # left for the next tick, its market still shut
+    assert "b" not in runner.state["positions"]  # closed regardless of "a" failing first

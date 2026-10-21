@@ -1,9 +1,12 @@
 # Handoff técnico — TRADEMASTER
 
-**Data:** 21/10/2026  
-**Branch de trabalho:** `feat/forex-rebuild` — commit `f588cc9f69030118a6de4fc37dc856864bc28fd0`  
-**Base de comparação:** `origin/main` em `3da806d3890228621e51da0c34ca9220096aea32`  
-**Estado remoto:** a branch local e `origin/feat/forex-rebuild` estavam no mesmo commit na auditoria.  
+**Data:** 21/10/2026
+
+**Branch de trabalho:** `feat/forex-rebuild` — commit `f588cc9f69030118a6de4fc37dc856864bc28fd0`
+
+**Base de comparação:** `origin/main` em `3da806d3890228621e51da0c34ca9220096aea32`
+
+**Estado remoto:** a branch local e `origin/feat/forex-rebuild` estavam no mesmo commit na auditoria.
 **Status de produção:** não verificado nesta entrega; este documento não autoriza deploy, ordem real ou ativação de bot.
 
 ---

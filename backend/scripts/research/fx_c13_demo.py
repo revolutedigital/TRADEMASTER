@@ -1,6 +1,7 @@
 """C13 front A ("banca de day trade") on the demo account, forward only — approved on the untouched 2003-2011 data
 (docs/forex/c13-holdout.md, +0.050 R/trade, t 2.97, 9 of 9 years): the 34 family sets of C10 raise their hand on the
-37 banca markets, one fixed management (stop 1 daily ATR, target 3R, until the end of the FX day), and the frozen
+37 banca markets, one fixed management (stop 1 daily ATR, 50% banked at 0.5R, runner with no fixed target and a 1R
+trailing stop, until the end of the FX day), and the frozen
 model of the discovery (data/c13/banca_model.json) decides which candidate to take.
 
 Live minute data: the CLI only serves ~1,000 M1 bars per plain `candles <symbol> <period> <count>` call, but its
@@ -25,11 +26,10 @@ trade_rows uses, as the earliest entry of its (market, set) after the last resol
 management would itself accept (a next minute within 5 minutes of the signal bar on the same FX day, at least
 MIN_MINUTES_LEFT before the day ends) — the live equivalent of the backtest's one-trade-at-a-time rule.
 
-Money rules (docs/forex/c13-a-sweep.md, c13-a-sizing.md and -2.md, exploratory, chosen on 2016-2022 and read on
-2023-2026, as corrected on 2026-09-27): each stop is worth 1% of equity and the stops of open positions add up to at
-most 5% of it. At US$ 1,000 the 0.5% of the research skipped ~77% of the model's picks, because one minimum FX volume
-(1,000 units) is worth more than US$ 5 per daily ATR; without a cap on the open stops, a burst of simultaneous picks
-put several times the balance at risk.
+Money rules: the current demo experiment is deliberately aggressive and forward-only. A candidate only enters above
+the 0.05 model threshold, the full split order risks 5% of equity on a 1 daily ATR stop, and open stops are capped at
+15% of equity. Half of the position banks at +0.5R; the runner has no fixed target and starts moving its server stop
+to breakeven/trailing 1R once price reaches +0.5R.
 
 Declared deviations from the backtest: the store's live tail comes from the CLI's own quotes (composite/mid) while
 the HistData history is bid-only; the entry is a market order when the cycle finds the candidate. The cycle runs
@@ -100,17 +100,15 @@ MAX_LIVE_DELAY_SECONDS = 240  # a pending candidate older than this is logged as
 # with the model's confidence, a 7.5% cap, a cap per currency and giving the room to the most confident first looked
 # better in a first version of the study that sized trades on the starting US$ 1,000 but measured the caps on the
 # growing balance; measured consistently, none of them beat these.
-# Igor, 2026-09-28: entering below the frozen 0.05 threshold did not hold up in the honest 2023-2026 read (worse
-# first year, worse under stress, out of the top 12 without reinvesting) — trying it live anyway, one entry threshold
-# below the discovery's own. Then raised well past anything sized in the study (which topped out at 2% flat, and
-# that alone had shown a -29% first year and a 51% drawdown on 2016-2022, before this threshold change): 2% in the
-# weaker band, 5% above 0.05. The open-risk cap has to move with it — at the old 5%, a single top-tier stop would
-# have used the whole cap, so at most one position could ever be open, killing the diversification the edge counts
-# on; raised to 20% (four full-size positions, or more smaller ones) to keep that shape. The daily brake (-5%, no
-# new entries) and stop (-10%, flatten) are unchanged and now bind much sooner: one full-size loss alone reaches the
-# brake. Untested combination, on the demo, by Igor's call; watch and revert with RESTART_C13 if it drags.
-RISK_BY_PREDICTION = ((0.02, 0.02), (0.05, 0.05))
-MAX_OPEN_RISK = 0.20
+# Igor, 2026-09-30: after flattening the demo, switched away from the loose 0.02 / 2%-5% runner. The live experiment
+# is now the aggressive recent-window candidate: threshold 0.05, 5% total stop risk, open stops capped at 15%, and a
+# split entry that banks half at 0.5R while the runner moves to breakeven and then trails 1R behind the best price.
+RISK_BY_PREDICTION = ((0.05, 0.05),)
+MAX_OPEN_RISK = 0.15
+PARTIAL_FRACTION = 0.5
+PARTIAL_TARGET_R = 0.5
+RUNNER_TRAIL_R = 1.0
+LIVE_STOP_ATR = 1.0
 # Igor, 2026-09-28: turned back on after 4 of the first 9 live entries stacked on the same instrument (GER40 long,
 # from 4 different sets that all fired the same view at once) — the exploratory study's 2-3% caps were sized for the
 # old 1% risk/5% open cap; scaled the same way as the open-risk cap (about two full 5% positions per instrument).
@@ -340,6 +338,23 @@ def open_risk(positions: dict) -> float:
     return float(sum(p.get("risk_usd", 0.0) for p in positions.values()))
 
 
+def base_key_of(position_key: str) -> str:
+    """The entry family/market key before the split-leg suffix."""
+    return position_key.rsplit("|", 1)[0] if position_key.endswith(("|bank", "|runner")) else position_key
+
+
+def split_volume(total: float, minimum: float, step: float) -> tuple[float, float] | None:
+    """Two executable legs whose sum does not exceed `total`, as close to 50/50 as the venue's step allows."""
+    first = np.floor((total * PARTIAL_FRACTION) / step + 1e-9) * step
+    second = total - first
+    first = round(float(first), 8)
+    second = round(float(np.floor(second / step + 1e-9) * step), 8)
+    if first < minimum - 1e-12 or second < minimum - 1e-12:
+        return None
+    return (int(first) if float(first).is_integer() else first,
+            int(second) if float(second).is_integer() else second)
+
+
 def risk_for(prediction: float) -> float:
     """The share of equity a stop is worth at this prediction (0 below the threshold)."""
     share = 0.0
@@ -501,7 +516,7 @@ class LiveBanca:
         return prediction if take else None
 
     async def _open(self, key: str, symbol: str, row: pd.Series, risk: float) -> None:
-        if key in self.state["positions"]:
+        if any(base_key_of(open_key) == key for open_key in self.state["positions"]):
             self.log("refused", key=key, reason="já tem posição aberta nesse conjunto e mercado")
             return
         fusion = old_banca.FUSION.get(symbol, symbol)
@@ -512,28 +527,19 @@ class LiveBanca:
         if not spread_ok(spread, modelled):
             self.log("refused", key=key, reason="spread alto", spread=spread, modelled_cost=modelled)
             return
-        if self.grid[self.g, core.STOP_ATR] > 0:
-            distance = self.grid[self.g, core.STOP_ATR] * atr
-        elif not np.isnan(row["stop_ref"]):
-            room = side * (price - row["stop_ref"])
-            if room <= 0:
-                self.log("refused", key=key, reason="a entrada já passou do stop estrutural")
-                return
-            distance = max(room, core.MIN_STOP_ATR * atr)
-        else:
-            self.log("refused", key=key, reason="sem stop")
-            return
+        distance = LIVE_STOP_ATR * atr
         stop = price - side * distance
-        # this management has no first target (TP1_R = 0): with tp1 undefined, `manage()` treats the position as
-        # past its first target from the first minute, so the single target it ever checks is the runner one
-        target = price + side * self.grid[self.g, core.RUNNER_R] * distance \
-            if self.grid[self.g, core.RUNNER_R] > 0 else None
+        bank_target = price + side * PARTIAL_TARGET_R * distance
         per_unit = distance * self.usd_per[old_banca.QUOTE.get(fusion, fusion[3:])]
         spec = await self.spec(fusion)
         volume = old_banca.position_volume(risk * self.equity, per_unit, float(spec["minVolume"]),
                                            float(spec["volumeStep"]))
         if volume is None:
             self.log("refused", key=key, reason=f"o volume mínimo arrisca mais que {risk:.0%} do patrimônio")
+            return
+        legs = split_volume(float(volume), float(spec["minVolume"]), float(spec["volumeStep"]))
+        if legs is None:
+            self.log("refused", key=key, reason="o volume calculado não comporta duas pernas executáveis")
             return
         risk_usd = float(volume) * per_unit
         if open_risk(self.state["positions"]) + risk_usd > MAX_OPEN_RISK * self.equity:
@@ -544,29 +550,74 @@ class LiveBanca:
             self.log("refused", key=key, reason=f"passaria de {MAX_ASSET_RISK:.0%} numa moeda na mesma direção")
             return
         digits = int(spec["digits"])
-        stop, target = round(stop, digits), round(target, digits) if target is not None else None
+        stop, bank_target = round(stop, digits), round(bank_target, digits)
         if (side == 1 and stop >= price) or (side == -1 and stop <= price):
             self.log("refused", key=key, reason="stop do lado errado do preço")
             return
-        position = await self.venue.market_order(symbol=fusion, side=side, units=volume, stop_price=stop,
-                                                 target_price=target, client_order_id=f"{key}|{int(time.time())}")
-        if position.stop_price is None:
-            await self.venue.close(position.id)
-            self.log("refused", key=key, reason="sem stop no servidor")
-            return
         day_end = day_end_after(row["entry_time"])
-        self.state["positions"][key] = {"id": position.id, "symbol": symbol, "fusion": fusion,
-                                        "side": side, "entry": position.entry_price, "unit": distance,
-                                        "stop": stop, "target": target, "day_end": day_end, "volume": volume,
-                                        "risk_usd": risk_usd}
-        self.log("entry", key=key, position_id=position.id, entry=position.entry_price, stop=stop, target=target,
-                 volume=volume, risk_usd=risk_usd, day_end=day_end, spread=spread, modelled_cost=modelled)
+        opened: list[tuple[str, object, float, float | None]] = []
+        for role, leg_volume, target in (("bank", legs[0], bank_target), ("runner", legs[1], None)):
+            position = await self.venue.market_order(
+                symbol=fusion, side=side, units=leg_volume, stop_price=stop, target_price=target,
+                client_order_id=f"{key}|{role}|{int(time.time())}",
+            )
+            if position.stop_price is None:
+                await self.venue.close(position.id)
+                for _, previous, _, _ in opened:
+                    await self.venue.close(previous.id)
+                self.log("refused", key=key, reason=f"sem stop no servidor na perna {role}")
+                return
+            opened.append((role, position, float(leg_volume), target))
+        for role, position, leg_volume, target in opened:
+            leg_key = f"{key}|{role}"
+            leg_risk = leg_volume * per_unit
+            self.state["positions"][leg_key] = {
+                "id": position.id, "base_key": key, "role": role, "symbol": symbol, "fusion": fusion,
+                "side": side, "entry": position.entry_price, "unit": distance, "stop": stop, "target": target,
+                "day_end": day_end, "volume": leg_volume, "risk_usd": leg_risk,
+                "activation_r": PARTIAL_TARGET_R, "trail_r": RUNNER_TRAIL_R, "best": position.entry_price,
+            }
+            self.log("entry", key=leg_key, base_key=key, role=role, position_id=position.id,
+                     entry=position.entry_price, stop=stop, target=target, volume=leg_volume, risk_usd=leg_risk,
+                     day_end=day_end, spread=spread, modelled_cost=modelled)
         self.save()
 
     async def enforce_day_end(self, now: float) -> None:
         for key, position in list(self.state["positions"].items()):
             if now >= position["day_end"] - DAY_END_MARGIN:
                 await self._close(key, position, "fim do dia")
+
+    async def manage_runners(self) -> None:
+        for key, position in list(self.state["positions"].items()):
+            if position.get("role") != "runner":
+                continue
+            quote = await self.venue.quote(position["fusion"])
+            side = int(position["side"])
+            price = quote.bid if side == 1 else quote.ask
+            entry, unit = float(position["entry"]), float(position["unit"])
+            best = max(float(position.get("best", entry)), price) if side == 1 else \
+                min(float(position.get("best", entry)), price)
+            position["best"] = best
+            if side * (best - entry) < PARTIAL_TARGET_R * unit:
+                continue
+            trail = best - side * RUNNER_TRAIL_R * unit
+            candidate = max(float(position["stop"]), entry, trail) if side == 1 else \
+                min(float(position["stop"]), entry, trail)
+            digits = int((await self.spec(position["fusion"]))["digits"])
+            candidate = round(candidate, digits)
+            if candidate == position["stop"]:
+                continue
+            if (side == 1 and candidate >= price) or (side == -1 and candidate <= price):
+                continue
+            try:
+                amended = await self.venue.amend_protection(position["id"], stop_price=candidate, target_price=None)
+            except OrderRejected as error:
+                self.log("trail_failed", key=key, position_id=position["id"], stop=candidate, message=str(error)[:300])
+                continue
+            position["stop"] = candidate
+            self.log("trail", key=key, position_id=position["id"], stop=candidate, price=price, best=best,
+                     broker_stop=amended.stop_price)
+            self.save()
 
     async def run_cycle(self, start: float, mark: float) -> bool:
         """One pass of the pipeline; False, without deciding anything, while the CLI has not yet served the minute
@@ -578,6 +629,8 @@ class LiveBanca:
         pending = await self.cycle_markets(start)
         if quoting and not self.paused():
             await self.decide(pending, time.time())
+        if quoting:
+            await self.manage_runners()
         await self.sync()
         await self.guard(time.time())
         self.state["cycle"] = {"at": time.time(), "seconds": time.time() - start, "candidates": len(pending),

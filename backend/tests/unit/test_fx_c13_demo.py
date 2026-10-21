@@ -135,10 +135,9 @@ def test_the_cycle_runs_just_after_each_five_minute_mark() -> None:
     assert live.next_cycle(mark - 1) == mark + offset  # 14:04:59 -> 14:05:08 (14:00:08 has passed)
 
 
-def test_risk_grows_from_two_percent_at_0_02_to_five_percent_above_0_05() -> None:
-    assert live.risk_for(0.01) == 0.0  # below every floor
-    assert live.risk_for(0.02) == 0.0  # a floor itself is not above it
-    assert (live.risk_for(0.03), live.risk_for(0.04), live.risk_for(0.05)) == (0.02, 0.02, 0.02)
+def test_risk_is_five_percent_only_above_the_live_threshold() -> None:
+    assert live.risk_for(0.04) == 0.0
+    assert live.risk_for(0.05) == 0.0  # a floor itself is not above it
     assert (live.risk_for(0.06), live.risk_for(0.10), live.risk_for(0.30)) == (0.05, 0.05, 0.05)
 
 
@@ -155,6 +154,18 @@ def test_one_currency_in_one_direction_is_capped() -> None:
 def test_open_risk_adds_the_stops_of_open_positions() -> None:
     assert live.open_risk({}) == 0.0
     assert live.open_risk({"a": {"risk_usd": 9.5}, "b": {"risk_usd": 6.0}, "c": {}}) == pytest.approx(15.5)
+
+
+def test_split_volume_builds_two_executable_half_legs() -> None:
+    assert live.split_volume(10_000, 1_000, 1_000) == (5_000, 5_000)
+    assert live.split_volume(9_000, 1_000, 1_000) == (4_000, 5_000)
+    assert live.split_volume(1_000, 1_000, 1_000) is None
+
+
+def test_base_key_strips_split_leg_suffix_only() -> None:
+    assert live.base_key_of("8|EURUSD|bank") == "8|EURUSD"
+    assert live.base_key_of("8|EURUSD|runner") == "8|EURUSD"
+    assert live.base_key_of("8|EURUSD") == "8|EURUSD"
 
 
 class FakeCandles:

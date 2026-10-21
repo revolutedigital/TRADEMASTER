@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="cTrader.Automate" Version="*"/>
+        <PackageReference Include="cTrader.Automate.SourceGenerators" Version="*"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <AdditionalFiles Include="config.json"/>
+    </ItemGroup>
+</Project>

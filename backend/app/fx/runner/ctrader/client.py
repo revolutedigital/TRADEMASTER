@@ -3,8 +3,9 @@
 The Open API speaks protobuf over TLS (`demo.ctraderapi.com:5035`, `live.ctraderapi.com:5035`).
 Every message is a `ProtoMessage{payloadType, payload, clientMsgId}` serialized and preceded by
 4 bytes, big-endian, with its length. `CTraderClient.run()` keeps one authenticated session alive:
-it connects, does the application auth and the account auth, resubscribes the spots that were
-asked for, and reads until the link drops, then reconnects with a capped exponential backoff.
+it connects, does the application auth and the account auth, resubscribes the spots and depth
+subscriptions that were asked for, and reads until the link drops, then reconnects with a capped
+exponential backoff.
 While there is no session every call raises `VenueUnavailable`. A credential the server refuses
 (or a token it invalidates) is fatal: `run()` raises `CTraderAuthError` and never loops on it.
 
@@ -218,11 +219,13 @@ class CTraderClient:
         self._pending: dict[str, tuple[int, asyncio.Future[Message]]] = {}
         self._listeners: list[Listener] = []
         self._spot_ids: list[int] = []
+        self._depth_ids: list[int] = []
         self._blocked_until: dict[int, float] = {}  # payload type (0 = every type) -> loop time
         self._ready = asyncio.Event()
         self._fatal: CTraderAuthError | None = None
         self._task: asyncio.Task[None] | None = None
         self.sessions = 0  # how many sessions have been authenticated so far
+        self.connection_generation = 0  # increments before each TCP session can deliver events
 
     def __repr__(self) -> str:
         return (
@@ -272,11 +275,24 @@ class CTraderClient:
         self._spot_ids = sorted({*self._spot_ids, *symbol_ids})
         await self.request(self._subscribe_message(symbol_ids), messages.ProtoOASubscribeSpotsRes)
 
+    async def subscribe_depth(self, symbol_ids: Sequence[int]) -> None:
+        """Subscribe to Level II updates now and restore them after every reconnection."""
+        self._depth_ids = sorted({*self._depth_ids, *symbol_ids})
+        await self.request(self._subscribe_depth_message(symbol_ids), messages.ProtoOASubscribeDepthQuotesRes)
+
     def _subscribe_message(self, symbol_ids: Sequence[int]) -> messages.ProtoOASubscribeSpotsReq:
         return messages.ProtoOASubscribeSpotsReq(
             ctidTraderAccountId=self.account_id,
             symbolId=list(symbol_ids),
             subscribeToSpotTimestamp=True,
+        )
+
+    def _subscribe_depth_message(
+        self, symbol_ids: Sequence[int]
+    ) -> messages.ProtoOASubscribeDepthQuotesReq:
+        return messages.ProtoOASubscribeDepthQuotesReq(
+            ctidTraderAccountId=self.account_id,
+            symbolId=list(symbol_ids),
         )
 
     def _require_session(self) -> None:
@@ -395,6 +411,7 @@ class CTraderClient:
             asyncio.open_connection(self._host, self._port, ssl=context), self._connect_timeout
         )
         self._writer = writer
+        self.connection_generation += 1
         workers = [
             asyncio.create_task(self._read_loop(reader)),
             asyncio.create_task(self._heartbeat_loop()),
@@ -432,6 +449,8 @@ class CTraderClient:
         )
         if self._spot_ids:
             await self._auth_call(self._subscribe_message(self._spot_ids))
+        if self._depth_ids:
+            await self._auth_call(self._subscribe_depth_message(self._depth_ids))
 
     async def _auth_call(self, message: Message) -> None:
         try:

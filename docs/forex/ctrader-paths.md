@@ -58,6 +58,12 @@ Sim. `linux/amd64` e `linux/arm64`, sem X server: README da imagem. O caso de us
 
 Os **MCP servers** (remoto para cTrader Web, local para cTrader Desktop) são para agentes de IA com supervisão humana ("Users are solely responsible for verifying outputs, supervising strategies"): https://help.ctrader.com/ctrader-ai-agent-connect/ . O remoto usa token da sessão do cTrader Web: "Re-authenticate in cTrader Web and update the token in your AI client configuration" (https://help.ctrader.com/ctrader-ai-agent-connect/faq/). **[inferência]** Não servem para runner sem gente olhando.
 
+### 1.7 MarketDepth via cBot executado pelo CLI
+
+- O CLI não precisa expor um comando interativo `depth`: ele executa cBots `.algo` e encaminha a saída do bot ao terminal. O cTrader Algo expõe `MarketData.GetMarketDepth(symbol)`, as listas `BidEntries`/`AskEntries` e o evento `Updated`; `Symbol.Tick` fornece atualizações bid/ask por símbolo. Fontes oficiais: https://help.ctrader.com/ctrader-cli/cbots/, https://help.ctrader.com/ctrader-algo/references/MarketData/MarketDepth/MarketDepth/ e https://help.ctrader.com/ctrader-algo/references/MarketData/Symbols/Symbol/.
+- **Validado na demo em 2026-09-29:** o cBot read-only `backend/scripts/research/ctrader_cbots/C16DepthProbe/` compilou e emitiu ticks e níveis DOM dos sete pares via CLI. O coletor persiste os eventos no WAL C16 e não contém caminho de ordem. Resultado da captura e limites estão em `docs/forex/c16-cli-amendment.md`.
+- O cBot vê snapshots atuais, não histórico do book nem IDs/deltas de cada cotação. O feed é profundidade da corretora para FX OTC, não book global consolidado; sem evidência de latência HFT. A primeira fotografia populada de cada símbolo ainda deve ser conferida na UI antes de liberar a geração como elegível.
+
 ---
 
 ## 2. Open API (cTrader Open API, protobuf)
